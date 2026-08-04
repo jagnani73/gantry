@@ -22,13 +22,24 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 🚧 **In development** for Stage 1 submission (14 Aug 2026).
 
-- [ ] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement (Base Sepolia)
+- [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xF630DBAd1a4684Ca1Af69A44C963d60cE3a2CDDF))
 - [ ] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [ ] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` + `gantry-pbm` schemes)
 - [ ] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents
 - [ ] `GantrySwap` — any-stablecoin-in → XSGD-out atomic FX
 - [ ] Merchant dashboard — live feed where human and agent payments land side by side
 - [ ] Claude-powered agent CLI paying (and getting rejected) autonomously
+
+### Deployed (Base Sepolia, `eip155:84532`)
+
+| Contract | Address |
+|---|---|
+| [`GantryCore`](https://sepolia.basescan.org/address/0xF630DBAd1a4684Ca1Af69A44C963d60cE3a2CDDF) | `0xF630DBAd1a4684Ca1Af69A44C963d60cE3a2CDDF` |
+| [`FixedRateSwap`](https://sepolia.basescan.org/address/0x8af32D108d204AaAc3BDe1349271Ee445eab1FF9) | `0x8af32D108d204AaAc3BDe1349271Ee445eab1FF9` |
+| [`MockUSDC`](https://sepolia.basescan.org/address/0x78e93170257A3940Da94F3ee30C1f3aDd509ccd7) | `0x78e93170257A3940Da94F3ee30C1f3aDd509ccd7` |
+| [`MockXSGD`](https://sepolia.basescan.org/address/0xA9F1930e9FccB9EDD2C1F922b20C0e29332dDb4C) | `0xA9F1930e9FccB9EDD2C1F922b20C0e29332dDb4C` |
+
+Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settlement is fork-tested against it. Demo merchant `ah-hock-chicken-rice` is registered on-chain.
 
 ## Planned layout
 
