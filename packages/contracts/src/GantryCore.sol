@@ -17,12 +17,38 @@ contract GantryCore is Ownable {
         string handle;
     }
 
+    enum IntentStatus {
+        None,
+        Pending,
+        Settled,
+        Cancelled
+    }
+
+    enum Door {
+        Human,
+        Agent
+    }
+
+    /// @dev Economic terms are pinned at creation; the payer's signature then binds to
+    ///      exactly these numbers. A requote is cancel + recreate, never mutation.
+    struct PaymentIntent {
+        bytes32 merchantId;
+        address tokenIn;
+        uint40 expiry;
+        IntentStatus status;
+        Door door;
+        uint128 xsgdAmount; // merchant price, XSGD 6dp (S$6.50 = 6_500_000)
+        uint128 amountIn; // quoted payer amount, tokenIn decimals
+    }
+
     // ---------------------------------------------------------------- storage
 
     IERC20 public immutable XSGD;
     address public relayer;
+    uint256 private _intentNonce;
 
     mapping(bytes32 => Merchant) public merchants;
+    mapping(bytes32 => PaymentIntent) public intents;
 
     // ---------------------------------------------------------------- errors
 
@@ -30,11 +56,36 @@ contract GantryCore is Ownable {
     error HandleTaken(bytes32 merchantId);
     error InvalidCategory(uint16 categoryId);
     error ZeroAddress();
+    error NotRelayer();
+    error MerchantNotFound(bytes32 merchantId);
+    error ZeroAmount();
+    error BadExpiry(uint40 expiry);
+    error XsgdAmountMismatch(uint256 amountIn, uint256 xsgdAmount);
+    error UnknownIntent(bytes32 intentId);
+    error IntentAlreadySettled(bytes32 intentId);
+    error IntentWasCancelled(bytes32 intentId);
 
     // ---------------------------------------------------------------- events
 
     event MerchantRegistered(bytes32 indexed merchantId, string handle, address payout, uint16 categoryId);
+    event IntentCreated(
+        bytes32 indexed intentId,
+        bytes32 indexed merchantId,
+        address tokenIn,
+        uint256 amountIn,
+        uint256 xsgdAmount,
+        uint40 expiry,
+        Door door
+    );
+    event IntentCancelled(bytes32 indexed intentId);
     event RelayerUpdated(address relayer);
+
+    // ---------------------------------------------------------------- modifiers
+
+    modifier onlyRelayer() {
+        if (msg.sender != relayer) revert NotRelayer();
+        _;
+    }
 
     // ---------------------------------------------------------------- setup
 
@@ -67,6 +118,56 @@ contract GantryCore is Ownable {
     /// @notice merchantId is derived from the URL handle, so clients never need a lookup.
     function merchantIdOf(string calldata handle) external pure returns (bytes32) {
         return keccak256(bytes(handle));
+    }
+
+    // ---------------------------------------------------------------- intents
+
+    /// @notice Relayer-only: the backend quotes tokenIn/amountIn off-chain when a payer
+    ///         opens the pay page (or a 402 is issued) and pins the terms on-chain here.
+    /// @dev intentId doubles as the EIP-3009 nonce, so it is chain- and contract-bound
+    ///      to make authorizations unreplayable across deployments.
+    function createIntent(
+        bytes32 merchantId,
+        uint128 xsgdAmount,
+        address tokenIn,
+        uint128 amountIn,
+        uint40 expiry,
+        Door door
+    ) external onlyRelayer returns (bytes32 intentId) {
+        if (merchants[merchantId].payout == address(0)) revert MerchantNotFound(merchantId);
+        if (tokenIn == address(0)) revert ZeroAddress();
+        if (xsgdAmount == 0 || amountIn == 0) revert ZeroAmount();
+        if (expiry <= block.timestamp) revert BadExpiry(expiry);
+        // An XSGD-denominated payment needs no swap, so the amounts must agree.
+        if (tokenIn == address(XSGD) && amountIn != xsgdAmount) {
+            revert XsgdAmountMismatch(amountIn, xsgdAmount);
+        }
+
+        intentId = keccak256(abi.encode(block.chainid, address(this), merchantId, _intentNonce++));
+        intents[intentId] = PaymentIntent({
+            merchantId: merchantId,
+            tokenIn: tokenIn,
+            expiry: expiry,
+            status: IntentStatus.Pending,
+            door: door,
+            xsgdAmount: xsgdAmount,
+            amountIn: amountIn
+        });
+        emit IntentCreated(intentId, merchantId, tokenIn, amountIn, xsgdAmount, expiry, door);
+    }
+
+    /// @notice Cancellation stays possible after expiry so the relayer can clean up.
+    function cancelIntent(bytes32 intentId) external onlyRelayer {
+        PaymentIntent storage intent = intents[intentId];
+        if (intent.status == IntentStatus.None) revert UnknownIntent(intentId);
+        if (intent.status == IntentStatus.Settled) revert IntentAlreadySettled(intentId);
+        if (intent.status == IntentStatus.Cancelled) revert IntentWasCancelled(intentId);
+        intent.status = IntentStatus.Cancelled;
+        emit IntentCancelled(intentId);
+    }
+
+    function getIntent(bytes32 intentId) external view returns (PaymentIntent memory) {
+        return intents[intentId];
     }
 
     // ---------------------------------------------------------------- admin
