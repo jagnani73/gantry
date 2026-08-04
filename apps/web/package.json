@@ -1,0 +1,6 @@
+{
+  "name": "@gantry/web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Onboarding, printable QR, payer page and merchant dashboard (placeholder until M1)."
+}

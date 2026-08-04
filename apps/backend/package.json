@@ -1,0 +1,6 @@
+{
+  "name": "@gantry/backend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Merchant API, x402 facilitator, relayer and SSE indexer (placeholder until M1)."
+}

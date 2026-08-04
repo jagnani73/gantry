@@ -1,0 +1,10 @@
+{
+  "name": "gantry",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Payer-agnostic payment rail on stablecoins — QR for humans, x402 for AI agents, one settlement contract.",
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=22"
+  }
+}

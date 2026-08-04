@@ -1,0 +1,6 @@
+{
+  "name": "@gantry/shared",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shared types, ABIs and addresses (placeholder until M1)."
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@gantry/agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Claude tool-runner agent CLI paying through x402 (placeholder until M3)."
+}
