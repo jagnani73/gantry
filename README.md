@@ -1,0 +1,54 @@
+# Gantry
+
+**One rail, every payer: QR for humans, x402 for AI agents.**
+
+Every payment system ever built assumes the payer is a human. Gantry is a payment rail on stablecoins where a merchant integrates once and gets paid by anyone — a person scanning a printed QR code, or an AI agent paying over the [x402 protocol](https://github.com/x402-foundation/x402). Both are encodings of the same on-chain `PaymentIntent`, both settle through the same contract, and the merchant always receives XSGD (Singapore-dollar stablecoin) — whatever token the payer sent.
+
+Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.devpost.com/) — Track 1: Payments & Financial Infrastructure.
+
+## The idea in three lines
+
+1. A payment is an **intent**: "merchant M requests S$X."
+2. A QR code and an HTTP `402 Payment Required` response are just **two encodings of the same intent**.
+3. One settlement contract consumes both — atomically swapping whatever stablecoin arrived into XSGD — so a hawker and an API get paid the same way by tourists and by software.
+
+## Why Singapore
+
+- PayNow is excellent — for payers with a Singapore bank account. The ~16M tourists who land at Changi each year have none; they fall back to cards (~2–3% merchant fees) or cash.
+- AI agents can't open bank accounts at all. Since April 2026, x402 (Linux Foundation) gives them a standard way to pay — Gantry gives them somewhere to spend.
+- Agent spending runs inside on-chain allowances — daily caps, merchant-category allowlists, expiry — [MAS Project Orchid's Purpose-Bound Money](https://www.mas.gov.sg/schemes-and-initiatives/project-orchid) idea, applied to AI agents.
+
+## Status
+
+🚧 **In development** for Stage 1 submission (14 Aug 2026).
+
+- [ ] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement (Base Sepolia)
+- [ ] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
+- [ ] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` + `gantry-pbm` schemes)
+- [ ] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents
+- [ ] `GantrySwap` — any-stablecoin-in → XSGD-out atomic FX
+- [ ] Merchant dashboard — live feed where human and agent payments land side by side
+- [ ] Claude-powered agent CLI paying (and getting rejected) autonomously
+
+## Planned layout
+
+```
+packages/contracts   Foundry — GantryCore, AgentPBMWallet, GantrySwap, mocks
+packages/shared      ABIs + shared types
+apps/backend         Express — merchant API, x402 facilitator (/verify, /settle), relayer, SSE indexer
+apps/web             Next.js — onboarding, printable QR, payer page, merchant dashboard
+apps/agent           Claude tool-runner CLI agent
+docs/                architecture diagram, submission materials
+```
+
+## Tech
+
+Solidity ^0.8.24 (Foundry) · Base Sepolia (`eip155:84532`) · x402 v2 (`@x402/*`) · EIP-3009 gasless authorizations · viem/wagmi · Next.js 15 · Node 22 + Express · Claude API (tool runner)
+
+## Honest notes
+
+XSGD exists on no testnet (and not on Base), so testnet runs use a clearly-labeled `MockXSGD`; the mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain. FX liquidity is a self-seeded demo pool, not an oracle-fed market. This is a hackathon prototype — production would operate with a licensed PSP under Singapore's Payment Services Act.
+
+## Team
+
+Yashvardhan Jagnani ([@jagnani73](https://github.com/jagnani73)) — NTU
