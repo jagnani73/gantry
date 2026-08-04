@@ -15,6 +15,10 @@ fuzz = { runs = 256 }
 [profile.fork]
 fuzz = { runs = 16 }
 
+# EIP-3009 validity windows and intent expiry are timestamp comparisons by spec.
+[lint]
+exclude_lints = ["block-timestamp"]
+
 [rpc_endpoints]
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
 
