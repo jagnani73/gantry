@@ -1,0 +1,22 @@
+[profile.default]
+solc_version = "0.8.24"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+src = "src"
+test = "test"
+script = "script"
+libs = ["lib"]
+fuzz = { runs = 256 }
+
+# Fork tests self-skip when BASE_SEPOLIA_RPC_URL is unset; this profile just
+# lowers fuzz patience for remote runs:
+# FOUNDRY_PROFILE=fork forge test --match-path "test/fork/*" -vvv
+[profile.fork]
+fuzz = { runs = 16 }
+
+[rpc_endpoints]
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+[etherscan]
+base_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 84532 }
