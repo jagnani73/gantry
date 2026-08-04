@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IAgentPBMWallet} from "./interfaces/IAgentPBMWallet.sol";
 import {IERC3009} from "./interfaces/IERC3009.sol";
 import {IGantrySwap} from "./interfaces/IGantrySwap.sol";
 
@@ -72,6 +73,7 @@ contract GantryCore is Ownable {
     error IntentAlreadySettled(bytes32 intentId);
     error IntentWasCancelled(bytes32 intentId);
     error IntentExpired(bytes32 intentId, uint40 expiry);
+    error PBMPullFailed(uint256 received, uint256 expected);
     error SwapNotSet();
     error InsufficientXsgdOut(uint256 got, uint256 min);
     error Reentrancy();
@@ -223,6 +225,26 @@ contract GantryCore is Ownable {
             payer, address(this), intent.amountIn, validAfter, validBefore, intentId, v, r, s
         );
         _settle(intentId, intent, payer);
+    }
+
+    // ---------------------------------------------------------------- settlement: PBM door
+
+    /// @notice Settles an intent from an agent's policy wallet (x402 `gantry-pbm` scheme).
+    ///         The wallet verifies the agent session key's signature and every policy
+    ///         dimension on-chain; its policy errors (e.g. CategoryNotAllowed) bubble up
+    ///         through this call — that is how a denial reaches the x402 facilitator as a
+    ///         decodable revert instead of a backend if-statement.
+    function settleFromPBM(bytes32 intentId, address pbmWallet, bytes calldata agentSig) external nonReentrant {
+        PaymentIntent storage intent = _beginSettle(intentId);
+
+        uint256 balanceBefore = IERC20(intent.tokenIn).balanceOf(address(this));
+        IAgentPBMWallet(pbmWallet).authorizeSpend(
+            intentId, merchants[intent.merchantId].categoryId, intent.tokenIn, intent.amountIn, agentSig
+        );
+        uint256 received = IERC20(intent.tokenIn).balanceOf(address(this)) - balanceBefore;
+        if (received < intent.amountIn) revert PBMPullFailed(received, intent.amountIn);
+
+        _settle(intentId, intent, pbmWallet);
     }
 
     // ---------------------------------------------------------------- admin
