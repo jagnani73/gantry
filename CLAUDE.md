@@ -79,5 +79,6 @@ Mocked: MockXSGD (no testnet XSGD), self-seeded FX pool (no oracle), single trus
 - pnpm workspaces monorepo. TypeScript everywhere outside `packages/contracts`.
 - Everything on `main`, incremental focused commits, Conventional Commits (`feat(contracts): …`). No AI co-author trailers.
 - Verify with `pnpm lint` + `tsc --noEmit` (and `forge test` for contracts), not full builds.
+- **Milestone review gate:** before declaring any milestone (M0–M4) done, run the PR review skill (`pr-review-toolkit:review-pr`) over the milestone's full commit range (e.g. `git diff <last-milestone-tag-or-commit>..HEAD`), triage findings with the user, and fix agreed ones before sign-off. Same applies to any large multi-commit change outside milestones.
 - Repo is public from day 1 — commit history is feasibility evidence for screeners. Keep `.env.example` current.
 - Demo-script-driven development: if it doesn't appear in the demo script or submission materials, don't build it.
