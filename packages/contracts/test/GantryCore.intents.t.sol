@@ -16,7 +16,7 @@ contract GantryCoreIntentsTest is Test {
     bytes32 internal merchantId;
 
     uint128 internal constant XSGD_AMOUNT = 6_500_000; // S$6.50
-    uint128 internal constant USDC_AMOUNT = 4_843_000; // 4.843 USDC at 1.3421
+    uint128 internal constant USDC_AMOUNT = 4_843_157; // ceil(6.50 / 1.3421), 6dp
 
     function setUp() public {
         vm.warp(1_755_000_000);

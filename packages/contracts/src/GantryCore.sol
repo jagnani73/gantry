@@ -3,12 +3,17 @@ pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC3009} from "./interfaces/IERC3009.sol";
+import {IGantrySwap} from "./interfaces/IGantrySwap.sol";
 
 /// @title GantryCore — payer-agnostic settlement rail
 /// @notice One merchant registry, one PaymentIntent lifecycle, two settlement doors
 ///         (EIP-3009 authorization for QR humans + x402 `exact`, PBM wallet for agents).
 ///         All doors converge on a single settlement path paying merchants in XSGD.
 contract GantryCore is Ownable {
+    using SafeERC20 for IERC20;
+
     // ---------------------------------------------------------------- types
 
     struct Merchant {
@@ -45,7 +50,9 @@ contract GantryCore is Ownable {
 
     IERC20 public immutable XSGD;
     address public relayer;
+    IGantrySwap public swap;
     uint256 private _intentNonce;
+    uint256 private _lock = 1;
 
     mapping(bytes32 => Merchant) public merchants;
     mapping(bytes32 => PaymentIntent) public intents;
@@ -64,6 +71,10 @@ contract GantryCore is Ownable {
     error UnknownIntent(bytes32 intentId);
     error IntentAlreadySettled(bytes32 intentId);
     error IntentWasCancelled(bytes32 intentId);
+    error IntentExpired(bytes32 intentId, uint40 expiry);
+    error SwapNotSet();
+    error InsufficientXsgdOut(uint256 got, uint256 min);
+    error Reentrancy();
 
     // ---------------------------------------------------------------- events
 
@@ -78,13 +89,31 @@ contract GantryCore is Ownable {
         Door door
     );
     event IntentCancelled(bytes32 indexed intentId);
+    event IntentSettled(
+        bytes32 indexed intentId,
+        bytes32 indexed merchantId,
+        address indexed payer,
+        address tokenIn,
+        uint256 amountIn,
+        uint256 xsgdOut,
+        Door door
+    );
     event RelayerUpdated(address relayer);
+    event SwapUpdated(address swap);
+    event Rescued(address token, address to, uint256 amount);
 
     // ---------------------------------------------------------------- modifiers
 
     modifier onlyRelayer() {
         if (msg.sender != relayer) revert NotRelayer();
         _;
+    }
+
+    modifier nonReentrant() {
+        if (_lock != 1) revert Reentrancy();
+        _lock = 2;
+        _;
+        _lock = 1;
     }
 
     // ---------------------------------------------------------------- setup
@@ -170,6 +199,32 @@ contract GantryCore is Ownable {
         return intents[intentId];
     }
 
+    // ---------------------------------------------------------------- settlement: EIP-3009 door
+
+    /// @notice Settles an intent with the payer's gasless EIP-3009 authorization. Serves
+    ///         both the QR (human) door and the x402 `exact` (agent) door. Permissionless:
+    ///         the signature alone binds payer, amount, recipient AND intent, because the
+    ///         token-level nonce passed below is hardcoded to the intentId.
+    /// @dev Known griefing vector, accepted by design (transferWithAuthorization is what
+    ///      vanilla x402 clients sign): an observer can replay the raw signature directly
+    ///      against the token, landing funds here without settling. Settlement then reverts
+    ///      inside the token (authorization used); funds are recoverable via rescueERC20.
+    function settleWithAuthorization(
+        bytes32 intentId,
+        address payer,
+        uint256 validAfter,
+        uint256 validBefore,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant {
+        PaymentIntent storage intent = _beginSettle(intentId);
+        IERC3009(intent.tokenIn).transferWithAuthorization(
+            payer, address(this), intent.amountIn, validAfter, validBefore, intentId, v, r, s
+        );
+        _settle(intentId, intent, payer);
+    }
+
     // ---------------------------------------------------------------- admin
 
     function setRelayer(address relayer_) external onlyOwner {
@@ -178,7 +233,56 @@ contract GantryCore is Ownable {
         emit RelayerUpdated(relayer_);
     }
 
+    function setSwap(IGantrySwap swap_) external onlyOwner {
+        swap = swap_;
+        emit SwapUpdated(address(swap_));
+    }
+
+    /// @notice Recovers tokens stranded by authorization front-running (see
+    ///         settleWithAuthorization) so the relayer can refund the payer.
+    function rescueERC20(address token, address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        IERC20(token).safeTransfer(to, amount);
+        emit Rescued(token, to, amount);
+    }
+
     // ---------------------------------------------------------------- internal
+
+    /// @dev Validates the intent is settleable and flips it to Settled BEFORE any external
+    ///      call (checks-effects-interactions) — this, plus nonReentrant, is the
+    ///      double-settle guard. Also fails fast on a missing swap so no funds are pulled
+    ///      that the settlement path can't convert.
+    function _beginSettle(bytes32 intentId) internal returns (PaymentIntent storage intent) {
+        intent = intents[intentId];
+        if (intent.status == IntentStatus.None) revert UnknownIntent(intentId);
+        if (intent.status == IntentStatus.Settled) revert IntentAlreadySettled(intentId);
+        if (intent.status == IntentStatus.Cancelled) revert IntentWasCancelled(intentId);
+        if (block.timestamp > intent.expiry) revert IntentExpired(intentId, intent.expiry);
+        if (intent.tokenIn != address(XSGD) && address(swap) == address(0)) revert SwapNotSet();
+        intent.status = IntentStatus.Settled;
+    }
+
+    /// @dev Funds (intent.amountIn of intent.tokenIn) are already in this contract.
+    ///      Swap output is measured as this contract's own XSGD balance delta, so a
+    ///      misbehaving swap module cannot fake the min-out guard; the merchant gets
+    ///      the full delta.
+    function _settle(bytes32 intentId, PaymentIntent storage intent, address payer) internal {
+        uint256 xsgdOut;
+        if (intent.tokenIn == address(XSGD)) {
+            xsgdOut = intent.amountIn;
+        } else {
+            IERC20(intent.tokenIn).forceApprove(address(swap), intent.amountIn);
+            uint256 balanceBefore = XSGD.balanceOf(address(this));
+            swap.swapExactIn(intent.tokenIn, intent.amountIn, intent.xsgdAmount, address(this));
+            xsgdOut = XSGD.balanceOf(address(this)) - balanceBefore;
+            if (xsgdOut < intent.xsgdAmount) revert InsufficientXsgdOut(xsgdOut, intent.xsgdAmount);
+        }
+
+        XSGD.safeTransfer(merchants[intent.merchantId].payout, xsgdOut);
+        emit IntentSettled(
+            intentId, intent.merchantId, payer, intent.tokenIn, intent.amountIn, xsgdOut, intent.door
+        );
+    }
 
     /// @dev Handles are URL path segments (`/pay/<handle>`): 1-32 bytes of [a-z0-9-],
     ///      no leading/trailing hyphen.
