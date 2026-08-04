@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {MockUSDC} from "../src/mocks/MockUSDC.sol";
+import {EIP3009} from "../src/mocks/EIP3009.sol";
 import {Eip3009Digest} from "./helpers/Eip3009Digest.sol";
 
 contract MockUSDCTest is Test {
@@ -39,7 +40,7 @@ contract MockUSDCTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signTransfer(0, block.timestamp + 1 hours, NONCE);
 
         vm.expectEmit(true, true, false, false, address(usdc));
-        emit MockUSDC.AuthorizationUsed(payer, NONCE);
+        emit EIP3009.AuthorizationUsed(payer, NONCE);
 
         vm.prank(relayer);
         usdc.transferWithAuthorization(payer, recipient, VALUE, 0, block.timestamp + 1 hours, NONCE, v, r, s);
@@ -65,7 +66,7 @@ contract MockUSDCTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signTransfer(0, validBefore, NONCE);
         usdc.transferWithAuthorization(payer, recipient, VALUE, 0, validBefore, NONCE, v, r, s);
 
-        vm.expectRevert(abi.encodeWithSelector(MockUSDC.AuthorizationAlreadyUsed.selector, payer, NONCE));
+        vm.expectRevert(abi.encodeWithSelector(EIP3009.AuthorizationAlreadyUsed.selector, payer, NONCE));
         usdc.transferWithAuthorization(payer, recipient, VALUE, 0, validBefore, NONCE, v, r, s);
     }
 
@@ -74,7 +75,7 @@ contract MockUSDCTest is Test {
         uint256 validBefore = block.timestamp + 1 hours;
         (uint8 v, bytes32 r, bytes32 s) = _signTransfer(validAfter, validBefore, NONCE);
 
-        vm.expectRevert(MockUSDC.AuthorizationNotYetValid.selector);
+        vm.expectRevert(EIP3009.AuthorizationNotYetValid.selector);
         usdc.transferWithAuthorization(payer, recipient, VALUE, validAfter, validBefore, NONCE, v, r, s);
     }
 
@@ -82,7 +83,7 @@ contract MockUSDCTest is Test {
         uint256 validBefore = block.timestamp - 1;
         (uint8 v, bytes32 r, bytes32 s) = _signTransfer(0, validBefore, NONCE);
 
-        vm.expectRevert(MockUSDC.AuthorizationExpired.selector);
+        vm.expectRevert(EIP3009.AuthorizationExpired.selector);
         usdc.transferWithAuthorization(payer, recipient, VALUE, 0, validBefore, NONCE, v, r, s);
     }
 
@@ -92,7 +93,7 @@ contract MockUSDCTest is Test {
             Eip3009Digest.transferDigest(address(usdc), payer, recipient, VALUE, 0, validBefore, NONCE);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xB0B, digest);
 
-        vm.expectRevert(MockUSDC.InvalidSignature.selector);
+        vm.expectRevert(EIP3009.InvalidSignature.selector);
         usdc.transferWithAuthorization(payer, recipient, VALUE, 0, validBefore, NONCE, v, r, s);
     }
 
@@ -100,7 +101,7 @@ contract MockUSDCTest is Test {
         uint256 validBefore = block.timestamp + 1 hours;
         (uint8 v, bytes32 r, bytes32 s) = _signTransfer(0, validBefore, NONCE);
 
-        vm.expectRevert(MockUSDC.InvalidSignature.selector);
+        vm.expectRevert(EIP3009.InvalidSignature.selector);
         usdc.transferWithAuthorization(payer, recipient, VALUE + 1, 0, validBefore, NONCE, v, r, s);
     }
 
@@ -111,7 +112,7 @@ contract MockUSDCTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PAYER_PK, digest);
 
         vm.prank(relayer);
-        vm.expectRevert(MockUSDC.CallerMustBePayee.selector);
+        vm.expectRevert(EIP3009.CallerMustBePayee.selector);
         usdc.receiveWithAuthorization(payer, recipient, VALUE, 0, validBefore, NONCE, v, r, s);
 
         vm.prank(recipient);
@@ -127,10 +128,10 @@ contract MockUSDCTest is Test {
         (uint8 cv, bytes32 cr, bytes32 cs) = vm.sign(PAYER_PK, cancelDigest);
 
         vm.expectEmit(true, true, false, false, address(usdc));
-        emit MockUSDC.AuthorizationCanceled(payer, NONCE);
+        emit EIP3009.AuthorizationCanceled(payer, NONCE);
         usdc.cancelAuthorization(payer, NONCE, cv, cr, cs);
 
-        vm.expectRevert(abi.encodeWithSelector(MockUSDC.AuthorizationAlreadyUsed.selector, payer, NONCE));
+        vm.expectRevert(abi.encodeWithSelector(EIP3009.AuthorizationAlreadyUsed.selector, payer, NONCE));
         usdc.transferWithAuthorization(payer, recipient, VALUE, 0, validBefore, NONCE, tv, tr, ts);
     }
 
