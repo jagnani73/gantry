@@ -34,6 +34,7 @@ const EnvSchema = z.object({
   INTENT_TTL_SECONDS: z.coerce.number().min(60).default(600),
   DB_PATH: z.string().default("./gantry.db"),
   DEFAULT_TOKEN: z.enum(["MUSDC", "USDC", "XSGD"]).default("MUSDC"),
+  ORDER_TOKEN: z.enum(["MUSDC", "USDC"]).optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -83,6 +84,10 @@ if (env.DEFAULT_TOKEN === "USDC" && !addresses.realUsdc) {
   console.error("DEFAULT_TOKEN=USDC is not available on this chain (no real USDC at 31337)");
   process.exit(1);
 }
+if (env.ORDER_TOKEN === "USDC" && !addresses.realUsdc) {
+  console.error("ORDER_TOKEN=USDC is not available on this chain (no real USDC at 31337)");
+  process.exit(1);
+}
 
 function requireRpcUrl(): string {
   if (env.CHAIN_ID === ANVIL_CHAIN_ID) return env.ANVIL_RPC_URL;
@@ -115,4 +120,6 @@ export const config = {
   intentTtlSeconds: env.INTENT_TTL_SECONDS,
   dbPath: resolve(backendRoot, env.DB_PATH),
   defaultToken: env.DEFAULT_TOKEN,
+  /** The x402 order asset: real Circle USDC whenever the chain has it. */
+  orderToken: env.ORDER_TOKEN ?? (addresses.realUsdc ? ("USDC" as const) : ("MUSDC" as const)),
 } as const;

@@ -10,6 +10,9 @@ import { merchantsRouter } from "./routes/merchants";
 import { intentsRouter } from "./routes/intents";
 import { eventsRouter } from "./routes/events";
 import { adminRouter } from "./routes/admin";
+import { facilitatorRouter } from "./routes/facilitator";
+import { ordersRouter } from "./routes/order";
+import { x402Middleware } from "./x402";
 
 const app = express();
 
@@ -21,6 +24,11 @@ app.use(merchantsRouter);
 app.use(intentsRouter);
 app.use(eventsRouter);
 app.use(adminRouter);
+app.use(facilitatorRouter);
+// The x402 middleware must wrap the order route: it 402-challenges unpaid
+// requests and only lets verified ones through to the handler below.
+app.use(x402Middleware);
+app.use(ordersRouter);
 
 app.use(errorMiddleware);
 
