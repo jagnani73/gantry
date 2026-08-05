@@ -19,6 +19,13 @@ catalog:
   typescript-eslint: ^8.0.0
   tsx: ^4.19.0
 
+minimumReleaseAgeExclude:
+  - '@x402/core@2.21.0'
+  - '@x402/evm@2.21.0'
+  - '@x402/express@2.21.0'
+  - '@x402/extensions@2.21.0'
+  - '@x402/fetch@2.21.0'
+
 onlyBuiltDependencies:
   - better-sqlite3
   - esbuild

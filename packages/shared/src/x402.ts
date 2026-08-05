@@ -88,7 +88,7 @@ export interface X402SupportedResponse {
   signers: Record<string, string[]>;
 }
 
-export function caip2(chainId: number): string {
+export function caip2(chainId: number): `eip155:${number}` {
   return `eip155:${chainId}`;
 }
 
