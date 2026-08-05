@@ -71,7 +71,18 @@ async function main() {
   console.log(`paying via unmodified @x402/fetch…`);
   const paid = await payFetch(orderUrl, { method: "POST" });
   console.log(`response: ${paid.status}`);
-  if (!paid.ok) throw new Error(`payment failed: ${await paid.text()}`);
+  if (!paid.ok) {
+    // Surface the decoded failure: a rejected retry carries the reason in the
+    // fresh challenge's error field (verify) or PAYMENT-RESPONSE (settle).
+    const rechallenge = paid.headers.get(PAYMENT_REQUIRED_HEADER);
+    if (rechallenge) console.error(`verify rejected: ${decodePaymentRequiredHeader(rechallenge).error}`);
+    const failedReceipt = paid.headers.get(PAYMENT_RESPONSE_HEADER);
+    if (failedReceipt) {
+      const r = decodePaymentResponseHeader(failedReceipt);
+      console.error(`settle failed: ${r.errorReason} — ${r.errorMessage ?? ""}`);
+    }
+    throw new Error(`payment failed: ${await paid.text()}`);
+  }
   console.log(`order: ${JSON.stringify(await paid.json())}`);
 
   // 4. The on-chain receipt travels in the PAYMENT-RESPONSE header.

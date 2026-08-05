@@ -17,6 +17,9 @@ import { validateExactPayment } from "./facilitator-core";
  * both the @x402 resource server and the HTTP route consume them.
  */
 
+const BALANCE_LAG_RETRIES = 4;
+const BALANCE_LAG_DELAY_MS = 1200;
+
 export function getSupported(): X402SupportedResponse {
   return {
     kinds: [{ x402Version: 2, scheme: "exact", network: caip2(config.chainId) }],
@@ -55,19 +58,21 @@ export async function verifyExact(
   }
 
   const { authorization } = validation.exact;
-  const [used, balance] = await Promise.all([
+  const readBalance = () =>
+    publicClient.readContract({
+      address: requirements.asset,
+      abi: eip3009TokenAbi,
+      functionName: "balanceOf",
+      args: [authorization.from],
+    });
+  const [used, firstBalance] = await Promise.all([
     publicClient.readContract({
       address: requirements.asset,
       abi: eip3009TokenAbi,
       functionName: "authorizationState",
       args: [authorization.from, authorization.nonce],
     }),
-    publicClient.readContract({
-      address: requirements.asset,
-      abi: eip3009TokenAbi,
-      functionName: "balanceOf",
-      args: [authorization.from],
-    }),
+    readBalance(),
   ]);
   if (used) {
     return {
@@ -76,6 +81,15 @@ export async function verifyExact(
       invalidMessage: "authorization nonce already consumed on-chain",
       payer: authorization.from,
     };
+  }
+
+  // A just-funded payer (faucet, fresh transfer) can read as broke on a
+  // lagging replica — same class M1's settle path retries. Re-read, bounded,
+  // before declaring insufficient_funds; the delay only taxes failures.
+  let balance = firstBalance;
+  for (let attempt = 0; balance < BigInt(authorization.value) && attempt < BALANCE_LAG_RETRIES; attempt++) {
+    await new Promise((r) => setTimeout(r, BALANCE_LAG_DELAY_MS));
+    balance = await readBalance();
   }
   if (balance < BigInt(authorization.value)) {
     return {
