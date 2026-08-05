@@ -46,8 +46,9 @@ export async function settle(params: SettleParams): Promise<SettleResponse> {
   const { v, r, s, yParity } = parseSignature(params.signature);
   const vNorm = v ?? BigInt(yParity + 27);
 
-  // RPC replicas can lag a block behind a just-created intent — a fresh
-  // intent may simulate as UnknownIntent for a second or two. Bounded retry.
+  // RPC replicas can lag a block: a just-created intent simulates as
+  // UnknownIntent, a just-minted balance as insufficient. Bounded retry on
+  // exactly those stale-state shapes; everything else throws immediately.
   let receipt;
   for (let attempt = 1; ; attempt++) {
     try {
@@ -60,7 +61,10 @@ export async function settle(params: SettleParams): Promise<SettleResponse> {
       break;
     } catch (err) {
       const decoded = decodeGantryError(err);
-      const staleState = decoded.kind === "custom" && decoded.name === "UnknownIntent";
+      const staleState =
+        (decoded.kind === "custom" &&
+          (decoded.name === "UnknownIntent" || decoded.name === "ERC20InsufficientBalance")) ||
+        (decoded.kind === "string" && /transfer amount exceeds balance/i.test(decoded.reason));
       if (!staleState || attempt >= 5) throw err;
       await new Promise((resolve) => setTimeout(resolve, 1200));
     }
