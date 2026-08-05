@@ -5,7 +5,7 @@
   "description": "Payer-agnostic payment rail on stablecoins — QR for humans, x402 for AI agents, one settlement contract.",
   "packageManager": "pnpm@11.15.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "test:contracts": "forge test --root packages/contracts",

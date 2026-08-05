@@ -17,7 +17,7 @@ for (const envFile of [
   if (existsSync(envFile)) process.loadEnvFile(envFile);
 }
 
-// Node ≥23.6 strips TS types natively, so the shared source imports directly.
+// Node ≥22.18 (or ≥23.6) strips TS types natively, so the shared source imports directly.
 const { BASE_SEPOLIA_ADDRESSES, BASE_SEPOLIA_RELAYER } = await import(
   "../packages/shared/src/addresses.ts"
 );
@@ -32,7 +32,6 @@ if (!adminToken) {
 
 const started = Date.now();
 
-const health = await fetch(`${backend}/health`).then((r) => r.json());
 const reset = await fetch(`${backend}/api/admin/reset`, {
   method: "POST",
   headers: { "x-admin-token": adminToken },
@@ -41,6 +40,12 @@ if (!reset.ok) {
   console.error(`reset failed: ${reset.status} ${await reset.text()}`);
   process.exit(1);
 }
+const healthRes = await fetch(`${backend}/health`);
+if (!healthRes.ok) {
+  console.error(`health check failed after reset: ${healthRes.status}`);
+  process.exit(1);
+}
+const health = await healthRes.json();
 
 let relayerEth = "?";
 if (process.env.BASE_SEPOLIA_RPC_URL) {
@@ -57,7 +62,7 @@ if (process.env.BASE_SEPOLIA_RPC_URL) {
   if (res.result) relayerEth = (Number(BigInt(res.result)) / 1e18).toFixed(4);
 }
 
-console.log(`✓ dashboard cleared, indexer cursor → block ${health.block} (chain ${health.chainId})
+console.log(`✓ dashboard cleared, indexer cursor → block ${health.indexerCursor} (chain ${health.chainId})
 relayer  ${BASE_SEPOLIA_RELAYER}  (${relayerEth} ETH)
 
 contracts (Base Sepolia)
