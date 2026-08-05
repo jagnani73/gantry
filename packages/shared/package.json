@@ -2,5 +2,21 @@
   "name": "@gantry/shared",
   "private": true,
   "version": "0.1.0",
-  "description": "Shared types, ABIs and addresses (placeholder until M1)."
+  "description": "Shared ABIs, addresses, types and helpers consumed by backend, web and agent.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/quote.test.ts src/handle.test.ts src/eip3009.test.ts"
+  },
+  "dependencies": {
+    "viem": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
 }

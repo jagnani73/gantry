@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": []
+  }
+}

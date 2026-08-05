@@ -2,5 +2,28 @@
   "name": "@gantry/backend",
   "private": true,
   "version": "0.1.0",
-  "description": "Merchant API, x402 facilitator, relayer and SSE indexer (placeholder until M1)."
+  "description": "Merchant API, relayer, SSE indexer (x402 facilitator lands in M2).",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "e2e:pay": "tsx scripts/e2e-pay.ts"
+  },
+  "dependencies": {
+    "@gantry/shared": "workspace:*",
+    "better-sqlite3": "^12.0.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "viem": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
 }
