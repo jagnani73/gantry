@@ -5,6 +5,8 @@ import { config } from "./config";
 import { assertTokenDomains, relayerAccount } from "./chain";
 import { errorMiddleware } from "./errors";
 import { healthRouter } from "./routes/health";
+import { merchantsRouter } from "./routes/merchants";
+import { intentsRouter } from "./routes/intents";
 
 const app = express();
 
@@ -12,6 +14,8 @@ app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
 app.use(express.json());
 
 app.use(healthRouter);
+app.use(merchantsRouter);
+app.use(intentsRouter);
 
 app.use(errorMiddleware);
 

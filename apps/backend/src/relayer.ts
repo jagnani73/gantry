@@ -23,6 +23,28 @@ export interface RelayedTx<T> {
   result: T;
 }
 
+/**
+ * The queue owns the relayer nonce. RPC nodes can lag right after a tx mines,
+ * so getTransactionCount alone races itself ("replacement tx underpriced");
+ * a local counter, resynced on failure, is deterministic.
+ */
+let nextNonce: number | null = null;
+
+async function claimNonce(): Promise<number> {
+  if (nextNonce === null) {
+    nextNonce = await publicClient.getTransactionCount({
+      address: relayerAccount.address,
+      blockTag: "pending",
+    });
+  }
+  return nextNonce;
+}
+
+function isNonceRace(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /nonce|underpriced|replacement|already known/i.test(message);
+}
+
 /** simulate → write → wait 1 conf, serialized. Simulation reverts surface as decodable viem errors. */
 export function sendRelayerTx<
   const TAbi extends Abi,
@@ -41,7 +63,20 @@ export function sendRelayerTx<
       functionName: params.functionName,
       args: params.args,
     } as Parameters<typeof publicClient.simulateContract>[0]);
-    const hash = await walletClient.writeContract(request);
+
+    let hash: `0x${string}`;
+    try {
+      hash = await walletClient.writeContract({ ...request, nonce: await claimNonce() });
+    } catch (err) {
+      if (!isNonceRace(err)) {
+        nextNonce = null;
+        throw err;
+      }
+      nextNonce = null; // resync once and retry
+      hash = await walletClient.writeContract({ ...request, nonce: await claimNonce() });
+    }
+    nextNonce = (nextNonce ?? 0) + 1;
+
     const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
     if (receipt.status !== "success") {
       throw new Error(`relayer tx reverted on-chain: ${hash}`);

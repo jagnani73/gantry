@@ -48,6 +48,65 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_settlements_block ON settlements (block_number, log_index);
 `);
 
+export interface IntentRow {
+  intent_id: string;
+  merchant_id: string;
+  handle: string;
+  token_in: string;
+  amount_in: string;
+  xsgd_amount: string;
+  rate: string;
+  expiry: number;
+  door: number;
+  status: string;
+  valid_before: number;
+  created_tx: string | null;
+  settle_tx: string | null;
+  created_at: number;
+}
+
+export interface SettlementRow {
+  tx_hash: string;
+  log_index: number;
+  intent_id: string;
+  merchant_id: string;
+  handle: string;
+  payer: string;
+  token_in: string;
+  amount_in: string;
+  xsgd_out: string;
+  fee_xsgd: string;
+  door: number;
+  block_number: number;
+  block_time: number;
+}
+
+const insertIntentStmt = db.prepare(`
+  INSERT OR REPLACE INTO intents (
+    intent_id, merchant_id, handle, token_in, amount_in, xsgd_amount, rate,
+    expiry, door, status, valid_before, created_tx, settle_tx, created_at
+  ) VALUES (
+    @intent_id, @merchant_id, @handle, @token_in, @amount_in, @xsgd_amount, @rate,
+    @expiry, @door, @status, @valid_before, @created_tx, @settle_tx, @created_at
+  )
+`);
+const getIntentStmt = db.prepare<[string], IntentRow>("SELECT * FROM intents WHERE intent_id = ?");
+const setIntentStatusStmt = db.prepare(
+  "UPDATE intents SET status = ?, settle_tx = COALESCE(?, settle_tx) WHERE intent_id = ?",
+);
+
+export function insertIntentRow(row: IntentRow): void {
+  insertIntentStmt.run(row);
+}
+
+export function getIntentRow(intentId: string): IntentRow | undefined {
+  return getIntentStmt.get(intentId.toLowerCase());
+}
+
+export function setIntentStatus(intentId: string, status: string, settleTx?: string): void {
+  setIntentStatusStmt.run(status, settleTx ?? null, intentId.toLowerCase());
+}
+
 const getMetaStmt = db.prepare<[string], { value: string }>("SELECT value FROM meta WHERE key = ?");
 const setMetaStmt = db.prepare(
   "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

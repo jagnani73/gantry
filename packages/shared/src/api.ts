@@ -77,6 +77,13 @@ export interface SettleRequest {
   payer: Address;
   /** 65-byte compact hex signature from signTypedData. */
   signature: Hex;
+  /**
+   * Signed authorization window; must byte-match what was signed. Optional —
+   * the backend falls back to its stored quote. Explicit values keep the
+   * settle path stateless for M2's facilitator.
+   */
+  validAfter?: string;
+  validBefore?: number;
 }
 
 export interface SettleResponse {

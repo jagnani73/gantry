@@ -50,12 +50,16 @@ export function buildTransferAuthorization(params: TransferAuthorizationParams) 
   } as const;
 }
 
-/** JSON-safe form: every uint256 crosses HTTP as a decimal string. */
+/**
+ * JSON-safe form: every uint256 crosses HTTP as a decimal string.
+ * `from` is absent when the backend mints the quote (payer unknown at intent
+ * creation) — the client supplies it when reviving.
+ */
 export interface WireTypedData {
   domain: Eip712TokenDomain;
   primaryType: "TransferWithAuthorization";
   message: {
-    from: Address;
+    from?: Address;
     to: Address;
     value: string;
     validAfter: string;
@@ -64,12 +68,14 @@ export interface WireTypedData {
   };
 }
 
-export function toWireTypedData(params: TransferAuthorizationParams): WireTypedData {
+export function toWireTypedData(
+  params: Omit<TransferAuthorizationParams, "from"> & { from?: Address },
+): WireTypedData {
   return {
     domain: params.domain,
     primaryType: "TransferWithAuthorization",
     message: {
-      from: params.from,
+      ...(params.from ? { from: params.from } : {}),
       to: params.to,
       value: params.value.toString(),
       validAfter: params.validAfter.toString(),
@@ -79,11 +85,13 @@ export function toWireTypedData(params: TransferAuthorizationParams): WireTypedD
   };
 }
 
-/** The single string→bigint boundary on the client. */
-export function reviveTypedData(wire: WireTypedData) {
+/** The single string→bigint boundary on the client. `from` = the signing payer. */
+export function reviveTypedData(wire: WireTypedData, from?: Address) {
+  const payer = from ?? wire.message.from;
+  if (!payer) throw new Error("reviveTypedData: payer address required (wire has no `from`)");
   return buildTransferAuthorization({
     domain: wire.domain,
-    from: wire.message.from,
+    from: payer,
     to: wire.message.to,
     value: BigInt(wire.message.value),
     validAfter: BigInt(wire.message.validAfter),

@@ -30,6 +30,15 @@ test("wire round-trip preserves the EIP-712 digest", () => {
   assert.equal(hashTypedData(direct), hashTypedData(revived));
 });
 
+test("server wire form omits from; client must supply it", () => {
+  const { from, ...rest } = params;
+  const wire = toWireTypedData(rest);
+  assert.equal(wire.message.from, undefined);
+  const revived = reviveTypedData(wire, from);
+  assert.equal(hashTypedData(revived), hashTypedData(buildTransferAuthorization(params)));
+  assert.throws(() => reviveTypedData(wire));
+});
+
 test("typed data pins the settlement invariants", () => {
   const td = buildTransferAuthorization(params);
   assert.equal(td.primaryType, "TransferWithAuthorization");
