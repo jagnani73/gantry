@@ -5,7 +5,6 @@ import {
   gantryCoreAbi,
   tokenIdByAddress,
   type SettlementEvent,
-  type IntentLifecycleEvent,
 } from "@gantry/shared";
 import { publicClient, wsClient } from "./chain";
 import { config } from "./config";
@@ -15,6 +14,7 @@ import {
   getIntentRow,
   setIntentStatus,
   insertSettlementRow,
+  clearCache,
   type SettlementRow,
 } from "./db";
 import { broadcast } from "./sse";
@@ -23,8 +23,11 @@ import { broadcast } from "./sse";
  * Two delivery paths, one correctness story:
  *  - watchContractEvent over WS = the <2s latency path (lossy: WS can drop);
  *  - a 15s getLogs sweep from the persisted cursor = the correctness backstop
- *    (also does startup backfill). Only the sweep advances the cursor.
- * SQLite PK dedup makes overlap harmless.
+ *    (also does startup backfill).
+ * The sweep owns the cursor; admin reset (resetIndexer) jumps it to head under
+ * a new epoch, aborting any in-flight sweep before it can re-insert cleared
+ * rows or rewind the cursor. SQLite PK dedup makes watch/sweep overlap
+ * harmless for settlements; intent lifecycle logs only update cached status.
  */
 
 type CoreLog = {
@@ -102,29 +105,6 @@ async function processLog(log: CoreLog): Promise<void> {
     const args = log.args as { intentId: Hex };
     const row = getIntentRow(args.intentId);
     if (row && row.status === "pending") setIntentStatus(args.intentId, "cancelled");
-    const payload: IntentLifecycleEvent = {
-      type: "cancelled",
-      intentId: args.intentId,
-      merchantId: (row?.merchant_id ?? "0x") as Hex,
-      handle: row?.handle ?? null,
-      xsgdAmount: row?.xsgd_amount ?? "0",
-      door: doorToWire((row?.door ?? Door.Human) as Door),
-    };
-    broadcast("intent", null, payload);
-    return;
-  }
-
-  if (log.eventName === "IntentCreated") {
-    const args = log.args as { intentId: Hex; merchantId: Hex; xsgdAmount: bigint; door: number };
-    const payload: IntentLifecycleEvent = {
-      type: "created",
-      intentId: args.intentId,
-      merchantId: args.merchantId,
-      handle: getIntentRow(args.intentId)?.handle ?? null,
-      xsgdAmount: args.xsgdAmount.toString(),
-      door: doorToWire(args.door as Door),
-    };
-    broadcast("intent", null, payload);
   }
 }
 
@@ -149,9 +129,12 @@ export function settlementEventOf(row: SettlementRow): SettlementEvent {
 const SWEEP_CHUNK = 9_000n; // Alchemy free tier caps getLogs ranges at 10k blocks
 
 let sweeping = false;
+let resetEpoch = 0;
+
 async function sweep(): Promise<void> {
   if (sweeping) return;
   sweeping = true;
+  const epoch = resetEpoch;
   try {
     const head = await publicClient.getBlockNumber();
     let from = (getCursor() ?? config.deployBlock - 1n) + 1n;
@@ -163,7 +146,11 @@ async function sweep(): Promise<void> {
         fromBlock: from,
         toBlock: to,
       });
-      for (const log of logs) await processLog(log as unknown as CoreLog);
+      for (const log of logs) {
+        if (epoch !== resetEpoch) return; // reset landed mid-sweep — abandon
+        await processLog(log as unknown as CoreLog);
+      }
+      if (epoch !== resetEpoch) return;
       setCursor(to);
       from = to + 1n;
     }
@@ -208,7 +195,14 @@ export async function startIndexer(): Promise<void> {
   console.log(`indexer running (cursor ${getCursor() ?? config.deployBlock})`);
 }
 
-/** Admin reset support: jump the cursor to the current head. */
-export async function resetCursorToHead(): Promise<void> {
-  setCursor(await publicClient.getBlockNumber());
+/**
+ * Admin reset: clear the cache and jump the cursor to the current head under a
+ * new epoch. Head is fetched first so a failed RPC call leaves the cache
+ * intact instead of cleared-but-rewound.
+ */
+export async function resetIndexer(): Promise<void> {
+  const head = await publicClient.getBlockNumber();
+  resetEpoch++;
+  clearCache();
+  setCursor(head);
 }

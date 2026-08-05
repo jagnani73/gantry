@@ -28,7 +28,7 @@ export const relayerAccount = privateKeyToAccount(config.relayerPrivateKey);
 export const walletClient = createWalletClient({
   chain,
   account: relayerAccount,
-  transport: http(config.rpcUrl),
+  transport: fallback([http(config.rpcUrl), http(config.rpcFallbackUrl)]),
 });
 
 const domainReadAbi = [

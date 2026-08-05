@@ -18,10 +18,6 @@ export function removeSseClient(id: number): void {
   clients.delete(id);
 }
 
-export function sseClientCount(): number {
-  return clients.size;
-}
-
 export function writeSseEvent(
   res: Response,
   event: string,

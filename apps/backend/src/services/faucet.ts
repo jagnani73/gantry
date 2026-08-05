@@ -32,7 +32,6 @@ export async function faucetMint(address: Address): Promise<FaucetResponse> {
   if (last && Date.now() - last < COOLDOWN_MS) {
     throw new ApiError(429, "FaucetCooldown", "faucet cooldown active — try again shortly");
   }
-  lastMint.set(key, Date.now());
 
   const { receipt } = await sendRelayerTx({
     address: config.addresses.mockUsdc,
@@ -40,5 +39,8 @@ export async function faucetMint(address: Address): Promise<FaucetResponse> {
     functionName: "mint",
     args: [address, MINT_AMOUNT],
   });
+  // Cooldown only after a successful mint — a failed mint must surface its
+  // real error on retry, not a bogus 429.
+  lastMint.set(key, Date.now());
   return { txHash: receipt.transactionHash, minted: MINT_AMOUNT.toString() };
 }

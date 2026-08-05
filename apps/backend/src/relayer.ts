@@ -1,21 +1,14 @@
 import type { Abi, Address, ContractFunctionArgs, ContractFunctionName, TransactionReceipt } from "viem";
 import { publicClient, walletClient, relayerAccount } from "./chain";
+import { createFifoQueue } from "./queue";
 
 /**
  * Serial FIFO queue around every relayer write: the relayer key is the only
- * gas key, and serialization makes nonce handling trivial (fresh per tx) and
- * immune to desync after reverts. Demo throughput never needs parallelism.
+ * gas key, and serialization makes nonce handling trivial (a single owned
+ * counter, resynced on failure) and immune to desync after reverts. Demo
+ * throughput never needs parallelism.
  */
-let tail: Promise<unknown> = Promise.resolve();
-
-function enqueue<T>(job: () => Promise<T>): Promise<T> {
-  const run = tail.then(job, job);
-  tail = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
-}
+const enqueue = createFifoQueue();
 
 export interface RelayedTx<T> {
   receipt: TransactionReceipt;
@@ -77,7 +70,21 @@ export function sendRelayerTx<
     }
     nextNonce = (nextNonce ?? 0) + 1;
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+    let receipt: TransactionReceipt;
+    try {
+      // Base blocks every ~2s — a 20s cap bounds head-of-line blocking; the
+      // default 180s would wedge the whole queue behind one stuck tx.
+      receipt = await publicClient.waitForTransactionReceipt({
+        hash,
+        confirmations: 1,
+        timeout: 20_000,
+      });
+    } catch (err) {
+      // The tx may or may not still mine — resync the nonce before the next
+      // job instead of building on a possibly-missing nonce forever.
+      nextNonce = null;
+      throw err;
+    }
     if (receipt.status !== "success") {
       throw new Error(`relayer tx reverted on-chain: ${hash}`);
     }
