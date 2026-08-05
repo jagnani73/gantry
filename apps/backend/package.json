@@ -9,7 +9,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/db.test.ts test/queue.test.ts test/facilitator-core.test.ts",
-    "e2e:pay": "tsx scripts/e2e-pay.ts"
+    "e2e:pay": "tsx scripts/e2e-pay.ts",
+    "x402:buy": "tsx scripts/x402-buy.ts"
   },
   "dependencies": {
     "@gantry/shared": "workspace:*",
