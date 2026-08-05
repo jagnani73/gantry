@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/db.test.ts test/queue.test.ts",
     "e2e:pay": "tsx scripts/e2e-pay.ts"
   },
   "dependencies": {
