@@ -18,3 +18,9 @@ broadcast/
 # Misc
 .DS_Store
 *.log
+
+# Runtime caches
+*.db
+*.db-shm
+*.db-wal
+*.tsbuildinfo
