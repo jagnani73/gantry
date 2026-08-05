@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { erc20Abi } from "viem";
 import { useAccount, usePublicClient, useSignTypedData, useSwitchChain } from "wagmi";
 import { baseSepolia } from "wagmi/chains";
@@ -28,22 +28,23 @@ type Step =
   | { name: "entry" }
   | { name: "quoting" }
   | { name: "review"; intent: IntentResponse }
+  | { name: "preparing"; intent: IntentResponse }
   | { name: "funding"; intent: IntentResponse }
   | { name: "signing"; intent: IntentResponse }
   | { name: "settling"; intent: IntentResponse }
   | { name: "settled"; intent: IntentResponse; txHash: string; xsgdOut: string }
   | { name: "failed"; intent: IntentResponse | null; errorName: string; message: string };
 
+// Computed during render (not effect-seeded state) so a fresh quote never
+// paints a one-frame "expired" flash before the first tick lands.
 function useCountdown(expiry: number | undefined): number {
-  const [left, setLeft] = useState(0);
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
     if (!expiry) return;
-    const tick = () => setLeft(Math.max(0, expiry - Math.floor(Date.now() / 1000)));
-    tick();
-    const t = setInterval(tick, 1000);
+    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(t);
   }, [expiry]);
-  return left;
+  return expiry ? Math.max(0, expiry - now) : 0;
 }
 
 export function PayClient({ handle }: { handle: string }) {
@@ -86,6 +87,16 @@ export function PayClient({ handle }: { handle: string }) {
   }, [handle]);
 
   const fail = useCallback((intent: IntentResponse | null, err: unknown) => {
+    // A settle that raced a retry (or a dropped response + retry) comes back
+    // as 409 IntentAlreadySettled WITH the tx hash — that's a success, and
+    // rendering it as failure while the dashboard chimes is the worst split.
+    if (intent && err instanceof ApiClientError && err.errorName === "IntentAlreadySettled") {
+      const txHash = (err.args as { txHash?: string } | undefined)?.txHash;
+      if (txHash) {
+        setStep({ name: "settled", intent, txHash, xsgdOut: intent.xsgdAmount });
+        return;
+      }
+    }
     setStep({
       name: "failed",
       intent,
@@ -119,8 +130,14 @@ export function PayClient({ handle }: { handle: string }) {
     }
   }, [fail]);
 
+  const confirmInFlight = useRef(false);
+
   const confirm = useCallback(
     async (intent: IntentResponse) => {
+      if (confirmInFlight.current) return; // phone double-tap guard
+      if (!burner && !walletAddress) return; // ConnectButton shown instead
+      confirmInFlight.current = true;
+      setStep({ name: "preparing", intent });
       try {
         let payer: `0x${string}`;
         let signature: `0x${string}`;
@@ -150,8 +167,7 @@ export function PayClient({ handle }: { handle: string }) {
           setStep({ name: "signing", intent });
           signature = await account.signTypedData(reviveTypedData(intent.typedData, payer));
         } else {
-          if (!walletAddress) return; // ConnectButton shown instead
-          payer = walletAddress;
+          payer = walletAddress!;
           if (chainId !== baseSepolia.id) {
             await switchChainAsync({ chainId: baseSepolia.id });
           }
@@ -168,6 +184,8 @@ export function PayClient({ handle }: { handle: string }) {
         setStep({ name: "settled", intent, txHash: settled.txHash, xsgdOut: settled.xsgdOut });
       } catch (err) {
         fail(intent, err);
+      } finally {
+        confirmInFlight.current = false;
       }
     },
     [burner, chainId, fail, publicClient, signTypedDataAsync, switchChainAsync, walletAddress],
@@ -181,6 +199,8 @@ export function PayClient({ handle }: { handle: string }) {
     switch (step.name) {
       case "quoting":
         return "Locking your rate…";
+      case "preparing":
+        return "Preparing payment…";
       case "funding":
         return "Funding demo wallet…";
       case "signing":
@@ -214,7 +234,14 @@ export function PayClient({ handle }: { handle: string }) {
       )}
 
       {step.name === "entry" && (
-        <AmountPad value={amount} onChange={setAmount} onSubmit={quote} />
+        <AmountPad
+          value={amount}
+          onChange={setAmount}
+          onSubmit={quote}
+          // Faucet mints 100 USDC ≈ S$134 — cap below it so burner payments can't strand.
+          max={burner ? 130 : 9999}
+          maxHint={burner ? "Demo wallet caps at S$130" : undefined}
+        />
       )}
 
       {busyLabel && (
@@ -324,7 +351,8 @@ export function PayClient({ handle }: { handle: string }) {
             </div>
             <p className="font-semibold">{step.errorName}</p>
             <p className="text-sm text-muted-foreground">{step.message}</p>
-            {step.intent && step.errorName === "IntentExpired" ? (
+            {step.intent &&
+            (step.errorName === "IntentExpired" || step.errorName === "IntentWasCancelled") ? (
               <Button onClick={() => requote(step.intent!)}>Get new quote</Button>
             ) : step.intent ? (
               <Button onClick={() => setStep({ name: "review", intent: step.intent! })}>

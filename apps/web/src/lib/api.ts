@@ -3,7 +3,6 @@ import type {
   CreateIntentRequest,
   FaucetResponse,
   IntentResponse,
-  IntentStatusResponse,
   MerchantResponse,
   SettleRequest,
   SettleResponse,
@@ -32,6 +31,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     throw new ApiClientError(res.status, (body as ApiErrorBody | undefined)?.error);
   }
+  if (body === undefined) {
+    // A 200 with a non-JSON body (captive portal, wrong URL) must surface as
+    // an error card, not crash the next render with undefined data.
+    throw new ApiClientError(res.status, {
+      name: "BadResponse",
+      message: "non-JSON response from backend — check NEXT_PUBLIC_BACKEND_URL",
+    });
+  }
   return body as T;
 }
 
@@ -39,7 +46,6 @@ export const api = {
   merchant: (handle: string) => call<MerchantResponse>(`/api/merchants/${handle}`),
   createIntent: (req: CreateIntentRequest) =>
     call<IntentResponse>("/api/intents", { method: "POST", body: JSON.stringify(req) }),
-  intentStatus: (intentId: string) => call<IntentStatusResponse>(`/api/intents/${intentId}`),
   settle: (intentId: string, req: SettleRequest) =>
     call<SettleResponse>(`/api/intents/${intentId}/settle`, {
       method: "POST",

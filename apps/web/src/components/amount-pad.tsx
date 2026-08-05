@@ -5,18 +5,22 @@ import { Card, CardContent } from "@/components/ui/card";
 
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"] as const;
 
-function isValidAmount(value: string): boolean {
-  return /^\d+(\.\d{1,2})?$/.test(value) && Number(value) > 0;
+function isValidAmount(value: string, max: number): boolean {
+  return /^\d+(\.\d{1,2})?$/.test(value) && Number(value) > 0 && Number(value) <= max;
 }
 
 export function AmountPad({
   value,
   onChange,
   onSubmit,
+  max = 9999,
+  maxHint,
 }: {
   value: string;
   onChange: (next: string) => void;
   onSubmit: () => void;
+  max?: number;
+  maxHint?: string;
 }) {
   const press = (key: (typeof KEYS)[number]) => {
     if (key === "⌫") {
@@ -53,9 +57,19 @@ export function AmountPad({
             </Button>
           ))}
         </div>
-        <Button size="lg" className="w-full" disabled={!isValidAmount(value)} onClick={onSubmit}>
-          Pay{value && isValidAmount(value) ? ` S$${value}` : ""}
+        <Button
+          size="lg"
+          className="w-full"
+          disabled={!isValidAmount(value, max)}
+          onClick={onSubmit}
+        >
+          Pay{value && isValidAmount(value, max) ? ` S$${value}` : ""}
         </Button>
+        {value && Number(value) > max && (
+          <p className="text-center text-xs text-muted-foreground">
+            {maxHint ?? `Maximum S$${max}`}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

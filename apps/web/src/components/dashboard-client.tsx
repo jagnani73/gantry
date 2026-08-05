@@ -20,6 +20,7 @@ type FeedRow = SettlementEvent & { eventId: string; live: boolean };
 export function DashboardClient() {
   const [rows, setRows] = useState<FeedRow[]>([]);
   const [connected, setConnected] = useState(false);
+  const [dead, setDead] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
   const seen = useRef(new Set<string>());
   const connectedAt = useRef(0);
@@ -32,7 +33,12 @@ export function DashboardClient() {
       connectedAt.current = Date.now();
       setConnected(true);
     };
-    source.onerror = () => setConnected(false);
+    source.onerror = () => {
+      setConnected(false);
+      // Browsers auto-retry network drops but permanently close on non-200/CORS
+      // failures — "reconnecting…" would then be a lie that eats setup time.
+      if (source.readyState === EventSource.CLOSED) setDead(true);
+    };
 
     source.addEventListener("settlement", (event) => {
       const data = JSON.parse(event.data) as SettlementEvent;
@@ -56,7 +62,7 @@ export function DashboardClient() {
     const gross = rows.reduce((sum, row) => sum + BigInt(row.xsgdOut), 0n);
     const fees = rows.reduce((sum, row) => sum + BigInt(row.feeXsgd), 0n);
     const cardFees = (gross * BigInt(CARD_FEE_BPS)) / 10_000n;
-    return { count: rows.length, gross, fees, saved: cardFees - fees };
+    return { count: rows.length, net: gross - fees, saved: cardFees - fees };
   }, [rows]);
 
   const merchantName = DEMO_MERCHANTS["ah-hock-chicken-rice"]?.displayName ?? "Merchant";
@@ -73,7 +79,7 @@ export function DashboardClient() {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={connected ? "default" : "destructive"}>
-              {connected ? "live" : "reconnecting…"}
+              {connected ? "live" : dead ? "disconnected — check backend URL" : "reconnecting…"}
             </Badge>
             <Button
               variant="outline"
@@ -91,15 +97,15 @@ export function DashboardClient() {
         <div className="grid grid-cols-3 gap-3">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Payments today</CardDescription>
+              <CardDescription>Payments</CardDescription>
               <CardTitle className="text-2xl tabular-nums">{summary.count}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Collected (XSGD)</CardDescription>
+              <CardDescription>Net collected (XSGD)</CardDescription>
               <CardTitle className="text-2xl tabular-nums">
-                {formatUnits6(summary.gross)}
+                {formatUnits6(summary.net)}
               </CardTitle>
             </CardHeader>
           </Card>
