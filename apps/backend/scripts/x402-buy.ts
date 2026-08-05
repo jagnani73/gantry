@@ -1,8 +1,9 @@
 /**
  * Standard-interop proof: pays the x402-protected order endpoint with the
- * UNMODIFIED vanilla @x402/fetch client — zero Gantry code on the payment
- * path. The script's only Gantry imports are the vendored codec (to pretty-
- * print the 402 challenge) and addresses for the faucet fallback.
+ * UNMODIFIED vanilla @x402/fetch client. The paid request itself is pure
+ * @x402/fetch; the only Gantry imports are the vendored codec (decoding the
+ * 402 challenge and the PAYMENT-RESPONSE receipt for display) and
+ * display/explorer helpers.
  *
  * Usage: pnpm --filter @gantry/backend x402:buy [-- --sgd 19.50 --handle ah-hock-chicken-rice]
  * Env: X402_PAYER_KEY (optional; fresh random key when unset — fine for MUSDC,
@@ -50,23 +51,30 @@ async function main() {
   console.log(`  ${formatUnits6(BigInt(offer.amount), 6)} of ${offer.asset} → payTo ${offer.payTo}`);
   console.log(`  domain ${JSON.stringify(offer.extra)} timeout ${offer.maxTimeoutSeconds}s`);
 
-  // 2. Fund the burner when the offer is in MockUSDC; real USDC keys must
-  //    arrive pre-funded (Circle faucet).
-  const faucet = await fetch(`${api}/api/faucet`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ address: payer.address }),
-  });
-  if (faucet.ok) {
-    const minted = (await faucet.json()) as { minted: string };
-    console.log(`faucet: minted ${formatUnits6(BigInt(minted.minted))} MUSDC`);
+  // 2. The faucet mints MockUSDC only — useless when the offer is priced in
+  //    real Circle USDC (keyed off the offer's EIP-712 domain name).
+  if (offer.extra["name"] === "Mock USDC") {
+    try {
+      const faucet = await fetch(`${api}/api/faucet`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address: payer.address }),
+      });
+      if (faucet.ok) {
+        const minted = (await faucet.json()) as { minted: string };
+        console.log(`faucet: minted ${formatUnits6(BigInt(minted.minted))} MUSDC`);
+      } else {
+        console.log(`faucet refused (${faucet.status}): ${await faucet.text()} — continuing anyway`);
+      }
+    } catch (err) {
+      console.log(`faucet unreachable (${err instanceof Error ? err.message : err}) — continuing anyway`);
+    }
   } else {
-    console.log(`faucet unavailable (${faucet.status}) — assuming pre-funded payer`);
+    console.log(`offer is ${String(offer.extra["name"])} — fund X402_PAYER_KEY via the Circle faucet`);
   }
 
   // 3. The vanilla client: standard scheme registration, then one call.
-  const network = offer.network as `${string}:${string}`; // owned type is string; SDK wants CAIP-2
-  const client = new x402Client().register(network, new ExactEvmScheme(toClientEvmSigner(payer)));
+  const client = new x402Client().register(offer.network, new ExactEvmScheme(toClientEvmSigner(payer)));
   const payFetch = wrapFetchWithPayment(fetch, client);
   console.log(`paying via unmodified @x402/fetch…`);
   const paid = await payFetch(orderUrl, { method: "POST" });
@@ -74,12 +82,17 @@ async function main() {
   if (!paid.ok) {
     // Surface the decoded failure: a rejected retry carries the reason in the
     // fresh challenge's error field (verify) or PAYMENT-RESPONSE (settle).
-    const rechallenge = paid.headers.get(PAYMENT_REQUIRED_HEADER);
-    if (rechallenge) console.error(`verify rejected: ${decodePaymentRequiredHeader(rechallenge).error}`);
-    const failedReceipt = paid.headers.get(PAYMENT_RESPONSE_HEADER);
-    if (failedReceipt) {
-      const r = decodePaymentResponseHeader(failedReceipt);
-      console.error(`settle failed: ${r.errorReason} — ${r.errorMessage ?? ""}`);
+    // Guard the decodes — a malformed header must not mask the real failure.
+    try {
+      const rechallenge = paid.headers.get(PAYMENT_REQUIRED_HEADER);
+      if (rechallenge) console.error(`verify rejected: ${decodePaymentRequiredHeader(rechallenge).error}`);
+      const failedReceipt = paid.headers.get(PAYMENT_RESPONSE_HEADER);
+      if (failedReceipt) {
+        const r = decodePaymentResponseHeader(failedReceipt);
+        console.error(`settle failed: ${r.errorReason} — ${r.errorMessage ?? ""}`);
+      }
+    } catch (decodeErr) {
+      console.error(`(could not decode failure headers: ${decodeErr instanceof Error ? decodeErr.message : decodeErr})`);
     }
     throw new Error(`payment failed: ${await paid.text()}`);
   }
@@ -94,6 +107,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
+  // Full object: @x402/fetch wraps causes, and the stack is the only pointer
+  // back into the SDK when payload creation fails.
+  console.error(err);
   process.exit(1);
 });
