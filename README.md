@@ -24,10 +24,10 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 - [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0))
 - [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
-- [ ] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` + `gantry-pbm` schemes)
+- [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` scheme; unmodified `@x402/fetch` pays end-to-end — `gantry-pbm` lands in M3)
 - [ ] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents
 - [ ] `GantrySwap` — any-stablecoin-in → XSGD-out atomic FX
-- [x] Merchant dashboard — live SSE feed with Human/Agent badges (agent rows land in M2/M3)
+- [x] Merchant dashboard — live SSE feed with Human/Agent badges, one feed for both doors
 - [ ] Claude-powered agent CLI paying (and getting rejected) autonomously
 
 ### Deployed (Base Sepolia, `eip155:84532`)
@@ -46,7 +46,7 @@ Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318
 ```
 packages/contracts   Foundry — GantryCore, AgentPBMWallet (M3), GantrySwap (M4), mocks
 packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-3009 typed data, API types
-apps/backend         Express — merchant API, relayer, SSE indexer; x402 facilitator lands in M2
+apps/backend         Express — merchant API, relayer, SSE indexer, x402 facilitator + protected order route
 apps/web             Next.js — payer page /pay/[handle], printable QR /qr/[handle], dashboard
 apps/agent           Claude tool-runner CLI agent (M3)
 ```
@@ -62,6 +62,7 @@ pnpm dev                                         # backend :4000 + web :3000 (bi
 
 - **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or `NEXT_PUBLIC_BURNER=1`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
+- **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
 - **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache and prints addresses + demo URLs (<1s; chain state is reused).
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`.
 
