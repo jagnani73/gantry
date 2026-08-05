@@ -18,6 +18,8 @@ export interface IntentRow {
   created_tx: string | null;
   settle_tx: string | null;
   created_at: number;
+  /** x402 payer behind a facilitator-bridged intent (on-chain payer = relayer). */
+  agent_payer: string | null;
 }
 
 export interface SettlementRow {
@@ -34,6 +36,7 @@ export interface SettlementRow {
   door: number;
   block_number: number;
   block_time: number;
+  agent_payer: string | null;
 }
 
 /** Cache only — chain is the source of truth. Deleting the file is a valid
@@ -63,7 +66,8 @@ export function createDatabase(path: string) {
       valid_before INTEGER NOT NULL,
       created_tx   TEXT,
       settle_tx    TEXT,
-      created_at   INTEGER NOT NULL
+      created_at   INTEGER NOT NULL,
+      agent_payer  TEXT
     );
 
     CREATE TABLE IF NOT EXISTS settlements (
@@ -80,19 +84,29 @@ export function createDatabase(path: string) {
       door         INTEGER NOT NULL,
       block_number INTEGER NOT NULL,
       block_time   INTEGER NOT NULL,
+      agent_payer  TEXT,
       PRIMARY KEY (tx_hash, log_index)
     );
 
     CREATE INDEX IF NOT EXISTS idx_settlements_block ON settlements (block_number, log_index);
   `);
 
+  // The cache is disposable, but ALTER beats deleting a db mid-demo: bring
+  // pre-M2 files up to the current shape in place.
+  for (const table of ["intents", "settlements"]) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "agent_payer")) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN agent_payer TEXT`);
+    }
+  }
+
   const insertIntentStmt = db.prepare(`
     INSERT OR REPLACE INTO intents (
       intent_id, merchant_id, handle, token_in, amount_in, xsgd_amount, rate,
-      expiry, door, status, valid_before, created_tx, settle_tx, created_at
+      expiry, door, status, valid_before, created_tx, settle_tx, created_at, agent_payer
     ) VALUES (
       @intent_id, @merchant_id, @handle, @token_in, @amount_in, @xsgd_amount, @rate,
-      @expiry, @door, @status, @valid_before, @created_tx, @settle_tx, @created_at
+      @expiry, @door, @status, @valid_before, @created_tx, @settle_tx, @created_at, @agent_payer
     )
   `);
   const getIntentStmt = db.prepare<[string], IntentRow>(
@@ -101,13 +115,16 @@ export function createDatabase(path: string) {
   const setIntentStatusStmt = db.prepare(
     "UPDATE intents SET status = ?, settle_tx = COALESCE(?, settle_tx) WHERE intent_id = ?",
   );
+  const setIntentAgentPayerStmt = db.prepare(
+    "UPDATE intents SET agent_payer = ? WHERE intent_id = ?",
+  );
   const insertSettlementStmt = db.prepare(`
     INSERT OR IGNORE INTO settlements (
       tx_hash, log_index, intent_id, merchant_id, handle, payer, token_in,
-      amount_in, xsgd_out, fee_xsgd, door, block_number, block_time
+      amount_in, xsgd_out, fee_xsgd, door, block_number, block_time, agent_payer
     ) VALUES (
       @tx_hash, @log_index, @intent_id, @merchant_id, @handle, @payer, @token_in,
-      @amount_in, @xsgd_out, @fee_xsgd, @door, @block_number, @block_time
+      @amount_in, @xsgd_out, @fee_xsgd, @door, @block_number, @block_time, @agent_payer
     )
   `);
   const recentSettlementsStmt = db.prepare<[number], SettlementRow>(
@@ -145,6 +162,10 @@ export function createDatabase(path: string) {
       setIntentStatusStmt.run(status, settleTx ?? null, intentId.toLowerCase());
     },
 
+    setIntentAgentPayer(intentId: string, agentPayer: string): void {
+      setIntentAgentPayerStmt.run(agentPayer.toLowerCase(), intentId.toLowerCase());
+    },
+
     /** Returns true when the row is new (dedup across watch + sweep paths). */
     insertSettlementRow(row: SettlementRow): boolean {
       return (
@@ -154,6 +175,7 @@ export function createDatabase(path: string) {
           merchant_id: row.merchant_id.toLowerCase(),
           payer: row.payer.toLowerCase(),
           token_in: row.token_in.toLowerCase(),
+          agent_payer: row.agent_payer?.toLowerCase() ?? null,
         }).changes > 0
       );
     },

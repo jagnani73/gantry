@@ -126,7 +126,11 @@ export interface SettlementEvent {
   intentId: Hex;
   merchantId: Hex;
   handle: string;
+  /** On-chain payer from IntentSettled — the relayer for bridged x402 rows. */
   payer: Address;
+  /** The x402 payer when the facilitator bridged a vanilla exact payment
+   * (funds hopped agent → relayer → core; on-chain payer is the relayer). */
+  agentPayer?: Address;
   tokenIn: Address;
   tokenSymbol: TokenId | null;
   amountIn: string;

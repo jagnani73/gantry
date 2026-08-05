@@ -98,6 +98,7 @@ export async function createIntent(
     created_tx: receipt.transactionHash,
     settle_tx: null,
     created_at: Number(block.timestamp),
+    agent_payer: null,
   };
   insertIntentRow(row);
 

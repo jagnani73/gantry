@@ -9,6 +9,7 @@ export const {
   insertIntentRow,
   getIntentRow,
   setIntentStatus,
+  setIntentAgentPayer,
   insertSettlementRow,
   recentSettlements,
   settlementsAfter,

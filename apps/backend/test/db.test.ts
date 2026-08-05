@@ -28,6 +28,7 @@ function settlement(block: number, logIndex: number): SettlementRow {
     door: 0,
     block_number: block,
     block_time: 1_785_900_000 + block,
+    agent_payer: null,
   };
 }
 
@@ -79,11 +80,17 @@ test("intent rows normalize ids to lowercase on write and read", () => {
     created_tx: "0xcreate",
     settle_tx: null,
     created_at: 1_785_900_000,
+    agent_payer: null,
   };
   store.insertIntentRow(row);
   const got = store.getIntentRow("0xAbCdEf"); // checksummed lookup must hit
   assert.equal(got?.intent_id, "0xabcdef");
   assert.equal(got?.token_in, "0xtoken");
+});
+
+test("setIntentAgentPayer records the bridged x402 payer lowercased", () => {
+  store.setIntentAgentPayer("0xABCDEF", "0xAgentPayer");
+  assert.equal(store.getIntentRow("0xabcdef")?.agent_payer, "0xagentpayer");
 });
 
 test("setIntentStatus preserves settle_tx via COALESCE", () => {

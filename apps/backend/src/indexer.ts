@@ -78,8 +78,8 @@ async function processLog(log: CoreLog): Promise<void> {
       feeXsgd: bigint;
       door: number;
     };
-    const handle =
-      getIntentRow(args.intentId)?.handle ?? (await resolveHandle(args.merchantId));
+    const cached = getIntentRow(args.intentId);
+    const handle = cached?.handle ?? (await resolveHandle(args.merchantId));
     const row: SettlementRow = {
       tx_hash: log.transactionHash,
       log_index: log.logIndex,
@@ -87,6 +87,7 @@ async function processLog(log: CoreLog): Promise<void> {
       merchant_id: args.merchantId.toLowerCase(),
       handle,
       payer: args.payer.toLowerCase(),
+      agent_payer: cached?.agent_payer ?? null,
       token_in: args.tokenIn.toLowerCase(),
       amount_in: args.amountIn.toString(),
       xsgd_out: args.xsgdOut.toString(),
@@ -114,6 +115,7 @@ export function settlementEventOf(row: SettlementRow): SettlementEvent {
     merchantId: row.merchant_id as Hex,
     handle: row.handle,
     payer: row.payer as Address,
+    ...(row.agent_payer ? { agentPayer: row.agent_payer as Address } : {}),
     tokenIn: row.token_in as Address,
     tokenSymbol: tokenIdByAddress(config.addresses, row.token_in as Address),
     amountIn: row.amount_in,

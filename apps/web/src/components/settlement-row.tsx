@@ -24,9 +24,10 @@ export function SettlementRow({ row }: { row: SettlementEvent & { live: boolean 
             net {formatUnits6(net)} XSGD · fee {formatUnits6(BigInt(row.feeXsgd), 4)}
           </span>
         </p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground" title={`on-chain payer ${row.payer}`}>
           {formatUnits6(BigInt(row.amountIn), 6)} {row.tokenSymbol === "MUSDC" ? "USDC" : (row.tokenSymbol ?? "?")} from{" "}
-          {shortAddress(row.payer)}
+          {shortAddress(row.agentPayer ?? row.payer)}
+          {row.agentPayer ? " · via facilitator" : ""}
         </p>
       </div>
       <div className="text-right text-xs text-muted-foreground">
