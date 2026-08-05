@@ -13,11 +13,14 @@ export const PAYMENT_REQUIRED_HEADER = "PAYMENT-REQUIRED";
 export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
 export const PAYMENT_RESPONSE_HEADER = "PAYMENT-RESPONSE";
 
+/** CAIP-2 network identifier — matches the SDK's `Network` template type so
+ * values built with `caip2()` cross the boundary without casts. */
+export type Caip2Network = `${string}:${string}`;
+
 /** One accepts[] entry. v2 renamed v1's `maxAmountRequired` to `amount`. */
 export interface X402PaymentRequirements {
   scheme: string;
-  /** CAIP-2, e.g. "eip155:84532". */
-  network: string;
+  network: Caip2Network;
   asset: Address;
   /** 6dp integer units as a decimal string. */
   amount: string;
@@ -39,6 +42,7 @@ export interface X402PaymentRequired {
   error?: string;
   resource: X402ResourceInfo;
   accepts: X402PaymentRequirements[];
+  extensions?: Record<string, unknown>;
 }
 
 /** `exact` scheme (eip3009 method) inner payload. */
@@ -78,17 +82,20 @@ export interface X402SettleResponse {
   payer?: Address;
   /** Settlement tx hash; the spec requires the field even on failure (""). */
   transaction: string;
-  network: string;
+  network: Caip2Network;
   amount?: string;
 }
 
 export interface X402SupportedResponse {
-  kinds: { x402Version: number; scheme: string; network: string; extra?: Record<string, unknown> }[];
+  kinds: { x402Version: number; scheme: string; network: Caip2Network; extra?: Record<string, unknown> }[];
   extensions: string[];
   signers: Record<string, string[]>;
 }
 
 export function caip2(chainId: number): `eip155:${number}` {
+  if (!Number.isInteger(chainId) || chainId <= 0) {
+    throw new Error(`caip2: chainId must be a positive integer, got ${chainId}`);
+  }
   return `eip155:${chainId}`;
 }
 
@@ -104,6 +111,10 @@ export function encodeBase64Json(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64");
 }
 
+/** NOTE: the type parameter is a trust cast — today every consequential
+ * inbound path re-validates downstream (zod envelope on the facilitator
+ * route, ExactEvmPayloadSchema before use). If these decoders ever become the
+ * primary inbound boundary (SDK dropped), they must grow validation first. */
 export function decodeBase64Json<T>(encoded: string): T {
   if (!BASE64_RE.test(encoded)) throw new Error("invalid base64 header value");
   return JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as T;

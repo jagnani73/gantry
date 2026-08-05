@@ -80,4 +80,7 @@ test("caip2 helpers roundtrip and reject non-eip155 networks", () => {
   assert.equal(chainIdFromCaip2(caip2(31337)), 31337);
   assert.throws(() => chainIdFromCaip2("solana:mainnet"), /unsupported CAIP-2/);
   assert.throws(() => chainIdFromCaip2("eip155:abc"), /unsupported CAIP-2/);
+  // the encoder must never emit what its own inverse rejects
+  assert.throws(() => caip2(1.5), /positive integer/);
+  assert.throws(() => caip2(0), /positive integer/);
 });
