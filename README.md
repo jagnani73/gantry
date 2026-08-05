@@ -22,7 +22,7 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 🚧 **In development** for Stage 1 submission (14 Aug 2026).
 
-- [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xF630DBAd1a4684Ca1Af69A44C963d60cE3a2CDDF))
+- [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0))
 - [ ] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [ ] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` + `gantry-pbm` schemes)
 - [ ] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents
@@ -41,16 +41,29 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settlement is fork-tested against it. Demo merchant `ah-hock-chicken-rice` is registered on-chain.
 
-## Planned layout
+## Layout
 
 ```
-packages/contracts   Foundry — GantryCore, AgentPBMWallet, GantrySwap, mocks
-packages/shared      ABIs + shared types
-apps/backend         Express — merchant API, x402 facilitator (/verify, /settle), relayer, SSE indexer
-apps/web             Next.js — onboarding, printable QR, payer page, merchant dashboard
-apps/agent           Claude tool-runner CLI agent
-docs/                architecture diagram, submission materials
+packages/contracts   Foundry — GantryCore, AgentPBMWallet (M3), GantrySwap (M4), mocks
+packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-3009 typed data, API types
+apps/backend         Express — merchant API, relayer, SSE indexer; x402 facilitator lands in M2
+apps/web             Next.js — payer page /pay/[handle], printable QR /qr/[handle], dashboard
+apps/agent           Claude tool-runner CLI agent (M3)
 ```
+
+## Running locally
+
+```bash
+pnpm install
+cp apps/backend/.env.example apps/backend/.env   # fill: RPC URL, relayer key, admin token
+cp apps/web/.env.example apps/web/.env.local     # point NEXT_PUBLIC_* at your laptop's LAN IP
+pnpm dev                                         # backend :4000 + web :3000 (binds 0.0.0.0)
+```
+
+- **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or `NEXT_PUBLIC_BURNER=1`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.
+- **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
+- **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache and prints addresses + demo URLs (<1s; chain state is reused).
+- Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`.
 
 ## Tech
 
