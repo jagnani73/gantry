@@ -23,11 +23,11 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 🚧 **In development** for Stage 1 submission (14 Aug 2026).
 
 - [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0))
-- [ ] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
+- [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [ ] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` + `gantry-pbm` schemes)
 - [ ] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents
 - [ ] `GantrySwap` — any-stablecoin-in → XSGD-out atomic FX
-- [ ] Merchant dashboard — live feed where human and agent payments land side by side
+- [x] Merchant dashboard — live SSE feed with Human/Agent badges (agent rows land in M2/M3)
 - [ ] Claude-powered agent CLI paying (and getting rejected) autonomously
 
 ### Deployed (Base Sepolia, `eip155:84532`)
