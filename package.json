@@ -11,6 +11,7 @@
     "test:contracts": "forge test --root packages/contracts",
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
+    "abis": "forge build --root packages/contracts && node packages/shared/scripts/gen-abis.mjs",
     "dev": "concurrently -n backend,web -c blue,green \"pnpm --filter @gantry/backend dev\" \"pnpm --filter @gantry/web dev\""
   },
   "devDependencies": {
