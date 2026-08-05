@@ -29,20 +29,22 @@ export interface MerchantResponse {
   location?: string;
 }
 
+/** The door is NOT client-suppliable — it is derived from the route (QR/payer
+ * page ⇒ Human; the x402 facilitator bridge ⇒ Agent). */
 export interface CreateIntentRequest {
   handle: string;
   /** 6dp XSGD units, e.g. "6500000" for S$6.50. */
   xsgdAmount: string;
   token?: TokenId;
-  door?: WireDoor;
 }
 
 /**
- * Field names deliberately map onto x402 vocabulary: tokenIn = accepts[].asset,
- * amountIn = accepts[].maxAmountRequired, payTo = accepts[].payTo (GantryCore),
- * intentId = the payment payload's authorization nonce. M2's 402 handler is a
- * thin re-encoding of this response. `typedData.message` is authoritative for
- * the authorization window; the top-level copies exist for convenience.
+ * Field names deliberately map onto x402 vocabulary (tokenIn = asset,
+ * amountIn = amount, payTo = GantryCore, intentId = the authorization nonce)
+ * because the QR flow signs the same EIP-3009 authorization an x402 `exact`
+ * payment carries. The M2 agent door prices its 402 independently (facilitator
+ * bridge; payTo = relayer). `typedData.message` is authoritative for the
+ * authorization window; the top-level copies exist for convenience.
  */
 export interface IntentResponse {
   intentId: Hex;

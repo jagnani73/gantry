@@ -2,7 +2,6 @@ import { parseEventLogs, type Hex } from "viem";
 import {
   Door,
   IntentStatus,
-  doorFromWire,
   doorToWire,
   fixedRateSwapAbi,
   gantryCoreAbi,
@@ -29,7 +28,7 @@ const XSGD_IDENTITY_RATE = 1_000_000n;
  * known front-run exposure. */
 const AUTH_WINDOW_SLACK_SECONDS = 120;
 
-async function readRate(token: TokenId): Promise<bigint> {
+export async function readRate(token: TokenId): Promise<bigint> {
   if (token === "XSGD") return XSGD_IDENTITY_RATE;
   const rate = await publicClient.readContract({
     address: config.addresses.fixedRateSwap,
@@ -43,7 +42,12 @@ async function readRate(token: TokenId): Promise<bigint> {
   return rate;
 }
 
-export async function createIntent(req: CreateIntentRequest): Promise<IntentResponse> {
+/** `door` is caller-derived from the route, never client-supplied: the QR/payer
+ * routes create Human intents, the x402 facilitator bridge creates Agent ones. */
+export async function createIntent(
+  req: CreateIntentRequest,
+  door: Door = Door.Human,
+): Promise<IntentResponse> {
   const merchant = await getMerchant(req.handle);
 
   if (!/^\d+$/.test(req.xsgdAmount)) {
@@ -55,7 +59,6 @@ export async function createIntent(req: CreateIntentRequest): Promise<IntentResp
   }
 
   const token = req.token ?? config.defaultToken;
-  const door = doorFromWire(req.door);
   const tokenIn = tokenAddress(config.addresses, token);
   const rate = await readRate(token);
   const amountIn = token === "XSGD" ? xsgdAmount : quoteAmountIn(xsgdAmount, rate);
@@ -143,12 +146,14 @@ export async function requoteIntent(intentId: Hex): Promise<IntentResponse> {
     setIntentStatus(intentId, "cancelled");
   }
   const token = tokenIdByAddress(config.addresses, row.token_in as `0x${string}`);
-  return createIntent({
-    handle: row.handle,
-    xsgdAmount: row.xsgd_amount,
-    ...(token ? { token } : {}),
-    door: doorToWire(row.door as Door),
-  });
+  return createIntent(
+    {
+      handle: row.handle,
+      xsgdAmount: row.xsgd_amount,
+      ...(token ? { token } : {}),
+    },
+    row.door as Door,
+  );
 }
 
 export async function getIntentStatusResponse(intentId: Hex): Promise<IntentStatusResponse> {

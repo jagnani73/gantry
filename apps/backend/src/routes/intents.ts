@@ -14,7 +14,6 @@ const CreateIntentSchema = z.object({
   handle: z.string(),
   xsgdAmount: z.string(),
   token: z.enum(["MUSDC", "USDC", "XSGD"]).optional(),
-  door: z.enum(["human", "agent"]).optional(),
 });
 
 const SettleSchema = z.object({
