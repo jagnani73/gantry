@@ -6,5 +6,8 @@
   "packageManager": "pnpm@11.15.1",
   "engines": {
     "node": ">=22"
+  },
+  "scripts": {
+    "test:contracts": "forge test --root packages/contracts"
   }
 }
