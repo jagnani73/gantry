@@ -11,7 +11,3 @@ export type WireDoor = "human" | "agent";
 export function doorToWire(door: Door): WireDoor {
   return door === Door.Agent ? "agent" : "human";
 }
-
-export function doorFromWire(door: WireDoor | undefined): Door {
-  return door === "agent" ? Door.Agent : Door.Human;
-}

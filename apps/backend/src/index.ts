@@ -16,6 +16,9 @@ import { x402Middleware } from "./x402";
 
 const app = express();
 
+// Behind Railway/Fly TLS termination the 402's resource.url must say https —
+// clients echo and pin that URL.
+app.set("trust proxy", 1);
 app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
 app.use(express.json());
 

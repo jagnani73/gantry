@@ -120,6 +120,6 @@ export const config = {
   intentTtlSeconds: env.INTENT_TTL_SECONDS,
   dbPath: resolve(backendRoot, env.DB_PATH),
   defaultToken: env.DEFAULT_TOKEN,
-  /** The x402 order asset: real Circle USDC whenever the chain has it. */
+  /** The x402 order asset — defaults to real Circle USDC whenever the chain has it. */
   orderToken: env.ORDER_TOKEN ?? (addresses.realUsdc ? ("USDC" as const) : ("MUSDC" as const)),
 } as const;
