@@ -5,9 +5,11 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {EIP3009} from "./EIP3009.sol";
 
 /// @title MockXSGD — honest stand-in for StraitsX XSGD, which exists on no testnet
-/// @notice 6 decimals matching mainnet XSGD. Carries EIP-3009 because real XSGD supports
-///         x402 natively (StraitsX), so XSGD-direct payments flow through the same
-///         authorization door. Open mint for demo seeding.
+/// @notice 6 decimals matching mainnet XSGD. Carries EIP-3009 so XSGD-direct payments
+///         flow through the same authorization door — mirroring StraitsX's announced
+///         native x402 support for XSGD (Solana rollout, early 2026); EVM XSGD's
+///         EIP-3009 support is our forward assumption, not an on-chain fact today.
+///         Open mint for demo seeding.
 contract MockXSGD is EIP3009 {
     constructor() ERC20("Mock XSGD", "XSGD") {}
 

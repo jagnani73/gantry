@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {GantryCore} from "../src/GantryCore.sol";
 import {MockXSGD} from "../src/mocks/MockXSGD.sol";
@@ -82,9 +83,68 @@ contract GantryCoreRegistryTest is Test {
         core.setRelayer(newRelayer);
         assertEq(core.relayer(), newRelayer);
 
-        vm.prank(makeAddr("rando"));
-        vm.expectRevert();
+        address rando = makeAddr("rando");
+        vm.prank(rando);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, rando));
         core.setRelayer(relayer);
+    }
+
+    function test_setMerchantPayout_rotatesPayout() public {
+        bytes32 merchantId = core.registerMerchant(HANDLE, payout, CATEGORY_FOOD_BEVERAGE);
+        address newPayout = makeAddr("newPayout");
+
+        vm.expectEmit(true, false, false, true, address(core));
+        emit GantryCore.MerchantPayoutUpdated(merchantId, newPayout);
+
+        vm.prank(payout);
+        core.setMerchantPayout(merchantId, newPayout);
+
+        (address storedPayout,,) = core.merchants(merchantId);
+        assertEq(storedPayout, newPayout);
+    }
+
+    function test_revert_setMerchantPayout_notCurrentPayout() public {
+        bytes32 merchantId = core.registerMerchant(HANDLE, payout, CATEGORY_FOOD_BEVERAGE);
+
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(abi.encodeWithSelector(GantryCore.NotMerchantPayout.selector, merchantId));
+        core.setMerchantPayout(merchantId, makeAddr("attackerPayout"));
+    }
+
+    function test_revert_setMerchantPayout_zeroOrUnknown() public {
+        bytes32 merchantId = core.registerMerchant(HANDLE, payout, CATEGORY_FOOD_BEVERAGE);
+
+        vm.prank(payout);
+        vm.expectRevert(GantryCore.ZeroAddress.selector);
+        core.setMerchantPayout(merchantId, address(0));
+
+        bytes32 ghost = keccak256("ghost");
+        vm.expectRevert(abi.encodeWithSelector(GantryCore.MerchantNotFound.selector, ghost));
+        core.setMerchantPayout(ghost, payout);
+    }
+
+    /// @dev Reference predicate mirrors the documented handle grammar; the fuzz compares
+    ///      the contract's accept/reject against it byte for byte.
+    function testFuzz_validateHandle_matchesGrammar(bytes calldata raw) public {
+        bytes memory b = raw.length > 40 ? bytes(string(raw[:40])) : bytes(raw);
+        bool expected = b.length >= 1 && b.length <= 32;
+        if (expected && (b[0] == "-" || b[b.length - 1] == "-")) expected = false;
+        if (expected) {
+            for (uint256 i; i < b.length; ++i) {
+                bytes1 c = b[i];
+                if (!((c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c == "-")) {
+                    expected = false;
+                    break;
+                }
+            }
+        }
+
+        if (expected) {
+            core.registerMerchant(string(b), payout, CATEGORY_FOOD_BEVERAGE);
+        } else {
+            vm.expectRevert(GantryCore.InvalidHandle.selector);
+            core.registerMerchant(string(b), payout, CATEGORY_FOOD_BEVERAGE);
+        }
     }
 
     function test_revert_constructorZeroAddresses() public {

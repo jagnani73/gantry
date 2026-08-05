@@ -52,7 +52,8 @@ contract RealUsdcForkTest is Test {
         payout = makeAddr("payout");
 
         xsgd = new MockXSGD();
-        swap = new FixedRateSwap(IERC20(address(xsgd)), RATE);
+        swap = new FixedRateSwap(IERC20(address(xsgd)));
+        swap.setRate(USDC, RATE);
         xsgd.mint(address(swap), 1_000_000e6);
         core = new GantryCore(IERC20(address(xsgd)), relayer);
         core.setSwap(swap);
@@ -61,7 +62,8 @@ contract RealUsdcForkTest is Test {
         // FiatTokenV2_2 packs a blacklist flag into the top bit of the balance slot;
         // deal() writes the plain amount (top bit 0), which is a valid unblacklisted
         // balance. If stdstore ever fails to find the slot, fall back to Circle's
-        // faucet + a funded PAYER_ADDRESS env var.
+        // faucet funding vm.addr(PAYER_PK) — every signature here recovers to that
+        // address, so funding any other account would only produce InvalidSignature.
         deal(USDC, payer, 100e6);
         assertEq(IERC20(USDC).balanceOf(payer), 100e6, "deal() must fund the payer on the fork");
     }
@@ -105,10 +107,14 @@ contract RealUsdcForkTest is Test {
         core.settleWithAuthorization(intentId, payer, 0, block.timestamp + 1 hours, v, r, s);
 
         // Even if the intent guard were bypassed, the token itself refuses a second use.
-        vm.expectRevert();
+        // The pinned message proves the revert is FOR nonce consumption, not e.g. an
+        // unfunded payer; if Circle rewords it, post-state asserts below still hold.
+        uint256 balanceBefore = IERC20(USDC).balanceOf(payer);
+        vm.expectRevert(bytes("FiatTokenV2: authorization is used or canceled"));
         IERC3009(USDC).transferWithAuthorization(
             payer, address(core), USDC_AMOUNT, 0, block.timestamp + 1 hours, intentId, v, r, s
         );
+        assertEq(IERC20(USDC).balanceOf(payer), balanceBefore, "replay must move nothing");
     }
 
     function test_fork_revert_wrongDomain_signature() public forked {
@@ -129,7 +135,12 @@ contract RealUsdcForkTest is Test {
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", bogusSeparator, structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PAYER_PK, digest);
 
-        vm.expectRevert();
+        vm.expectRevert(bytes("FiatTokenV2: invalid signature"));
         core.settleWithAuthorization(intentId, payer, 0, block.timestamp + 1 hours, v, r, s);
+
+        // Pin the reason via post-state too: the authorization is untouched and the
+        // intent still Pending — the revert wasn't expiry or a funding problem.
+        assertFalse(IERC3009(USDC).authorizationState(payer, intentId));
+        assertEq(uint8(core.getIntent(intentId).status), uint8(GantryCore.IntentStatus.Pending));
     }
 }

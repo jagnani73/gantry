@@ -37,7 +37,8 @@ abstract contract GantryTestBase is Test {
 
         usdc = new MockUSDC();
         xsgd = new MockXSGD();
-        swap = new FixedRateSwap(IERC20(address(xsgd)), RATE);
+        swap = new FixedRateSwap(IERC20(address(xsgd)));
+        swap.setRate(address(usdc), RATE);
         xsgd.mint(address(swap), 1_000_000e6);
 
         core = new GantryCore(IERC20(address(xsgd)), relayer);

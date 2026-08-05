@@ -14,8 +14,10 @@ import {MockXSGD} from "../src/mocks/MockXSGD.sol";
 ///         the deployer as relayer/owner. Real Circle USDC stays the primary pay token;
 ///         MockUSDC is the faucet-independent fallback.
 contract Deploy is Script {
+    address internal constant REAL_USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
     uint256 internal constant DEMO_RATE = 1_342_100; // 1.3421 XSGD per USDC, 6dp
     uint256 internal constant SWAP_LIQUIDITY = 1_000_000e6; // 1M XSGD
+    uint16 internal constant FEE_BPS = 50; // 0.5% — the fee story shown in the demo
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
@@ -24,9 +26,12 @@ contract Deploy is Script {
         vm.startBroadcast(pk);
         MockUSDC usdc = new MockUSDC();
         MockXSGD xsgd = new MockXSGD();
-        FixedRateSwap swap = new FixedRateSwap(IERC20(address(xsgd)), DEMO_RATE);
+        FixedRateSwap swap = new FixedRateSwap(IERC20(address(xsgd)));
+        swap.setRate(address(usdc), DEMO_RATE);
+        swap.setRate(REAL_USDC, DEMO_RATE); // primary pay token
         GantryCore core = new GantryCore(IERC20(address(xsgd)), deployer);
         core.setSwap(IGantrySwap(address(swap)));
+        core.setFee(FEE_BPS, deployer);
         xsgd.mint(address(swap), SWAP_LIQUIDITY);
         vm.stopBroadcast();
 

@@ -5,12 +5,16 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @title EIP3009 — hand-written EIP-3009 authorization layer for the mock tokens
 /// @notice Mirrors the FiatTokenV2_2 authorization surface (typehash strings, events,
-///         authorizationState) so clients can build the EIP-712 domain generically from
-///         name()/version() and use one signing path for mocks and real USDC alike.
+///         authorizationState) so one signing path serves mocks and real USDC alike.
+///         Clients may derive the domain from name()/version() or read
+///         DOMAIN_SEPARATOR() directly (what the test digest helper does).
+///         Known divergence from real FiatTokenV2_2: no EIP-1271 contract-signature
+///         support — smart-account payers work only against the real token.
 abstract contract EIP3009 is ERC20 {
     bytes32 internal constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-    // Typehash strings must match FiatTokenV2 byte-for-byte or signatures won't port.
+    // Typehash strings must match FiatTokenV2 byte-for-byte, or the canonical EIP-3009
+    // typed data that wallets sign would produce digests this contract rejects.
     bytes32 public constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = keccak256(
         "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
     );
@@ -137,6 +141,12 @@ abstract contract EIP3009 is ERC20 {
     }
 
     function _verifySignature(address signer, bytes32 structHash, uint8 v, bytes32 r, bytes32 s) internal view {
+        // Reject malleable high-s signatures and bad v, matching Circle's ECRecover —
+        // keeps mock and real USDC accepting the same signature set.
+        if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) {
+            revert InvalidSignature();
+        }
+        if (v != 27 && v != 28) revert InvalidSignature();
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
         address recovered = ecrecover(digest, v, r, s);
         if (recovered == address(0) || recovered != signer) revert InvalidSignature();
@@ -149,7 +159,7 @@ abstract contract EIP3009 is ERC20 {
 
     function _splitSignature(bytes memory signature) internal pure returns (uint8 v, bytes32 r, bytes32 s) {
         if (signature.length != 65) revert InvalidSignatureLength();
-        assembly {
+        assembly ("memory-safe") {
             r := mload(add(signature, 0x20))
             s := mload(add(signature, 0x40))
             v := byte(0, mload(add(signature, 0x60)))

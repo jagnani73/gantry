@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {GantryCore} from "../src/GantryCore.sol";
 import {GantryTestBase} from "./helpers/GantryTestBase.sol";
-import {MockPBMWallet} from "./helpers/MockPBMWallet.sol";
+import {MockPBMWallet, ReentrantPBMWallet} from "./helpers/MockPBMWallet.sol";
 
 contract GantryCorePbmTest is GantryTestBase {
     MockPBMWallet internal wallet;
@@ -21,7 +21,14 @@ contract GantryCorePbmTest is GantryTestBase {
 
         vm.expectEmit(true, true, true, true, address(core));
         emit GantryCore.IntentSettled(
-            intentId, merchantId, address(wallet), address(usdc), USDC_AMOUNT, EXPECTED_XSGD_OUT, GantryCore.Door.Agent
+            intentId,
+            merchantId,
+            address(wallet),
+            address(usdc),
+            USDC_AMOUNT,
+            EXPECTED_XSGD_OUT,
+            0,
+            GantryCore.Door.Agent
         );
 
         core.settleFromPBM(intentId, address(wallet), "");
@@ -66,6 +73,42 @@ contract GantryCorePbmTest is GantryTestBase {
 
         vm.expectRevert(abi.encodeWithSelector(GantryCore.IntentExpired.selector, intentId, expiry));
         core.settleFromPBM(intentId, address(wallet), "");
+    }
+
+    function test_revert_pbm_humanDoorIntent() public {
+        bytes32 intentId = _createIntent(address(usdc), USDC_AMOUNT, GantryCore.Door.Human);
+
+        vm.expectRevert(abi.encodeWithSelector(GantryCore.NotAgentIntent.selector, intentId));
+        core.settleFromPBM(intentId, address(wallet), "");
+    }
+
+    function test_reentrancy_blockedOnPBMDoor_sameIntent() public {
+        ReentrantPBMWallet reentrantWallet = new ReentrantPBMWallet(core);
+        usdc.mint(address(reentrantWallet), 1_000e6);
+
+        bytes32 intentId = _createIntent(address(usdc), USDC_AMOUNT, GantryCore.Door.Agent);
+        reentrantWallet.setReentryIntentId(intentId);
+
+        core.settleFromPBM(intentId, address(reentrantWallet), "");
+
+        assertEq(reentrantWallet.reentryError(), GantryCore.Reentrancy.selector, "re-entry rejected by lock");
+        assertEq(uint8(core.getIntent(intentId).status), uint8(GantryCore.IntentStatus.Settled));
+    }
+
+    function test_reentrancy_blockedOnPBMDoor_differentPendingIntent() public {
+        ReentrantPBMWallet reentrantWallet = new ReentrantPBMWallet(core);
+        usdc.mint(address(reentrantWallet), 1_000e6);
+
+        bytes32 target = _createIntent(address(usdc), USDC_AMOUNT, GantryCore.Door.Agent);
+        bytes32 other = _createIntent(address(usdc), USDC_AMOUNT, GantryCore.Door.Agent);
+        reentrantWallet.setReentryIntentId(other);
+
+        core.settleFromPBM(target, address(reentrantWallet), "");
+
+        // The other intent is Pending and would pass every status check — only the lock
+        // stands between the wallet and a mid-settlement second settlement.
+        assertEq(reentrantWallet.reentryError(), GantryCore.Reentrancy.selector, "cross-intent re-entry rejected");
+        assertEq(uint8(core.getIntent(other).status), uint8(GantryCore.IntentStatus.Pending));
     }
 
     function test_settleFromPBM_xsgdDirect() public {

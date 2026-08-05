@@ -130,6 +130,7 @@ contract GantryCoreIntentsTest is Test {
         vm.warp(block.timestamp + 1 hours);
         vm.prank(relayer);
         core.cancelIntent(intentId);
+        assertEq(uint8(core.getIntent(intentId).status), uint8(GantryCore.IntentStatus.Cancelled));
     }
 
     function test_revert_cancel_notRelayer() public {
