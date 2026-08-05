@@ -15,7 +15,6 @@ import {
   type IntentStatusResponse,
   type IntentWireStatus,
   type TokenId,
-  type WireDoor,
 } from "@gantry/shared";
 import { publicClient, tokenDomain } from "../chain";
 import { config } from "../config";

@@ -107,6 +107,40 @@ export function setIntentStatus(intentId: string, status: string, settleTx?: str
   setIntentStatusStmt.run(status, settleTx ?? null, intentId.toLowerCase());
 }
 
+const insertSettlementStmt = db.prepare(`
+  INSERT OR IGNORE INTO settlements (
+    tx_hash, log_index, intent_id, merchant_id, handle, payer, token_in,
+    amount_in, xsgd_out, fee_xsgd, door, block_number, block_time
+  ) VALUES (
+    @tx_hash, @log_index, @intent_id, @merchant_id, @handle, @payer, @token_in,
+    @amount_in, @xsgd_out, @fee_xsgd, @door, @block_number, @block_time
+  )
+`);
+const recentSettlementsStmt = db.prepare<[number], SettlementRow>(
+  "SELECT * FROM (SELECT * FROM settlements ORDER BY block_number DESC, log_index DESC LIMIT ?) ORDER BY block_number ASC, log_index ASC",
+);
+const settlementsAfterStmt = db.prepare<[number, number, number], SettlementRow>(
+  "SELECT * FROM settlements WHERE (block_number > ?) OR (block_number = ? AND log_index > ?) ORDER BY block_number ASC, log_index ASC",
+);
+
+/** Returns true when the row is new (dedup across watch + sweep paths). */
+export function insertSettlementRow(row: SettlementRow): boolean {
+  return insertSettlementStmt.run(row).changes > 0;
+}
+
+export function recentSettlements(limit = 20): SettlementRow[] {
+  return recentSettlementsStmt.all(limit);
+}
+
+export function settlementsAfter(blockNumber: number, logIndex: number): SettlementRow[] {
+  return settlementsAfterStmt.all(blockNumber, blockNumber, logIndex);
+}
+
+/** Admin reset: cache only — chain state is untouched and rebuildable. */
+export function clearCache(): void {
+  db.exec("DELETE FROM settlements; DELETE FROM intents;");
+}
+
 const getMetaStmt = db.prepare<[string], { value: string }>("SELECT value FROM meta WHERE key = ?");
 const setMetaStmt = db.prepare(
   "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
