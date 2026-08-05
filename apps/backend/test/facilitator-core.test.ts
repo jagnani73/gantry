@@ -14,8 +14,10 @@ import {
 import {
   ExactEvmPayloadSchema,
   VERIFY_MARGIN_SECONDS,
+  parseOrderPins,
   parseOrderResource,
   reasonForGantryError,
+  splitSignature65,
   validateExactPayment,
   type VerifyInputs,
 } from "../src/services/facilitator-core";
@@ -106,6 +108,38 @@ test("parseOrderResource rejects non-order URLs, bad handles and missing sgd", (
   assert.equal(parseOrderResource("http://x/api/order/AH-HOCK?sgd=1"), null, "handle regex is lowercase");
 });
 
+test("parseOrderResource rejects non-positive and malformed sgd amounts", () => {
+  // reachable by any client; must die here, not inside the quote (div-by-zero 500)
+  assert.equal(parseOrderResource("http://x/api/order/ah-hock?sgd=0"), null);
+  assert.equal(parseOrderResource("http://x/api/order/ah-hock?sgd=0.00"), null);
+  assert.equal(parseOrderResource("http://x/api/order/ah-hock?sgd=abc"), null);
+  assert.equal(parseOrderResource("http://x/api/order/ah-hock?sgd=-5"), null);
+});
+
+test("parseOrderPins accepts server-pinned facts and rejects tampered shapes", () => {
+  assert.deepEqual(
+    parseOrderPins({ name: "USDC", version: "2", handle: "ah-hock", xsgdAmount: "19500000" }),
+    { handle: "ah-hock", xsgdAmount: 19500000n },
+  );
+  assert.equal(parseOrderPins({ name: "USDC", version: "2" }), null, "missing pins");
+  assert.equal(parseOrderPins({ handle: "AH-HOCK", xsgdAmount: "1" }), null, "invalid handle");
+  assert.equal(parseOrderPins({ handle: "ah-hock", xsgdAmount: "0" }), null, "zero amount");
+  assert.equal(parseOrderPins({ handle: "ah-hock", xsgdAmount: "19.50" }), null, "not 6dp units");
+  assert.equal(parseOrderPins({ handle: "ah-hock", xsgdAmount: 19500000 }), null, "number, not string");
+});
+
+test("splitSignature65 normalizes both v and yParity final bytes", () => {
+  const real = splitSignature65(signature);
+  assert.ok(real.v === 27 || real.v === 28, `expected 27/28, got ${real.v}`);
+  const body = signature.slice(0, -2);
+  const y0 = splitSignature65(`${body}00` as `0x${string}`);
+  const y1 = splitSignature65(`${body}01` as `0x${string}`);
+  assert.equal(y0.v, 27);
+  assert.equal(y1.v, 28);
+  assert.equal(y0.r, real.r);
+  assert.equal(y0.s, real.s);
+});
+
 test("payload schema accepts the vanilla client shape and rejects malformed ones", () => {
   assert.ok(ExactEvmPayloadSchema.safeParse({ signature, authorization }).success);
   assert.ok(!ExactEvmPayloadSchema.safeParse({ signature: signature.slice(0, -2), authorization }).success);
@@ -119,11 +153,48 @@ test("a correctly signed vanilla payload validates", async () => {
   if (result.ok) assert.equal(result.exact.authorization.from, payer.address);
 });
 
+test("time-window checks pass exactly at their boundaries", async () => {
+  // an >= / > drift here would reject payments signed at the margin — a case
+  // e2e can never reproduce deliberately
+  const auth = {
+    ...authorization,
+    validAfter: String(NOW),
+    validBefore: String(NOW + VERIFY_MARGIN_SECONDS),
+  };
+  const sig = await payer.signTypedData(
+    buildTransferAuthorization({
+      domain,
+      from: auth.from,
+      to: auth.to,
+      value: BigInt(auth.value),
+      validAfter: BigInt(auth.validAfter),
+      validBefore: BigInt(auth.validBefore),
+      nonce: auth.nonce,
+    }),
+  );
+  const payload: X402PaymentPayload = {
+    x402Version: 2,
+    accepted: requirements,
+    payload: { signature: sig, authorization: auth },
+  };
+  const result = await validateExactPayment(inputs(payload));
+  assert.equal(result.ok, true);
+});
+
 test("each protocol failure maps to its reason, first failure wins", async () => {
   assert.equal(await failureReason(makePayload(undefined, { ...requirements, scheme: "upto" })), "unsupported_scheme");
   assert.equal(
     await failureReason(makePayload(undefined, { ...requirements, network: "eip155:1" })),
     "unsupported_network",
+  );
+  assert.equal(
+    await failureReason({ ...makePayload(), payload: { garbage: true } }),
+    "invalid_payload",
+  );
+  assert.equal(
+    await failureReason(makePayload(), { requirements: { ...requirements, amount: "abc" } }),
+    "invalid_amount",
+    "malformed requirements.amount must fail in-band, not throw",
   );
   assert.equal(await failureReason(makePayload({ to: payer.address })), "invalid_pay_to");
   assert.equal(await failureReason(makePayload(), { relayer: payer.address }), "invalid_pay_to");

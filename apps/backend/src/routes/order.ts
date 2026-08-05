@@ -15,27 +15,43 @@ export const ORDER_ROUTE = "POST /api/order/:handle";
 
 /** DynamicPrice for the 402 challenge AND its paid retry — it must resolve
  * identically both times (the middleware deep-equal-matches the rebuilt
- * requirement against what the client signed), which holds because the quote
- * is a pure ceil at the owner-set fixed rate. */
+ * requirement against what the client signed). That holds while the rate is
+ * the owner-set FixedRateSwap; NOTE: an AMM-backed rate (M4's GantrySwap)
+ * breaks this and would need a short-lived quote pin.
+ *
+ * Besides the price, this pins {handle, xsgdAmount} into requirements.extra —
+ * the facts the bridge trusts at settle time. The extra is server-authored and
+ * subset-matched against the client echo, so the client cannot redirect the
+ * order to a different merchant. */
 async function buildOrderPrice(context: HTTPRequestContext) {
   const order = parseOrderResource(context.adapter.getUrl());
   if (!order) {
-    throw new ApiError(400, "ValidationError", "expected /api/order/:handle?sgd=<amount>, e.g. ?sgd=6.50");
+    throw new ApiError(
+      400,
+      "ValidationError",
+      "expected /api/order/:handle?sgd=<positive amount>, e.g. ?sgd=6.50",
+    );
   }
   await getMerchant(order.handle); // unknown merchant → 404 before any quote
-  let xsgdAmount: bigint;
-  try {
-    xsgdAmount = parseSgd(order.sgd);
-  } catch {
-    throw new ApiError(400, "ValidationError", `sgd must be a decimal SGD amount, got "${order.sgd}"`);
-  }
+  const xsgdAmount = parseSgd(order.sgd); // cannot throw: parseOrderResource validated it
   const token = config.orderToken;
-  const rate = await readRate(token);
+  let rate: bigint;
+  try {
+    rate = await readRate(token);
+  } catch (err) {
+    if (err instanceof ApiError) throw err; // TokenUnsupported stays a 400
+    throw new ApiError(503, "QuoteUnavailable", "rate source unreachable — retry shortly");
+  }
   return {
     // Same CEIL quote createIntent applies — keeps the bridge's equality guard true.
     amount: quoteAmountIn(xsgdAmount, rate).toString(),
     asset: tokenAddress(config.addresses, token),
-    extra: { name: TOKENS[token].eip712.name, version: TOKENS[token].eip712.version },
+    extra: {
+      name: TOKENS[token].eip712.name,
+      version: TOKENS[token].eip712.version,
+      handle: order.handle,
+      xsgdAmount: xsgdAmount.toString(),
+    },
   };
 }
 
