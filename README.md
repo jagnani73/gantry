@@ -34,10 +34,10 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 | Contract | Address |
 |---|---|
-| [`GantryCore`](https://sepolia.basescan.org/address/0xF630DBAd1a4684Ca1Af69A44C963d60cE3a2CDDF) | `0xF630DBAd1a4684Ca1Af69A44C963d60cE3a2CDDF` |
-| [`FixedRateSwap`](https://sepolia.basescan.org/address/0x8af32D108d204AaAc3BDe1349271Ee445eab1FF9) | `0x8af32D108d204AaAc3BDe1349271Ee445eab1FF9` |
-| [`MockUSDC`](https://sepolia.basescan.org/address/0x78e93170257A3940Da94F3ee30C1f3aDd509ccd7) | `0x78e93170257A3940Da94F3ee30C1f3aDd509ccd7` |
-| [`MockXSGD`](https://sepolia.basescan.org/address/0xA9F1930e9FccB9EDD2C1F922b20C0e29332dDb4C) | `0xA9F1930e9FccB9EDD2C1F922b20C0e29332dDb4C` |
+| [`GantryCore`](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0) | `0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0` |
+| [`FixedRateSwap`](https://sepolia.basescan.org/address/0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713) | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
+| [`MockUSDC`](https://sepolia.basescan.org/address/0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9) | `0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9` |
+| [`MockXSGD`](https://sepolia.basescan.org/address/0xd583FaB0Db5c543f5574780f8b899AEb74463361) | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
 
 Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settlement is fork-tested against it. Demo merchant `ah-hock-chicken-rice` is registered on-chain.
 

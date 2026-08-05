@@ -26,7 +26,7 @@ Full plan (architecture, demo script, submission package, timeline): `C:\Users\y
 ## Architecture (decided — do not relitigate without user)
 
 **Contracts** (`packages/contracts`, Foundry, Solidity ^0.8.24, OZ only for ERC-20/Ownable):
-- `GantryCore.sol` — merchant registry (`registerMerchant(handle, payout, categoryId)` = the 2-min onboarding), `PaymentIntent` lifecycle, `settleWithAuthorization()` (QR + x402 `exact`; **EIP-3009 `nonce` must equal `intentId`** — binds signature to intent) and `settleFromPBM()`; shared `_settle` with reentrancy guard; custom errors; `IntentSettled(intentId, merchantId, payer, tokenIn, amountIn, xsgdOut, door)`.
+- `GantryCore.sol` — merchant registry (`registerMerchant(handle, payout, categoryId)` = the 2-min onboarding, plus `setMerchantPayout` rotation gated on the current payout), `PaymentIntent` lifecycle, `settleWithAuthorization()` (QR + x402 `exact`; **EIP-3009 `nonce` must equal `intentId`** — binds signature to intent) and `settleFromPBM()` (Agent-door intents only); shared `_settle` with reentrancy guard, 0.5% protocol fee skim (`feeBps=50`, capped 2%); custom errors; `IntentSettled(intentId, merchantId, payer, tokenIn, amountIn, xsgdOut, feeXsgd, door)` — xsgdOut is gross, merchant receives xsgdOut − feeXsgd. Ownable2Step, renounce disabled.
 - `AgentPBMWallet.sol` + factory — `owner` (human) funds it and sets `Policy {dailyCap, perTxCap, expiry, categoryBitmap}`; `agentSigner` is the agent's session key. `authorizeSpend()` (onlyCore) verifies EIP-712 sig + all policy dimensions + daily window. Custom errors `PerTxCapExceeded`, `DailyCapExceeded`, `CategoryNotAllowed(uint16)`, `PolicyExpired` — these exact names surface in the demo; facilitator returns them as x402 `invalidReason`.
 - `GantrySwap.sol` — minimal x·y=k AMM (USDC/XSGD, 0.3% fee). Fuzz-test the invariant. Until it lands (M4), `FixedRateSwap.sol` (owner-set rate, seeded 1.3421) serves behind the same `IGantrySwap` interface — it stays as the cut-list fallback.
 - `MockUSDC.sol` + `MockXSGD.sol` — both extend a shared hand-written `EIP3009` base (FiatToken-shaped: typehashes, `authorizationState`, events), 6 decimals, open mint. XSGD carries EIP-3009 deliberately: real XSGD supports x402 natively (StraitsX), and XSGD-direct settlement flows through the same authorization door. XSGD exists on NO testnet — mock is the honest option; label it.
@@ -56,18 +56,18 @@ M0 (Aug 4–5) contracts core + Sepolia deploy → M1 (6–7) QR spine e2e — *
 
 Cut in this order if behind: AMM→fixed-rate; onboarding wizard→single form; `@x402/fetch` beat; live Claude→scripted agent (wire traffic stays real). **Never cut:** QR flow, GantryCore settlement, live dashboard feed.
 
-## Status: M0 complete (5 Aug 2026)
+## Status: M0 complete + review-hardened (5 Aug 2026)
 
-Contracts core is live and Basescan-verified on Base Sepolia; 57 unit tests + 4 fork tests vs real Circle USDC, all green. Relayer/owner = deployer `0x82513007C7eB93b54dC555Bdb74341b3084FC47B`. Demo merchant `ah-hock-chicken-rice` (category 1) registered on-chain.
+Contracts core is live and Basescan-verified on Base Sepolia; 88 unit tests (incl. fuzz) + 4 fork tests vs real Circle USDC, all green. The M0 review gate ran (5 agents) and all findings were fixed and redeployed. Relayer/owner = deployer `0x82513007C7eB93b54dC555Bdb74341b3084FC47B`. Demo merchant `ah-hock-chicken-rice` (category 1) registered on-chain; fee = 50 bps to deployer; FixedRateSwap has rates listed for MockUSDC AND real Circle USDC.
 
 | Contract | Base Sepolia address |
 |---|---|
-| GantryCore | `0xF630DBAd1a4684Ca1Af69A44C963d60cE3a2CDDF` |
-| FixedRateSwap | `0x8af32D108d204AaAc3BDe1349271Ee445eab1FF9` |
-| MockUSDC | `0x78e93170257A3940Da94F3ee30C1f3aDd509ccd7` |
-| MockXSGD | `0xA9F1930e9FccB9EDD2C1F922b20C0e29332dDb4C` |
+| GantryCore | `0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0` |
+| FixedRateSwap | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
+| MockUSDC | `0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9` |
+| MockXSGD | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
 
-Design notes that bind later milestones: intents are relayer-created with pinned `tokenIn/amountIn` quotes (requote = cancel + recreate); `intentId = keccak256(chainid, core, merchantId, nonce)` doubles as the EIP-3009 nonce; settlement callers are permissionless; min-out is enforced via the core's own XSGD balance delta; categories are `uint16 < 256` for a future one-word policy bitmap; real-USDC EIP-712 domain confirmed ("USDC", "2"). Known accepted vector: raw EIP-3009 sig front-run to the token strands funds in core → `rescueERC20` sweep.
+Design notes that bind later milestones: intents are relayer-created with pinned `tokenIn/amountIn` quotes (requote = cancel + recreate; relayer must only quote no-fee-on-transfer tokens and must CEIL the amountIn quote — fuzz-proven in FixedRateSwap.t.sol); `intentId = keccak256(chainid, core, merchantId, nonce)` doubles as the EIP-3009 nonce; settlement callers are permissionless; `settleFromPBM` accepts only Agent-door intents while `settleWithAuthorization` serves both doors (x402 `exact` = Agent via auth door); min-out is enforced via the core's own XSGD balance delta and the swap allowance is reset after each settle; 0.5% fee skimmed in `_settle` (xsgdOut in `IntentSettled` is gross); categories are `uint16 < 256` for a future one-word policy bitmap; real-USDC EIP-712 domain confirmed ("USDC", "2") and its revert strings are pinned in fork tests. FixedRateSwap accepts only tokens with an owner-listed rate (per-1e6-unit scale, 6dp stables only). Known accepted vector: raw EIP-3009 sig front-run to the token strands funds in core → `rescueERC20` sweep (owner-only; ownership is 2-step and unrenounceable).
 
 ## What's real vs mocked (keep these labels honest everywhere)
 
