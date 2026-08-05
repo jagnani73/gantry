@@ -4,8 +4,11 @@ import type { WireDoor } from "./door";
 import type { WireTypedData } from "./eip3009";
 
 /**
- * Wire types for every backend route. Convention: ALL token/XSGD amounts are
- * decimal strings of 6dp integer units; timestamps are unix seconds (number).
+ * Wire types for every backend route. Conventions: ALL token/XSGD amounts are
+ * decimal strings of 6dp integer units; display timestamps (expiry, blockTime)
+ * are unix seconds as numbers; authorization-window fields (validAfter,
+ * validBefore) are uint256 decimal STRINGS — they must byte-match the signed
+ * typed-data message, and x402's `exact` scheme carries them as strings.
  */
 
 export interface HealthResponse {
@@ -35,9 +38,11 @@ export interface CreateIntentRequest {
 }
 
 /**
- * Field names deliberately map onto the x402 accepts[] vocabulary:
- * intentId = nonce, tokenIn = asset, amountIn = amount, payTo = GantryCore.
- * M2's 402 handler is a thin re-encoding of this response.
+ * Field names deliberately map onto x402 vocabulary: tokenIn = accepts[].asset,
+ * amountIn = accepts[].maxAmountRequired, payTo = accepts[].payTo (GantryCore),
+ * intentId = the payment payload's authorization nonce. M2's 402 handler is a
+ * thin re-encoding of this response. `typedData.message` is authoritative for
+ * the authorization window; the top-level copies exist for convenience.
  */
 export interface IntentResponse {
   intentId: Hex;
@@ -53,7 +58,7 @@ export interface IntentResponse {
   door: WireDoor;
   payTo: Address;
   validAfter: string;
-  validBefore: number;
+  validBefore: string;
   typedData: WireTypedData;
   txHash: Hex;
 }
@@ -83,7 +88,7 @@ export interface SettleRequest {
    * settle path stateless for M2's facilitator.
    */
   validAfter?: string;
-  validBefore?: number;
+  validBefore?: string;
 }
 
 export interface SettleResponse {
@@ -131,12 +136,3 @@ export interface SettlementEvent {
   blockTime: number;
 }
 
-/** SSE `intent` event payload (pending ghost rows / cancellations). */
-export interface IntentLifecycleEvent {
-  type: "created" | "cancelled";
-  intentId: Hex;
-  merchantId: Hex;
-  handle: string | null;
-  xsgdAmount: string;
-  door: WireDoor;
-}

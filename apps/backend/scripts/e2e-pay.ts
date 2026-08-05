@@ -3,8 +3,9 @@
  * The pre-web verification path, and the seed for M3's agent tooling.
  *
  * Usage: pnpm --filter @gantry/backend e2e:pay [-- --sgd 6.50 --handle ah-hock-chicken-rice]
- * Env: E2E_PAYER_KEY (optional; fresh random key + faucet mint when unset),
+ * Env: E2E_PAYER_KEY (optional; fresh random key when unset),
  *      GANTRY_API (default http://localhost:4000)
+ * The faucet mint always runs (per-address 60s cooldown applies).
  */
 import { parseArgs } from "node:util";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -22,7 +23,6 @@ const { values: args } = parseArgs({
   options: {
     sgd: { type: "string", default: "6.50" },
     handle: { type: "string", default: "ah-hock-chicken-rice" },
-    "expect-fail": { type: "boolean", default: false },
   },
 });
 

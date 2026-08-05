@@ -24,7 +24,10 @@ import { sendRelayerTx } from "../relayer";
 import { getMerchant } from "./merchants";
 
 const XSGD_IDENTITY_RATE = 1_000_000n;
-const AUTH_WINDOW_SECONDS = 3600n;
+/** Signature window = quote TTL + slack. The raw EIP-3009 sig is replayable
+ * straight to the token until validBefore, so a tight window bounds the
+ * known front-run exposure. */
+const AUTH_WINDOW_SLACK_SECONDS = 120;
 
 async function readRate(token: TokenId): Promise<bigint> {
   if (token === "XSGD") return XSGD_IDENTITY_RATE;
@@ -60,7 +63,7 @@ export async function createIntent(req: CreateIntentRequest): Promise<IntentResp
   // Chain time, not server clock — a skewed laptop otherwise mints born-expired intents.
   const block = await publicClient.getBlock();
   const expiry = block.timestamp + BigInt(config.intentTtlSeconds);
-  const validBefore = block.timestamp + AUTH_WINDOW_SECONDS;
+  const validBefore = expiry + BigInt(AUTH_WINDOW_SLACK_SECONDS);
 
   const { receipt } = await sendRelayerTx({
     address: config.addresses.gantryCore,
@@ -108,7 +111,7 @@ export async function createIntent(req: CreateIntentRequest): Promise<IntentResp
     door: doorToWire(door),
     payTo: config.addresses.gantryCore,
     validAfter: "0",
-    validBefore: Number(validBefore),
+    validBefore: validBefore.toString(),
     typedData: toWireTypedData({
       domain: tokenDomain(token),
       to: config.addresses.gantryCore,
@@ -153,7 +156,7 @@ export async function getIntentStatusResponse(intentId: Hex): Promise<IntentStat
   const now = Math.floor(Date.now() / 1000);
 
   if (row) {
-    let status = row.status as IntentWireStatus;
+    let status: IntentWireStatus = row.status;
     if (status === "pending" && row.expiry < now) status = "expired";
     return {
       intentId,

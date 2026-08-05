@@ -3,18 +3,38 @@ import { gantryCoreAbi } from "./abis/gantryCore";
 import { fixedRateSwapAbi } from "./abis/fixedRateSwap";
 import { eip3009ErrorsAbi } from "./abis/eip3009Errors";
 
-/** Union of every custom error Gantry settlement can surface (core + swap + mock tokens). */
+/**
+ * Union of every custom error Gantry settlement can surface (core + swap +
+ * mock tokens). M3: spread the AgentPBMWallet errors ABI here — otherwise
+ * CategoryNotAllowed, DailyCapExceeded & co decode as "unknown" and the
+ * on-stage rejection beat degrades to a raw 500.
+ */
 export const gantryErrorsAbi = [
   ...gantryCoreAbi.filter((entry) => entry.type === "error"),
   ...fixedRateSwapAbi.filter((entry) => entry.type === "error"),
   ...eip3009ErrorsAbi,
 ] as const;
 
+/** Every error name in the union — compile-time safety for switches over decoded names. */
+export type GantryErrorName = Extract<(typeof gantryErrorsAbi)[number], { type: "error" }>["name"];
+
 export type DecodedGantryError =
-  | { kind: "custom"; name: string; args: readonly unknown[] }
+  | { kind: "custom"; name: GantryErrorName | (string & {}); args: readonly unknown[] }
   /** Real Circle USDC reverts with strings, e.g. "FiatTokenV2: authorization is used or canceled". */
   | { kind: "string"; reason: string }
   | { kind: "unknown"; message: string };
+
+/**
+ * Revert shapes that can mean "a lagging RPC replica hasn't seen recent state"
+ * rather than a real failure: a just-created intent decodes as UnknownIntent,
+ * a just-minted balance as insufficient. Callers retry these, bounded.
+ */
+export function isStaleStateRevert(decoded: DecodedGantryError): boolean {
+  if (decoded.kind === "custom") {
+    return decoded.name === "UnknownIntent" || decoded.name === "ERC20InsufficientBalance";
+  }
+  return decoded.kind === "string" && /transfer amount exceeds balance/i.test(decoded.reason);
+}
 
 /**
  * Structural revert decoding — M2's facilitator maps this straight onto x402
@@ -41,25 +61,18 @@ export function decodeGantryError(err: unknown): DecodedGantryError {
 /** Decode bare revert data (0x…) against the Gantry error union. */
 export function decodeRawError(data: Hex): DecodedGantryError | null {
   try {
+    // decodeErrorResult handles the standard Error(string)/Panic(uint256)
+    // selectors itself, regardless of the ABI passed (so its name type,
+    // derived from our ABI, is narrower than what can actually come back).
     const decoded = decodeErrorResult({ abi: gantryErrorsAbi, data });
-    return { kind: "custom", name: decoded.errorName, args: decoded.args ?? [] };
-  } catch {
-    // Not one of ours — try the standard Error(string) selector.
-    try {
-      const decoded = decodeErrorResult({
-        abi: [
-          {
-            type: "error",
-            name: "Error",
-            inputs: [{ name: "message", type: "string" }],
-          },
-        ] as const,
-        data,
-      });
-      return { kind: "string", reason: String(decoded.args[0]) };
-    } catch {
-      return null;
+    const errorName: string = decoded.errorName;
+    const args = (decoded.args ?? []) as readonly unknown[];
+    if (errorName === "Error") {
+      return { kind: "string", reason: String(args[0] ?? "") };
     }
+    return { kind: "custom", name: errorName, args };
+  } catch {
+    return null;
   }
 }
 

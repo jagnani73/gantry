@@ -21,7 +21,7 @@ const SettleSchema = z.object({
   payer: hexAddress,
   signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/, "expected 65-byte hex signature"),
   validAfter: z.string().regex(/^\d+$/).optional(),
-  validBefore: z.number().int().positive().optional(),
+  validBefore: z.string().regex(/^\d+$/).optional(),
 });
 
 const FaucetSchema = z.object({ address: hexAddress });

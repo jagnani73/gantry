@@ -78,6 +78,12 @@ function resolveAddresses(): { addresses: GantryAddresses; deployBlock: bigint }
 
 const { addresses, deployBlock } = resolveAddresses();
 
+if (env.DEFAULT_TOKEN === "USDC" && !addresses.realUsdc) {
+  // Fail at boot, not on the first intent: real Circle USDC doesn't exist on Anvil.
+  console.error("DEFAULT_TOKEN=USDC is not available on this chain (no real USDC at 31337)");
+  process.exit(1);
+}
+
 function requireRpcUrl(): string {
   if (env.CHAIN_ID === ANVIL_CHAIN_ID) return env.ANVIL_RPC_URL;
   if (!env.BASE_SEPOLIA_RPC_URL) {

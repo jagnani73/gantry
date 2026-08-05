@@ -85,7 +85,7 @@ export function toWireTypedData(
   };
 }
 
-/** The single string→bigint boundary on the client. `from` = the signing payer. */
+/** The string→bigint boundary for the signing payload. `from` = the signing payer. */
 export function reviveTypedData(wire: WireTypedData, from?: Address) {
   const payer = from ?? wire.message.from;
   if (!payer) throw new Error("reviveTypedData: payer address required (wire has no `from`)");

@@ -1,5 +1,11 @@
 import { parseEventLogs, parseSignature, type Address, type Hex } from "viem";
-import { decodeGantryError, gantryCoreAbi, type SettleResponse } from "@gantry/shared";
+import {
+  decodeGantryError,
+  describeGantryError,
+  gantryCoreAbi,
+  isStaleStateRevert,
+  type SettleResponse,
+} from "@gantry/shared";
 import { config } from "../config";
 import { getIntentRow, setIntentStatus } from "../db";
 import { ApiError } from "../errors";
@@ -61,11 +67,10 @@ export async function settle(params: SettleParams): Promise<SettleResponse> {
       break;
     } catch (err) {
       const decoded = decodeGantryError(err);
-      const staleState =
-        (decoded.kind === "custom" &&
-          (decoded.name === "UnknownIntent" || decoded.name === "ERC20InsufficientBalance")) ||
-        (decoded.kind === "string" && /transfer amount exceeds balance/i.test(decoded.reason));
-      if (!staleState || attempt >= 5) throw err;
+      if (!isStaleStateRevert(decoded) || attempt >= 5) throw err;
+      console.warn(
+        `settle retry ${attempt}/5 for ${params.intentId}: ${describeGantryError(decoded)}`,
+      );
       await new Promise((resolve) => setTimeout(resolve, 1200));
     }
   }
