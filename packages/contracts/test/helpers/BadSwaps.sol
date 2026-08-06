@@ -17,10 +17,7 @@ contract LyingSwap is IGantrySwap {
         xsgd = xsgd_;
     }
 
-    function swapExactIn(address tokenIn, uint256 amountIn, uint256 minOut, address to)
-        external
-        returns (uint256)
-    {
+    function swapExactIn(address tokenIn, uint256 amountIn, uint256 minOut, address to) external returns (uint256) {
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         xsgd.safeTransfer(to, minOut - 1);
         return minOut; // the lie
@@ -51,14 +48,12 @@ contract ReentrantSwap is IGantrySwap {
         reentryIntentId = intentId;
     }
 
-    function swapExactIn(address tokenIn, uint256 amountIn, uint256 minOut, address to)
-        external
-        returns (uint256)
-    {
+    function swapExactIn(address tokenIn, uint256 amountIn, uint256 minOut, address to) external returns (uint256) {
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         try core.settleWithAuthorization(reentryIntentId, address(0), 0, 0, 0, bytes32(0), bytes32(0)) {
-            // A successful re-entry would mean the guard is broken; leave selector empty.
-        } catch (bytes memory err) {
+        // A successful re-entry would mean the guard is broken; leave selector empty.
+        }
+        catch (bytes memory err) {
             reentryError = _selectorOf(err);
         }
         xsgd.safeTransfer(to, minOut);

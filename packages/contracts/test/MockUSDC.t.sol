@@ -89,8 +89,7 @@ contract MockUSDCTest is Test {
 
     function test_revert_wrongSigner() public {
         uint256 validBefore = block.timestamp + 1 hours;
-        bytes32 digest =
-            Eip3009Digest.transferDigest(address(usdc), payer, recipient, VALUE, 0, validBefore, NONCE);
+        bytes32 digest = Eip3009Digest.transferDigest(address(usdc), payer, recipient, VALUE, 0, validBefore, NONCE);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xB0B, digest);
 
         vm.expectRevert(EIP3009.InvalidSignature.selector);
@@ -107,8 +106,7 @@ contract MockUSDCTest is Test {
 
     function test_receiveWithAuthorization_requiresPayeeCaller() public {
         uint256 validBefore = block.timestamp + 1 hours;
-        bytes32 digest =
-            Eip3009Digest.receiveDigest(address(usdc), payer, recipient, VALUE, 0, validBefore, NONCE);
+        bytes32 digest = Eip3009Digest.receiveDigest(address(usdc), payer, recipient, VALUE, 0, validBefore, NONCE);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PAYER_PK, digest);
 
         vm.prank(relayer);

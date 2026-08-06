@@ -33,9 +33,7 @@ contract GantryCoreIntentsTest is Test {
 
     function _createUsdcIntent() internal returns (bytes32) {
         vm.prank(relayer);
-        return core.createIntent(
-            merchantId, XSGD_AMOUNT, address(usdc), USDC_AMOUNT, _expiry(), GantryCore.Door.Human
-        );
+        return core.createIntent(merchantId, XSGD_AMOUNT, address(usdc), USDC_AMOUNT, _expiry(), GantryCore.Door.Human);
     }
 
     function test_createIntent_happy() public {
@@ -72,9 +70,8 @@ contract GantryCoreIntentsTest is Test {
 
     function test_createIntent_xsgdDirect_amountsMustMatch() public {
         vm.prank(relayer);
-        bytes32 intentId = core.createIntent(
-            merchantId, XSGD_AMOUNT, address(xsgd), XSGD_AMOUNT, _expiry(), GantryCore.Door.Agent
-        );
+        bytes32 intentId =
+            core.createIntent(merchantId, XSGD_AMOUNT, address(xsgd), XSGD_AMOUNT, _expiry(), GantryCore.Door.Agent);
         assertEq(uint8(core.getIntent(intentId).door), uint8(GantryCore.Door.Agent));
     }
 
@@ -108,9 +105,7 @@ contract GantryCoreIntentsTest is Test {
 
     function test_revert_create_xsgdAmountMismatch() public {
         vm.prank(relayer);
-        vm.expectRevert(
-            abi.encodeWithSelector(GantryCore.XsgdAmountMismatch.selector, USDC_AMOUNT, XSGD_AMOUNT)
-        );
+        vm.expectRevert(abi.encodeWithSelector(GantryCore.XsgdAmountMismatch.selector, USDC_AMOUNT, XSGD_AMOUNT));
         core.createIntent(merchantId, XSGD_AMOUNT, address(xsgd), USDC_AMOUNT, _expiry(), GantryCore.Door.Human);
     }
 

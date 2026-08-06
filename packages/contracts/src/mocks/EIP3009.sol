@@ -95,9 +95,8 @@ abstract contract EIP3009 is ERC20 {
     ) external {
         if (to != msg.sender) revert CallerMustBePayee();
         _checkAuthorization(from, nonce, validAfter, validBefore);
-        bytes32 structHash = keccak256(
-            abi.encode(RECEIVE_WITH_AUTHORIZATION_TYPEHASH, from, to, value, validAfter, validBefore, nonce)
-        );
+        bytes32 structHash =
+            keccak256(abi.encode(RECEIVE_WITH_AUTHORIZATION_TYPEHASH, from, to, value, validAfter, validBefore, nonce));
         _verifySignature(from, structHash, v, r, s);
         _markAuthorizationUsed(from, nonce);
         _transfer(from, to, value);

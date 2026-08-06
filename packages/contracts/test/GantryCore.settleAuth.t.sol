@@ -64,8 +64,7 @@ contract GantryCoreSettleAuthTest is GantryTestBase {
 
     function test_revert_signedWrongAmount() public {
         bytes32 intentId = _createIntent(address(usdc), USDC_AMOUNT, GantryCore.Door.Human);
-        (uint8 v, bytes32 r, bytes32 s) =
-            _signAuth(address(usdc), USDC_AMOUNT - 1, block.timestamp + 1 hours, intentId);
+        (uint8 v, bytes32 r, bytes32 s) = _signAuth(address(usdc), USDC_AMOUNT - 1, block.timestamp + 1 hours, intentId);
 
         vm.expectRevert(EIP3009.InvalidSignature.selector);
         core.settleWithAuthorization(intentId, payer, 0, block.timestamp + 1 hours, v, r, s);
@@ -142,9 +141,7 @@ contract GantryCoreSettleAuthTest is GantryTestBase {
         swap.setRate(address(usdc), 1_000_000); // 1:1 — output 4.84 XSGD < 6.50 price
         (uint8 v, bytes32 r, bytes32 s) = _signAuth(address(usdc), USDC_AMOUNT, block.timestamp + 1 hours, intentId);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(FixedRateSwap.InsufficientOutput.selector, USDC_AMOUNT, XSGD_AMOUNT)
-        );
+        vm.expectRevert(abi.encodeWithSelector(FixedRateSwap.InsufficientOutput.selector, USDC_AMOUNT, XSGD_AMOUNT));
         core.settleWithAuthorization(intentId, payer, 0, block.timestamp + 1 hours, v, r, s);
     }
 
@@ -156,9 +153,7 @@ contract GantryCoreSettleAuthTest is GantryTestBase {
         bytes32 intentId = _createIntent(address(usdc), USDC_AMOUNT, GantryCore.Door.Human);
         (uint8 v, bytes32 r, bytes32 s) = _signAuth(address(usdc), USDC_AMOUNT, block.timestamp + 1 hours, intentId);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(GantryCore.InsufficientXsgdOut.selector, XSGD_AMOUNT - 1, XSGD_AMOUNT)
-        );
+        vm.expectRevert(abi.encodeWithSelector(GantryCore.InsufficientXsgdOut.selector, XSGD_AMOUNT - 1, XSGD_AMOUNT));
         core.settleWithAuthorization(intentId, payer, 0, block.timestamp + 1 hours, v, r, s);
     }
 

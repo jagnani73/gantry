@@ -255,9 +255,10 @@ contract GantryCore is Ownable2Step {
         bytes32 s
     ) external nonReentrant {
         PaymentIntent storage intent = _beginSettle(intentId);
-        IERC3009(intent.tokenIn).transferWithAuthorization(
-            payer, address(this), intent.amountIn, validAfter, validBefore, intentId, v, r, s
-        );
+        IERC3009(intent.tokenIn)
+            .transferWithAuthorization(
+                payer, address(this), intent.amountIn, validAfter, validBefore, intentId, v, r, s
+            );
         _settle(intentId, intent, payer);
     }
 
@@ -275,9 +276,10 @@ contract GantryCore is Ownable2Step {
         if (intent.door != Door.Agent) revert NotAgentIntent(intentId);
 
         uint256 balanceBefore = IERC20(intent.tokenIn).balanceOf(address(this));
-        IAgentPBMWallet(pbmWallet).authorizeSpend(
-            intentId, merchants[intent.merchantId].categoryId, intent.tokenIn, intent.amountIn, agentSig
-        );
+        IAgentPBMWallet(pbmWallet)
+            .authorizeSpend(
+                intentId, merchants[intent.merchantId].categoryId, intent.tokenIn, intent.amountIn, agentSig
+            );
         uint256 received = IERC20(intent.tokenIn).balanceOf(address(this)) - balanceBefore;
         if (received < intent.amountIn) revert PBMPullFailed(received, intent.amountIn);
 

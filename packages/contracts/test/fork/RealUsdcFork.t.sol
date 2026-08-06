@@ -111,9 +111,10 @@ contract RealUsdcForkTest is Test {
         // unfunded payer; if Circle rewords it, post-state asserts below still hold.
         uint256 balanceBefore = IERC20(USDC).balanceOf(payer);
         vm.expectRevert(bytes("FiatTokenV2: authorization is used or canceled"));
-        IERC3009(USDC).transferWithAuthorization(
-            payer, address(core), USDC_AMOUNT, 0, block.timestamp + 1 hours, intentId, v, r, s
-        );
+        IERC3009(USDC)
+            .transferWithAuthorization(
+                payer, address(core), USDC_AMOUNT, 0, block.timestamp + 1 hours, intentId, v, r, s
+            );
         assertEq(IERC20(USDC).balanceOf(payer), balanceBefore, "replay must move nothing");
     }
 

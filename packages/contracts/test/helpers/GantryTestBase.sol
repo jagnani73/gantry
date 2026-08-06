@@ -54,9 +54,8 @@ abstract contract GantryTestBase is Test {
         returns (bytes32 intentId)
     {
         vm.prank(relayer);
-        intentId = core.createIntent(
-            merchantId, XSGD_AMOUNT, tokenIn, amountIn, uint40(block.timestamp + 15 minutes), door
-        );
+        intentId =
+            core.createIntent(merchantId, XSGD_AMOUNT, tokenIn, amountIn, uint40(block.timestamp + 15 minutes), door);
     }
 
     /// @dev Signs the payer's EIP-3009 authorization the way the payer page will:
