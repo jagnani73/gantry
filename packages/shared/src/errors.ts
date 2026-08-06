@@ -45,6 +45,13 @@ export function decodeGantryError(err: unknown): DecodedGantryError {
     const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
     if (revert instanceof ContractFunctionRevertedError) {
       if (revert.data?.errorName) {
+        // viem decodes the built-in Error(string) selector to errorName
+        // "Error" — that is a string revert (real USDC's FiatTokenV2 shape),
+        // not a custom error. Misclassifying it as custom broke both the
+        // stale-state retry and the Circle reason mappings downstream.
+        if (revert.data.errorName === "Error") {
+          return { kind: "string", reason: String(revert.data.args?.[0] ?? revert.reason ?? "") };
+        }
         return { kind: "custom", name: revert.data.errorName, args: revert.data.args ?? [] };
       }
       if (revert.raw) {

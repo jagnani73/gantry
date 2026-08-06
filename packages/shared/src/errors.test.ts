@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { encodeErrorResult } from "viem";
+import { ContractFunctionRevertedError, encodeErrorResult } from "viem";
 import {
   decodeGantryError,
   decodeRawError,
@@ -47,6 +47,26 @@ test("standard Error(string) decodes as a string revert (real Circle USDC shape)
     args: [reason],
   });
   assert.deepEqual(decodeRawError(data), { kind: "string", reason });
+});
+
+test("live viem revert with errorName 'Error' is a string revert, not custom", () => {
+  // Regression from the first live real-USDC settle: viem populates
+  // data.errorName = "Error" for Error(string) reverts, and the custom branch
+  // used to win — killing the stale-state retry and the Circle mappings.
+  const reason = "ERC20: transfer amount exceeds balance";
+  const data = encodeErrorResult({
+    abi: [{ type: "error", name: "Error", inputs: [{ name: "message", type: "string" }] }],
+    errorName: "Error",
+    args: [reason],
+  });
+  const err = new ContractFunctionRevertedError({
+    abi: gantryErrorsAbi,
+    data,
+    functionName: "settleWithAuthorization",
+  });
+  const decoded = decodeGantryError(err);
+  assert.deepEqual(decoded, { kind: "string", reason });
+  assert.ok(isStaleStateRevert(decoded), "replica-lag retry must fire for this shape");
 });
 
 test("garbage data returns null; non-viem errors decode as unknown", () => {
