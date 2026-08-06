@@ -2,5 +2,22 @@
   "name": "@gantry/agent",
   "private": true,
   "version": "0.1.0",
-  "description": "Claude tool-runner agent CLI paying through x402 (placeholder until M3)."
+  "description": "Claude tool-runner agent CLI paying merchants over x402 gantry-pbm.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "e2e:pbm": "tsx scripts/e2e-pbm.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
+    "@gantry/shared": "workspace:*",
+    "viem": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
 }
