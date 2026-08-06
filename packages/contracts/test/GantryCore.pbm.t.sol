@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {GantryCore} from "../src/GantryCore.sol";
+import {AgentPBMWallet} from "../src/AgentPBMWallet.sol";
 import {GantryTestBase} from "./helpers/GantryTestBase.sol";
 import {MockPBMWallet, ReentrantPBMWallet} from "./helpers/MockPBMWallet.sol";
 
@@ -52,9 +53,7 @@ contract GantryCorePbmTest is GantryTestBase {
 
         // The demo beat: an out-of-policy purchase dies as an on-chain revert whose
         // selector the facilitator can decode — not a backend if-statement.
-        vm.expectRevert(
-            abi.encodeWithSelector(MockPBMWallet.CategoryNotAllowed.selector, CATEGORY_FOOD_BEVERAGE)
-        );
+        vm.expectRevert(abi.encodeWithSelector(AgentPBMWallet.CategoryNotAllowed.selector, CATEGORY_FOOD_BEVERAGE));
         core.settleFromPBM(intentId, address(wallet), "");
     }
 
@@ -115,7 +114,12 @@ contract GantryCorePbmTest is GantryTestBase {
         xsgd.mint(address(wallet), 1_000e6);
         vm.prank(relayer);
         bytes32 intentId = core.createIntent(
-            merchantId, XSGD_AMOUNT, address(xsgd), XSGD_AMOUNT, uint40(block.timestamp + 15 minutes), GantryCore.Door.Agent
+            merchantId,
+            XSGD_AMOUNT,
+            address(xsgd),
+            XSGD_AMOUNT,
+            uint40(block.timestamp + 15 minutes),
+            GantryCore.Door.Agent
         );
 
         core.settleFromPBM(intentId, address(wallet), "");
