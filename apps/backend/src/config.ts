@@ -27,10 +27,14 @@ const EnvSchema = z.object({
   FIXED_RATE_SWAP_ADDRESS: hexAddress.optional(),
   MOCK_USDC_ADDRESS: hexAddress.optional(),
   MOCK_XSGD_ADDRESS: hexAddress.optional(),
+  /** Overrides the shared demo wallet pin (31337, or a fresh Sepolia deploy). */
+  PBM_WALLET_ADDRESS: hexAddress.optional(),
   PORT: z.coerce.number().default(4000),
   CORS_ORIGIN: z.string().default("*"),
   ADMIN_TOKEN: z.string().min(8),
   FAUCET_ENABLED: z.enum(["0", "1"]).default("1"),
+  /** Gates the browser-triggered POST /api/policy/revoke (faucet precedent). */
+  POLICY_ADMIN_ENABLED: z.enum(["0", "1"]).default("1"),
   INTENT_TTL_SECONDS: z.coerce.number().min(60).default(600),
   DB_PATH: z.string().default("./gantry.db"),
   DEFAULT_TOKEN: z.enum(["MUSDC", "USDC", "XSGD"]).default("MUSDC"),
@@ -69,6 +73,8 @@ function resolveAddresses(): { addresses: GantryAddresses; deployBlock: bigint }
         mockUsdc: env.MOCK_USDC_ADDRESS as GantryAddresses["mockUsdc"],
         mockXsgd: env.MOCK_XSGD_ADDRESS as GantryAddresses["mockXsgd"],
         realUsdc: null,
+        agentPbmFactory: null,
+        demoAgentPbmWallet: null,
       },
       deployBlock: 0n,
     };
@@ -117,6 +123,11 @@ export const config = {
   corsOrigin: env.CORS_ORIGIN,
   adminToken: env.ADMIN_TOKEN,
   faucetEnabled: env.FAUCET_ENABLED === "1",
+  policyAdminEnabled: env.POLICY_ADMIN_ENABLED === "1",
+  /** The demo AgentPBMWallet the policy routes read/manage; null = routes 404. */
+  demoPbmWallet: (env.PBM_WALLET_ADDRESS ?? addresses.demoAgentPbmWallet) as
+    | `0x${string}`
+    | null,
   intentTtlSeconds: env.INTENT_TTL_SECONDS,
   dbPath: resolve(backendRoot, env.DB_PATH),
   defaultToken: env.DEFAULT_TOKEN,

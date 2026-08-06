@@ -23,6 +23,12 @@ mkdirSync(abisDir, { recursive: true });
 
 emit("gantryCore.ts", "gantryCoreAbi", loadAbi("GantryCore.sol", "GantryCore"));
 emit("fixedRateSwap.ts", "fixedRateSwapAbi", loadAbi("FixedRateSwap.sol", "FixedRateSwap"));
+emit("agentPbmWallet.ts", "agentPbmWalletAbi", loadAbi("AgentPBMWallet.sol", "AgentPBMWallet"));
+emit(
+  "agentPbmWalletFactory.ts",
+  "agentPbmWalletFactoryAbi",
+  loadAbi("AgentPBMWalletFactory.sol", "AgentPBMWalletFactory"),
+);
 emit(
   "eip3009Errors.ts",
   "eip3009ErrorsAbi",

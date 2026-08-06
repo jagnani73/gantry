@@ -2,6 +2,7 @@ import type { Address, Hex } from "viem";
 import type { TokenId } from "./tokens";
 import type { WireDoor } from "./door";
 import type { WireTypedData } from "./eip3009";
+import type { WireSpendAuthorization } from "./agentPolicy";
 
 /**
  * Wire types for every backend route. Conventions: ALL token/XSGD amounts are
@@ -101,6 +102,56 @@ export interface SettleResponse {
   /** Gross swap output; merchant nets xsgdOut − feeXsgd. */
   xsgdOut: string;
   feeXsgd: string;
+}
+
+/** POST /api/pbm/intent — pre-creates the Agent-door intent the gantry-pbm
+ * client must sign over (the SpendAuthorization binds the intentId). */
+export interface CreatePbmIntentRequest {
+  handle: string;
+  /** 6dp XSGD units, e.g. "19500000" for S$19.50. */
+  xsgdAmount: string;
+}
+
+export interface PbmIntentResponse {
+  intentId: Hex;
+  merchantId: Hex;
+  handle: string;
+  tokenIn: Address;
+  tokenSymbol: TokenId;
+  /** What the wallet will pay — the client MUST check it equals the accepts
+   * entry's amount before signing. */
+  amountIn: string;
+  xsgdAmount: string;
+  expiry: number;
+  /** Wallet-agnostic (no verifyingContract) — the client revives with its own
+   * PBM wallet address before signing. */
+  typedData: WireSpendAuthorization;
+  txHash: Hex;
+}
+
+/** GET /api/policy — on-chain AgentPBMWallet state for the dashboard panel and
+ * the agent's check_my_policy tool. Amounts are raw 6dp token units; the UI
+ * converts to S$ via `rate`. */
+export interface PolicyResponse {
+  wallet: Address;
+  agentSigner: Address;
+  dailyCap: string;
+  perTxCap: string;
+  spentToday: string;
+  /** Unix seconds; 0 = revoked/unset (expired-by-default). */
+  expiry: number;
+  categoryBitmap: string;
+  /** Decoded category names for bits set in the bitmap. */
+  categories: string[];
+  /** Wallet's balance of the order token. */
+  balance: string;
+  /** XSGD 6dp out per 1e6 token units — the display conversion factor. */
+  rate: string;
+  revoked: boolean;
+}
+
+export interface RevokePolicyResponse {
+  txHash: Hex;
 }
 
 export interface ApiErrorBody {

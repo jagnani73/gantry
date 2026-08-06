@@ -1,17 +1,19 @@
 import { BaseError, ContractFunctionRevertedError, decodeErrorResult, type Hex } from "viem";
 import { gantryCoreAbi } from "./abis/gantryCore";
 import { fixedRateSwapAbi } from "./abis/fixedRateSwap";
+import { agentPbmWalletAbi } from "./abis/agentPbmWallet";
 import { eip3009ErrorsAbi } from "./abis/eip3009Errors";
 
 /**
  * Union of every custom error Gantry settlement can surface (core + swap +
- * mock tokens). M3: spread the AgentPBMWallet errors ABI here — otherwise
- * CategoryNotAllowed, DailyCapExceeded & co decode as "unknown" and the
- * on-stage rejection beat degrades to a raw 500.
+ * PBM wallet + mock tokens). The AgentPBMWallet spread is load-bearing for
+ * the M3 rejection beat: settleFromPBM is simulated against gantryCoreAbi,
+ * so a wallet policy revert reaches viem as raw bytes and only decodes here.
  */
 export const gantryErrorsAbi = [
   ...gantryCoreAbi.filter((entry) => entry.type === "error"),
   ...fixedRateSwapAbi.filter((entry) => entry.type === "error"),
+  ...agentPbmWalletAbi.filter((entry) => entry.type === "error"),
   ...eip3009ErrorsAbi,
 ] as const;
 

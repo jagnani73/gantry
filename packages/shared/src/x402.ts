@@ -58,6 +58,16 @@ export interface X402ExactEvmPayload {
   };
 }
 
+/** `gantry-pbm` scheme inner payload (non-custodial policy-wallet door). The
+ * intent is pre-created via POST /api/pbm/intent — the session key's signature
+ * binds it — and `pbmWallet` becomes the on-chain payer. */
+export interface X402GantryPbmPayload {
+  pbmWallet: Address;
+  intentId: Hex;
+  /** 65-byte session-key EIP-712 signature over SpendAuthorization. */
+  signature: Hex;
+}
+
 /** Paid retry body carried in the PAYMENT-SIGNATURE header. The client echoes
  * the chosen accepts[] entry (`accepted`) and the challenge's `resource`. */
 export interface X402PaymentPayload {

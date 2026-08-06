@@ -11,4 +11,22 @@ export const DEMO_MERCHANTS: Record<string, { displayName: string; location: str
     displayName: "Ah Hock Chicken Rice",
     location: "Maxwell Food Centre",
   },
+  "gadgethub-sg": {
+    displayName: "GadgetHub SG",
+    location: "Sim Lim Square",
+  },
 };
+
+/**
+ * The canonical demo agent policy — "S$50/day" stored on-chain in the spend
+ * token's 6dp units at the pinned 1.3421 rate: ceil(50e6 * 1e6 / DEMO_RATE).
+ * Used by DeployPBM.s.sol (mirrored constants), the admin re-arm endpoint, and
+ * demo-reset's printed verification.
+ */
+export const DEMO_POLICY = {
+  dailyCap: 37_255_049n,
+  perTxCap: 37_255_049n,
+  /** food_beverage only (bit 1). */
+  categoryBitmap: 1n << 1n,
+  policyTtlSeconds: 30 * 24 * 60 * 60,
+} as const;

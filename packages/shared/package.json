@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/quote.test.ts src/handle.test.ts src/eip3009.test.ts src/errors.test.ts src/x402.test.ts"
+    "test": "tsx --test src/quote.test.ts src/handle.test.ts src/eip3009.test.ts src/agentPolicy.test.ts src/errors.test.ts src/x402.test.ts"
   },
   "dependencies": {
     "viem": "catalog:"

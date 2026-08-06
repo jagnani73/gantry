@@ -530,6 +530,29 @@ contract AgentPBMWalletTest is Test {
         assertEq(wallet.spentToday(), 10e6);
     }
 
+    // ---------------------------------------------------------------- cross-stack pin
+
+    function test_crossStack_digestVector() public {
+        // Mirrors packages/shared/src/agentPolicy.test.ts: same wallet address,
+        // chainId, intentId, token, amount — and the digest is computed from the LIVE
+        // contract's DOMAIN_SEPARATOR + typehash via deployCodeTo. If either side's
+        // EIP-712 encoding drifts a byte, one of the two pins goes red instead of
+        // every signature silently dying on-chain as InvalidAgentSignature.
+        address vectorWallet = 0xDD4bbed78B64715288bf10fabB2b62c659299D3E;
+        deployCodeTo(
+            "AgentPBMWallet.sol:AgentPBMWallet", abi.encode(owner, agent, coreAddr), vectorWallet
+        );
+        vm.chainId(84532);
+
+        bytes32 digest = PbmDigest.spendDigest(
+            vectorWallet,
+            0x1111111111111111111111111111111111111111111111111111111111111111,
+            0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9,
+            14_529_469
+        );
+        assertEq(digest, 0x1439a3cfe932d4b48486959d9c4faa8f9a9dd806a343f74bc96f44bfe2b29285);
+    }
+
     // ---------------------------------------------------------------- fuzz
 
     function testFuzz_perTxBoundary(uint128 amount, uint128 cap) public {
