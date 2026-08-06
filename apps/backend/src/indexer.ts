@@ -128,7 +128,10 @@ export function settlementEventOf(row: SettlementRow): SettlementEvent {
   };
 }
 
-const SWEEP_CHUNK = 9_000n; // Alchemy free tier caps getLogs ranges at 10k blocks
+// Must fit EVERY transport in the fallback chain: Alchemy caps getLogs at 10k
+// blocks, the public sepolia.base.org fallback at 2k — a bigger chunk wedges
+// the sweep (cursor never advances) whenever the fallback is serving.
+const SWEEP_CHUNK = 1_999n;
 
 let sweeping = false;
 let resetEpoch = 0;
