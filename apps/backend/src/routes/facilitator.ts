@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { X402PaymentPayload, X402PaymentRequirements } from "@gantry/shared";
-import { settleBridge } from "../services/bridge";
-import { getSupported, verifyExact } from "../services/facilitator";
+import { getSupported } from "../services/facilitator";
+import { settlePayment, verifyPayment } from "../services/schemes";
 
 /**
  * The externally-visible, spec-shaped facilitator surface (what a standard
@@ -46,7 +46,7 @@ facilitatorRouter.get("/facilitator/supported", (_req, res) => {
 facilitatorRouter.post("/facilitator/verify", async (req, res) => {
   const body = EnvelopeSchema.parse(req.body);
   res.json(
-    await verifyExact(
+    await verifyPayment(
       body.paymentPayload as X402PaymentPayload,
       body.paymentRequirements as X402PaymentRequirements,
     ),
@@ -56,7 +56,7 @@ facilitatorRouter.post("/facilitator/verify", async (req, res) => {
 facilitatorRouter.post("/facilitator/settle", async (req, res) => {
   const body = EnvelopeSchema.parse(req.body);
   res.json(
-    await settleBridge(
+    await settlePayment(
       body.paymentPayload as X402PaymentPayload,
       body.paymentRequirements as X402PaymentRequirements,
     ),

@@ -54,7 +54,7 @@ export async function settleBridge(
   }
 }
 
-function failure(errorReason: string, errorMessage: string, payer?: Address): X402SettleResponse {
+export function failure(errorReason: string, errorMessage: string, payer?: Address): X402SettleResponse {
   return {
     success: false,
     errorReason,
@@ -67,7 +67,7 @@ function failure(errorReason: string, errorMessage: string, payer?: Address): X4
 
 /** ApiError keeps its wire name (MerchantNotFound…); contract reverts go
  * through the shared decoder — never backend if-statements. */
-function reasonAndMessage(err: unknown): { reason: string; message: string } {
+export function reasonAndMessage(err: unknown): { reason: string; message: string } {
   if (err instanceof ApiError) return { reason: err.errorName, message: err.message };
   const decoded = decodeGantryError(err);
   return { reason: reasonForGantryError(decoded), message: describeGantryError(decoded) };
@@ -77,7 +77,7 @@ function reasonAndMessage(err: unknown): { reason: string; message: string } {
  * token string revert (tx executed and reverted), a mined-but-reverted receipt
  * from the relayer, or an ApiError raised before broadcast. Receipt timeouts
  * and transport failures stay ambiguous — the tx may still mine. */
-function isDefiniteFailure(err: unknown): boolean {
+export function isDefiniteFailure(err: unknown): boolean {
   if (err instanceof ApiError) return true;
   if (err instanceof Error && /reverted on-chain/.test(err.message)) return true;
   return decodeGantryError(err).kind !== "unknown";
@@ -321,7 +321,7 @@ type CancelOutcome = "cancelled" | "already_settled" | "failed";
 
 /** Cancels a pending bridge intent, branching on WHY a cancel could not land —
  * IntentAlreadySettled is load-bearing evidence for the settle resolver. */
-async function tryCancelIntent(intentId: Hex): Promise<CancelOutcome> {
+export async function tryCancelIntent(intentId: Hex): Promise<CancelOutcome> {
   try {
     await sendRelayerTx({
       address: config.addresses.gantryCore,

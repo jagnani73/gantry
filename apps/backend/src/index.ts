@@ -11,6 +11,8 @@ import { intentsRouter } from "./routes/intents";
 import { eventsRouter } from "./routes/events";
 import { adminRouter } from "./routes/admin";
 import { facilitatorRouter } from "./routes/facilitator";
+import { pbmRouter } from "./routes/pbm";
+import { policyRouter } from "./routes/policy";
 import { ordersRouter } from "./routes/order";
 import { x402Middleware } from "./x402";
 
@@ -28,6 +30,8 @@ app.use(intentsRouter);
 app.use(eventsRouter);
 app.use(adminRouter);
 app.use(facilitatorRouter);
+app.use(pbmRouter);
+app.use(policyRouter);
 // The x402 middleware must wrap the order route: it 402-challenges unpaid
 // requests and only lets verified ones through to the handler below.
 app.use(x402Middleware);

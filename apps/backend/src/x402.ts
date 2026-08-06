@@ -1,8 +1,12 @@
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import type { FacilitatorClient } from "@x402/core/server";
 import type {
+  AssetAmount,
+  Network,
   PaymentPayload,
   PaymentRequirements,
+  Price,
+  SchemeNetworkServer,
   SettleResponse,
   SupportedResponse,
   VerifyResponse,
@@ -10,8 +14,8 @@ import type {
 import { caip2, type X402PaymentPayload, type X402PaymentRequirements } from "@gantry/shared";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { config } from "./config";
-import { settleBridge } from "./services/bridge";
-import { getSupported, verifyExact } from "./services/facilitator";
+import { getSupported } from "./services/facilitator";
+import { settlePayment, verifyPayment } from "./services/schemes";
 import { orderRoutes } from "./routes/order";
 
 /**
@@ -27,11 +31,11 @@ import { orderRoutes } from "./routes/order";
  */
 class InProcessFacilitatorClient implements FacilitatorClient {
   async verify(payload: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResponse> {
-    return verifyExact(payload as X402PaymentPayload, requirements as X402PaymentRequirements);
+    return verifyPayment(payload as X402PaymentPayload, requirements as X402PaymentRequirements);
   }
 
   async settle(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse> {
-    return settleBridge(payload as X402PaymentPayload, requirements as X402PaymentRequirements);
+    return settlePayment(payload as X402PaymentPayload, requirements as X402PaymentRequirements);
   }
 
   async getSupported(): Promise<SupportedResponse> {
@@ -39,9 +43,32 @@ class InProcessFacilitatorClient implements FacilitatorClient {
   }
 }
 
-const resourceServer = new x402ResourceServer(new InProcessFacilitatorClient()).register(
-  caip2(config.chainId),
-  new ExactEvmScheme(),
-);
+/**
+ * The resource-server side of the `gantry-pbm` scheme. The SDK requires a
+ * registered SchemeNetworkServer per accepts[] scheme at boot
+ * (validateRouteConfiguration) — this plus the matching kind in getSupported()
+ * are a package deal; missing either bricks startup with a
+ * RouteConfigurationError. Our order route always prices via buildOrderPrice
+ * (an AssetAmount), so parsePrice is a passthrough and requirements need no
+ * enrichment (ExactEvmScheme precedent).
+ */
+class GantryPbmScheme implements SchemeNetworkServer {
+  readonly scheme = "gantry-pbm";
+
+  async parsePrice(price: Price, network: Network): Promise<AssetAmount> {
+    if (typeof price === "object" && price !== null && "amount" in price && price.asset) {
+      return { amount: price.amount, asset: price.asset, extra: price.extra ?? {} };
+    }
+    throw new Error(`gantry-pbm requires an AssetAmount price on ${network} (money strings unsupported)`);
+  }
+
+  enhancePaymentRequirements(requirements: PaymentRequirements): Promise<PaymentRequirements> {
+    return Promise.resolve(requirements);
+  }
+}
+
+const resourceServer = new x402ResourceServer(new InProcessFacilitatorClient())
+  .register(caip2(config.chainId), new ExactEvmScheme())
+  .register(caip2(config.chainId), new GantryPbmScheme());
 
 export const x402Middleware = paymentMiddleware(orderRoutes, resourceServer);
