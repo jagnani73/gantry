@@ -10,6 +10,7 @@ import {
 } from "@gantry/shared";
 import { backendUrl } from "@/lib/env";
 import { chime, enableSound, soundEnabled } from "@/lib/chime";
+import { PolicyPanel } from "@/components/policy-panel";
 import { SettlementRow } from "@/components/settlement-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -120,6 +121,8 @@ export function DashboardClient() {
             </CardHeader>
           </Card>
         </div>
+
+        <PolicyPanel />
 
         <Card className="flex-1">
           <CardHeader>

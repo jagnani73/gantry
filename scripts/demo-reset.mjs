@@ -47,6 +47,43 @@ if (!healthRes.ok) {
 }
 const health = await healthRes.json();
 
+// Re-arm the agent policy: setPolicy resets the wallet's spentToday counter,
+// so ten S$19.50 rehearsals never pile into the S$50/day cap.
+let policyLine = "⚠ PBM wallet not deployed yet — agent beats unavailable";
+const arm = await fetch(`${backend}/api/admin/policy/arm`, {
+  method: "POST",
+  headers: { "x-admin-token": adminToken },
+});
+if (arm.ok) {
+  const policyRes = await fetch(`${backend}/api/policy`);
+  if (policyRes.ok) {
+    const p = await policyRes.json();
+    const sgd = (units) => (Number(BigInt(units) * BigInt(p.rate)) / 1e12).toFixed(2);
+    policyLine =
+      `policy re-armed: S$${sgd(p.dailyCap)}/day · ${p.categories.join(", ")} · ` +
+      `spent S$${sgd(p.spentToday)} · wallet S$${sgd(p.balance)}`;
+    // Top up the wallet through the open-mint faucet when it runs low.
+    if (BigInt(p.balance) < BigInt(p.dailyCap)) {
+      const faucet = await fetch(`${backend}/api/faucet`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address: p.wallet }),
+      });
+      policyLine += faucet.ok
+        ? " (low — faucet top-up sent)"
+        : " ⚠ low balance and faucet top-up failed";
+    }
+  }
+} else if (arm.status !== 404) {
+  policyLine = `⚠ policy re-arm failed: ${arm.status} ${await arm.text()}`;
+}
+
+// The rejection beat needs gadgethub-sg registered on-chain.
+const gadget = await fetch(`${backend}/api/merchants/gadgethub-sg`);
+const gadgetLine = gadget.ok
+  ? "gadgethub-sg registered (category electronics — the rejection beat)"
+  : "⚠ gadgethub-sg NOT registered on-chain — the rejection beat will fail";
+
 let relayerEth = "?";
 if (process.env.BASE_SEPOLIA_RPC_URL) {
   const res = await fetch(process.env.BASE_SEPOLIA_RPC_URL, {
@@ -63,6 +100,8 @@ if (process.env.BASE_SEPOLIA_RPC_URL) {
 }
 
 console.log(`✓ dashboard cleared, indexer cursor → block ${health.indexerCursor} (chain ${health.chainId})
+✓ ${policyLine}
+✓ ${gadgetLine}
 relayer  ${BASE_SEPOLIA_RELAYER}  (${relayerEth} ETH)
 
 contracts (Base Sepolia)
@@ -71,10 +110,17 @@ contracts (Base Sepolia)
   MockUSDC       ${BASE_SEPOLIA_ADDRESSES.mockUsdc}
   MockXSGD       ${BASE_SEPOLIA_ADDRESSES.mockXsgd}
   Circle USDC    ${BASE_SEPOLIA_ADDRESSES.realUsdc}
+  PBM factory    ${BASE_SEPOLIA_ADDRESSES.agentPbmFactory}
+  PBM wallet     ${BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet}
 
 demo urls
   payer      ${app}/pay/ah-hock-chicken-rice?burner=1
   dashboard  ${app}/dashboard
   print QR   ${app}/qr/ah-hock-chicken-rice
+
+agent beats
+  lunch      pnpm --filter @gantry/agent start "buy the team lunch from Ah Hock"
+  rejection  pnpm --filter @gantry/agent start "buy a S\\$29 powerbank at GadgetHub"
+  e2e        pnpm --filter @gantry/agent e2e:pbm [-- --handle gadgethub-sg --sgd 29 --expect-denial]
 
 done in ${((Date.now() - started) / 1000).toFixed(1)}s`);

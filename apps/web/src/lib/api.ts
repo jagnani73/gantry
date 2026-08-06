@@ -4,6 +4,8 @@ import type {
   FaucetResponse,
   IntentResponse,
   MerchantResponse,
+  PolicyResponse,
+  RevokePolicyResponse,
   SettleRequest,
   SettleResponse,
 } from "@gantry/shared";
@@ -55,4 +57,7 @@ export const api = {
     call<IntentResponse>(`/api/intents/${intentId}/requote`, { method: "POST", body: "{}" }),
   faucet: (address: string) =>
     call<FaucetResponse>("/api/faucet", { method: "POST", body: JSON.stringify({ address }) }),
+  policy: () => call<PolicyResponse>("/api/policy"),
+  revokePolicy: () =>
+    call<RevokePolicyResponse>("/api/policy/revoke", { method: "POST", body: "{}" }),
 };
