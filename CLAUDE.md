@@ -17,7 +17,8 @@ Both settle through `GantryCore._settle()`: pull funds → swap to XSGD if neede
 
 ## Hard deadlines
 
-- **14 Aug 2026 ~6 PM SGT:** Stage 1 Devpost submission (deck PDF, 60–90s demo clip, this repo, architecture diagram, live dashboard link). Finished product NOT required — screening is on originality/feasibility/direction.
+- **12 Aug 2026 night (EOD SGT):** EVERYTHING done (reset 6 Aug 2026) — build freeze 9 Aug EOD, Stage 1 materials 10 Aug, Devpost submission 11 Aug EOD, hardening + ≥10 rehearsals + backup clips by 12 Aug night. 13–20 Aug is intentionally empty (slip buffer only).
+- **14 Aug 2026 ~6 PM SGT:** Stage 1 Devpost submission hard cutoff — backstop only, we submit 11 Aug (deck PDF, 60–90s demo clip, this repo, architecture diagram, live dashboard link). Finished product NOT required — screening is on originality/feasibility/direction.
 - **21–23 Aug 2026:** on-site finals at NTU — live 3-minute demo, working prototype.
 - Judging: Technical Quality 30%, Real-World Impact 25%, Innovation 20%, Demo 15%, Track Relevance 10%.
 
@@ -38,7 +39,7 @@ Full plan (architecture, demo script, submission package, timeline): `C:\Users\y
 
 **Agent** (`apps/agent`, `@anthropic-ai/sdk`, model `claude-opus-5`, beta tool runner, streaming): terminal CLI; tools `list_merchants`, `check_my_policy`, `pay_merchant` (deterministic HTTP + signing inside the tool; the LLM narrates). 8s LLM timeout → scripted reasoning fallback, visually identical. Separate tiny script pays via unmodified `@x402/fetch` (standard-interop proof).
 
-**Chain/infra:** Base Sepolia (`eip155:84532`); Alchemy RPC primary + public/QuickNode fallback, env-switchable; `DEMO_MODE=local` runs everything against a local Anvil fork (same contracts/UI, zero internet) — the stage demo runs local over a laptop hotspot; Sepolia deployment is real and Basescan-verified for authenticity. Hosting: Vercel (web) + Railway/Fly (backend — needs long-lived SSE).
+**Chain/infra:** Base Sepolia (`eip155:84532`); Alchemy RPC primary + public/QuickNode fallback, env-switchable; deployment is real and Basescan-verified for authenticity. The stage demo runs against Sepolia over a laptop hotspot. Anvil local mode (`DEMO_MODE=local` against a local fork) is **deferred, not built** (6 Aug 2026): its orchestration cost lands in M4, the heaviest milestone, and the hotspot already covers the venue-network failure mode — insurance that costs the thing it insures isn't good insurance. The CHAIN_ID=31337 plumbing (config branches, `ANVIL_CHAIN_ID`) stays as-is, inert. Revisit only if hotspot+Sepolia rehearsals (11–12 Aug) hit RPC flakiness — the fix would land in the otherwise-empty 13–20 Aug slip buffer. Hosting: Vercel (web) + Railway/Fly (backend — needs long-lived SSE).
 
 ## Canonical demo facts (bake into seed data / `demo-reset` script)
 
@@ -48,11 +49,11 @@ Full plan (architecture, demo script, submission package, timeline): `C:\Users\y
 - Agent policy: S$50/day cap, categories `[food_beverage]`, 30-day expiry, revocable.
 - Rejection beat: "GadgetHub SG" (`electronics`), S$29 powerbank → on-chain revert `CategoryNotAllowed`.
 - Fee story: Gantry 0.5% (S$0.13 on the day's S$26) vs ~2.8% cards (S$0.72).
-- `demo-reset` = one command: deploy, mint, fund wallets, seed pool, register merchant + policy, clear dashboard, print addresses. Must run <30s — it enables rehearsal.
+- `demo-reset` = one command, Sepolia-based: clear the dashboard cache; contracts persist on-chain and the relayer holds gas ETH. Must run <30s — it enables rehearsal. (The full deploy/mint/fund/seed orchestration returns only if Anvil local mode is revived — deferred 6 Aug 2026, see Chain/infra.)
 
 ## Milestones & cut list
 
-M0 (Aug 4–5) contracts core + Sepolia deploy → M1 (6–7) QR spine e2e — **the demo spine; everything after is additive** → M2 (8–9) x402 door + `@x402/fetch` interop → M3 (10–11) PBM + Claude agent + on-chain denial → M4 (12–13) swap + onboarding + Stage 1 materials; build freeze 12 Aug EOD; clip recorded 13 Aug AM; submit 14 Aug. Then hardening + ≥10 rehearsals before finals.
+Schedule reset 6 Aug 2026 (M0–M2 landed ahead of plan; everything done by 12 Aug night): M0 (done 5 Aug) contracts core + Sepolia deploy → M1 (done 5 Aug) QR spine e2e — **the demo spine; everything after is additive** → M2 (done 6 Aug) x402 door + `@x402/fetch` interop → M3 (Aug 6–7) PBM + Claude agent + on-chain denial → M4 (Aug 8–9) swap + onboarding + Stage 1 materials; build freeze 9 Aug EOD; clip recorded 10 Aug AM, materials finalized 10 Aug PM; fresh-eyes review + submit 11 Aug EOD (14 Aug external cutoff = backstop only); hardening + ≥10 rehearsals + backup clips 11–12 Aug — **everything done 12 Aug night**; 13–20 Aug empty (slip buffer only); finals prep is venue-only.
 
 Cut in this order if behind: AMM→fixed-rate; onboarding wizard→single form; `@x402/fetch` beat; live Claude→scripted agent (wire traffic stays real). **Never cut:** QR flow, GantryCore settlement, live dashboard feed.
 
@@ -73,7 +74,7 @@ Design notes that bind later milestones: intents are relayer-created with pinned
 
 The QR spine is live end-to-end on Base Sepolia: printed QR → `/pay/[handle]` → EIP-3009 sign (burner or wallet-connect) → relayer settles → dashboard SSE row <2s. Verified in-browser and via the CLI harness (`pnpm --filter @gantry/backend e2e:pay`). The M1 review gate ran (5 agents); all four fix bundles were applied. TS tests: 16 shared + 9 backend, all green.
 
-**What exists:** `packages/shared` (committed generated ABIs via `pnpm abis`, addresses, ceil quote math, EIP-3009 typed-data builders, structural error decoding); `apps/backend` (Express 5 + viem: `/health`, merchant lookup, quote-pinned intent creation, settle, requote, faucet, SSE `/api/events`, admin reset); `apps/web` (Next 15: payer page state machine, dark dashboard with chime + Human/Agent badges + summary strip, printable QR). `pnpm demo:reset` clears the cache <1s (full Anvil orchestration is M4; CHAIN_ID=31337 plumbing already built).
+**What exists:** `packages/shared` (committed generated ABIs via `pnpm abis`, addresses, ceil quote math, EIP-3009 typed-data builders, structural error decoding); `apps/backend` (Express 5 + viem: `/health`, merchant lookup, quote-pinned intent creation, settle, requote, faucet, SSE `/api/events`, admin reset); `apps/web` (Next 15: payer page state machine, dark dashboard with chime + Human/Agent badges + summary strip, printable QR). `pnpm demo:reset` clears the cache <1s (Anvil orchestration deferred 6 Aug 2026 — see Chain/infra; CHAIN_ID=31337 plumbing built and retained inert).
 
 Design notes that bind M2/M3:
 - **Wire conventions:** all amounts are 6dp-unit decimal strings; display timestamps (`expiry`, `blockTime`) are unix-second numbers; **`validAfter`/`validBefore` are uint256 decimal strings** that must byte-match the signed typed data (x402 `exact` carries them as strings). `IntentResponse` field names are deliberately x402 vocabulary (tokenIn=asset, amountIn=amount, payTo=core, intentId=authorization nonce). *(Superseded in M2: the agent door prices its 402 independently via the facilitator bridge — see M2 status.)*
@@ -99,7 +100,7 @@ Design notes that bind M3/M4:
 - **M3 `gantry-pbm`** = a second entry in the same route's accepts[] + a second scheme handler beside `exact` in the facilitator services; settlement via `settleFromPBM` puts the PBM wallet on-chain as payer (no bridge, non-custodial — the purity story lives there). MUST spread the AgentPBMWallet errors ABI into `gantryErrorsAbi` or `CategoryNotAllowed` & co decode as `unknown`; `reasonForGantryError` already passes custom names through verbatim (unit-pinned for `CategoryNotAllowed`).
 - **x402 error vocabulary:** snake_case protocol reasons (`invalid_signature`, `insufficient_funds`, `authorization_already_used`, `quote_changed`, `invalid_requirements`…) + Gantry custom error names passed through verbatim; Circle's "used or canceled" string maps to `authorization_already_used`; everything else collapses to `settlement_failed` with detail in `errorMessage`.
 - **M4 AMM warning:** `buildOrderPrice` must stay deterministic between challenge and retry (the middleware deep-equal-matches rebuilt requirements). The owner-set FixedRateSwap satisfies this; GantrySwap's moving rate breaks it — M4 needs a short-lived quote pin in the price fn.
-- Bridge compensation paths (settle-fails-after-collect → cancel+refund) have no automated coverage — becomes a cheap fork test once M4's Anvil orchestration exists.
+- Bridge compensation paths (settle-fails-after-collect → cancel+refund) have no automated coverage — becomes a cheap fork test only if Anvil orchestration is revived (deferred 6 Aug 2026).
 - SQLite gained `agent_payer` on intents + settlements (ALTER-migrated in place; cache stays disposable).
 
 ## What's real vs mocked (keep these labels honest everywhere)
