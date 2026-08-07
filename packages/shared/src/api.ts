@@ -60,7 +60,7 @@ export interface CreateIntentRequest {
   handle: string;
   /** 6dp XSGD units, e.g. "6500000" for S$6.50. */
   xsgdAmount: string;
-  token?: TokenId;
+  token: TokenId;
 }
 
 /**

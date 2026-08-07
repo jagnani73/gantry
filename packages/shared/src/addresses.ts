@@ -1,7 +1,6 @@
 import type { Address } from "viem";
 
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
-export const ANVIL_CHAIN_ID = 31337;
 
 export interface GantryAddresses {
   gantryCore: Address;

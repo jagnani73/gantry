@@ -24,9 +24,6 @@ const mintAbi = [
 ] as const;
 
 export async function faucetMint(address: Address): Promise<FaucetResponse> {
-  if (!config.faucetEnabled) {
-    throw new ApiError(403, "FaucetDisabled", "faucet is disabled on this deployment");
-  }
   const key = address.toLowerCase();
   const last = lastMint.get(key);
   if (last && Date.now() - last < COOLDOWN_MS) {

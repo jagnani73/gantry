@@ -13,7 +13,9 @@ const hexAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x-prefixed
 const CreateIntentSchema = z.object({
   handle: z.string(),
   xsgdAmount: z.string(),
-  token: z.enum(["MUSDC", "USDC", "XSGD"]).optional(),
+  // Required: every caller already pins it, and a server-side default would
+  // silently decide which asset a payer signs for.
+  token: z.enum(["MUSDC", "USDC", "XSGD"]),
 });
 
 const SettleSchema = z.object({

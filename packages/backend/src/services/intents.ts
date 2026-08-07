@@ -16,7 +16,7 @@ import {
   type TokenId,
 } from "@gantry/shared";
 import { publicClient, tokenDomain } from "../chain";
-import { config } from "../config";
+import { config, INTENT_TTL_SECONDS } from "../config";
 import { getIntentRow, insertIntentRow, setIntentStatus, type IntentRow } from "../db";
 import { ApiError } from "../errors";
 import { sendRelayerTx } from "../relayer";
@@ -59,14 +59,14 @@ export async function createIntent(
     throw new ApiError(400, "ValidationError", "xsgdAmount must be positive");
   }
 
-  const token = req.token ?? config.defaultToken;
+  const token = req.token;
   const tokenIn = tokenAddress(config.addresses, token);
   const rate = await readRate(token);
   const amountIn = token === "XSGD" ? xsgdAmount : quoteAmountIn(xsgdAmount, rate);
 
   // Chain time, not server clock — a skewed laptop otherwise mints born-expired intents.
   const block = await publicClient.getBlock();
-  const expiry = block.timestamp + BigInt(config.intentTtlSeconds);
+  const expiry = block.timestamp + BigInt(INTENT_TTL_SECONDS);
   const validBefore = expiry + BigInt(AUTH_WINDOW_SLACK_SECONDS);
 
   const { receipt } = await sendRelayerTx({
@@ -147,12 +147,21 @@ export async function requoteIntent(intentId: Hex): Promise<IntentResponse> {
     });
     setIntentStatus(intentId, "cancelled");
   }
+  // A requote must reuse the ORIGINAL token. Falling back to a default here
+  // would silently requote in a different asset than the payer first saw.
   const token = tokenIdByAddress(config.addresses, row.token_in as `0x${string}`);
+  if (!token) {
+    throw new ApiError(
+      500,
+      "UnknownIntentToken",
+      `stored intent ${intentId} references an unrecognised token ${row.token_in}`,
+    );
+  }
   return createIntent(
     {
       handle: row.handle,
       xsgdAmount: row.xsgd_amount,
-      ...(token ? { token } : {}),
+      token,
     },
     row.door as Door,
   );

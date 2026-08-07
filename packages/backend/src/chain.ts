@@ -1,8 +1,7 @@
 import { createPublicClient, createWalletClient, fallback, http, webSocket } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia, foundry } from "viem/chains";
+import { baseSepolia } from "viem/chains";
 import {
-  ANVIL_CHAIN_ID,
   TOKENS,
   tokenAddress,
   type Eip712TokenDomain,
@@ -10,7 +9,7 @@ import {
 } from "@gantry/shared";
 import { config } from "./config";
 
-export const chain = config.chainId === ANVIL_CHAIN_ID ? foundry : baseSepolia;
+export const chain = baseSepolia;
 
 /**
  * Ordered fallback across every configured RPC. Ranking is deliberately NOT

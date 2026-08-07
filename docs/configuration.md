@@ -37,11 +37,10 @@ modes and nothing to read from the URL.
 Burner only (`pay-client.tsx:145-165`). The connected wallet is never funded and
 must already hold the token.
 
-| Balance vs `amountIn` | `FAUCET_ENABLED` | Result |
-|---|---|---|
-| sufficient | any | Straight to signing, no faucet call. |
-| insufficient | `1` | `funding` step → mint 100 MUSDC → poll balance 10× 1.5s → sign, or fail "faucet funds not visible yet" after ~15s. |
-| insufficient | `0` | Stops with `FaucetDisabled` — the payment cannot proceed. |
+| Balance vs `amountIn` | Result |
+|---|---|
+| sufficient | Straight to signing, no faucet call. |
+| insufficient | `funding` step → mint 100 MUSDC (60s cooldown per address) → poll balance 10× 1.5s → sign, or fail "faucet funds not visible yet" after ~15s. |
 
 Amount cap: **S$130** on the burner, S$9999 on a connected wallet
 (`pay-client.tsx:242`). The cap follows from the faucet minting 100 MUSDC.
@@ -50,17 +49,7 @@ Amount cap: **S$130** on the burner, S$9999 on a connected wallet
 
 ## Which token moves
 
-Three variables, three different paths.
-
-#### `DEFAULT_TOKEN`
-
-| Value | Behaviour |
-|---|---|
-| `MUSDC` *(default)* | Fallback for `POST /api/intents` when the request omits `token` (`services/intents.ts:62`). |
-| `USDC` | Same, real Circle USDC. |
-| `XSGD` | Same, XSGD-direct settlement. |
-
-Rarely applies — the payer page and `e2e:pay` both send an explicit `token`.
+Two variables, one per door.
 
 #### `ORDER_TOKEN`
 
@@ -88,7 +77,6 @@ balance; `demo:reset` warns when it diverges.
 | burner | always `MUSDC` |
 | connected wallet | `NEXT_PUBLIC_PAY_TOKEN` |
 | agent door (`exact` and `gantry-pbm`) | `ORDER_TOKEN` |
-| any request omitting `token` | `DEFAULT_TOKEN` |
 
 ---
 
@@ -132,13 +120,6 @@ way that looks like a bug rather than a config error.
 
 ## Feature availability
 
-#### `FAUCET_ENABLED`
-
-| Value | Behaviour |
-|---|---|
-| `1` *(default)* | `POST /api/faucet` mints 100 MUSDC, 60s cooldown per address. |
-| `0` | Route returns 403. Unfunded burners cannot pay at all. |
-
 #### `POLICY_ADMIN_ENABLED`
 
 | Value | Behaviour |
@@ -150,16 +131,6 @@ Worth setting to `0` on a public host: an open revoke lets any visitor zero the
 agent's policy and break the agent demo, and only the `ADMIN_TOKEN` can re-arm it
 (`POST /api/admin/policy/arm`, which `demo:reset` calls). That is a denial risk,
 not a spending one.
-
-#### `INTENT_TTL_SECONDS`
-
-| Value | Behaviour |
-|---|---|
-| `600` *(default)* | How long a quote stays payable, measured from block timestamp. The signed authorization window is this + 120s. |
-| ≥ 60 | As given. |
-
-A payer who leaves the review card open past this gets an expiry error and a
-"get new quote" path rather than a failed transaction.
 
 ---
 
@@ -181,7 +152,6 @@ A payer who leaves the review card open past this gets an expiry error and a
 
 1. `NEXT_PUBLIC_*` values are read at build time — restart after editing.
 2. Switching payer modes needs an env edit and a restart — there is no per-request override.
-4. `FAUCET_ENABLED=0` breaks the burner flow for any unfunded wallet.
 5. `ORDER_TOKEN` must match what the PBM wallet holds.
 6. `AGENT_SESSION_KEY` must match the wallet's on-chain `agentSigner`.
 7. `NEXT_PUBLIC_APP_URL` is encoded into the printed QR
