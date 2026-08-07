@@ -68,11 +68,11 @@ cp packages/agent/.env.example packages/agent/.env       # fill: AGENT_SESSION_K
 pnpm dev                                                 # backend :4000 + web :3000 (binds 0.0.0.0)
 ```
 
-The relayer address needs Base Sepolia ETH — it is the only gas key in the system, so with an empty balance every settlement, registration and faucet mint fails. Nothing else needs deploying: the contracts are live and their addresses are pinned in `@gantry/shared`.
+The relayer address needs Base Sepolia ETH — it is the only gas key in the system, so with an empty balance every settlement, registration and payer top-up fails. It doubles as the **funder**: payer burners and the demo policy wallet are topped up by transferring real USDC out of its balance, so it needs USDC too. `pnpm demo:reset` reports both and swaps ETH for USDC on Uniswap v3 when the USDC runs low. Nothing else needs deploying: the contracts are live and their addresses are pinned in `@gantry/shared`.
 
 Every environment variable, what it changes and how the options interact is documented in **[docs/configuration.md](docs/configuration.md)** — payer key sources, token selection, feature gates, RPC fallback and the flows each combination produces.
 
-- **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. Set `NEXT_PUBLIC_BURNER=1` for an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup — or to a `0x` private key to pin it to one pre-funded account.
+- **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. Set `NEXT_PUBLIC_BURNER=1` for an in-browser demo wallet — auto-funded by the backend (a 4 USDC transfer from the relayer, which is why burner amounts cap at S$5), zero wallet setup — or to a `0x` private key to pin it to one pre-funded account.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
 - **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache, re-arms the agent policy on-chain, and prints addresses + demo URLs (~5–10s; it waits on a real `setPolicy` receipt. Contracts persist, so nothing is redeployed).
