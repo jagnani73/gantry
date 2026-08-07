@@ -1,3 +1,9 @@
+# Remappings live in remappings.txt, NOT here — that file takes precedence over
+# this one, so a `remappings` key added below would be silently ignored.
+# OpenZeppelin comes from npm (see package.json) rather than `forge install`:
+# OZ's docs warn a git install can silently follow the unreleased master branch
+# on update, whereas a published npm version is immutable. forge-std stays a
+# submodule — it is test-only and has no npm distribution.
 [profile.default]
 solc_version = "0.8.24"
 evm_version = "cancun"

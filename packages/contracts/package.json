@@ -1,0 +1,9 @@
+{
+  "name": "@gantry/contracts",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Foundry project. This package.json exists only to pull OpenZeppelin from npm — OZ's own docs flag that `forge install` can silently move you onto the unreleased master branch on update, whereas a published npm version is immutable. Build and test through Foundry (`pnpm test:contracts`), not pnpm.",
+  "dependencies": {
+    "@openzeppelin/contracts": "5.7.0"
+  }
+}

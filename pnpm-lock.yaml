@@ -131,6 +131,12 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/contracts:
+    dependencies:
+      '@openzeppelin/contracts':
+        specifier: 5.7.0
+        version: 5.7.0
+
   packages/shared:
     dependencies:
       viem:
@@ -878,6 +884,9 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@openzeppelin/contracts@5.7.0':
+    resolution: {integrity: sha512-IL2AZpI+7THMzt1u6Cxmc1zLwVnudtUGvrqXQ/HnbLKfQ/8dIWMMQPDwPIjRQzNrlAo4cxZaCGRB/XvwPo9ILA==}
 
   '@paulmillr/qr@0.2.1':
     resolution: {integrity: sha512-IHnV6A+zxU7XwmKFinmYjUcwlyK9+xkG3/s9KcQhI9BjQKycrJ1JRO+FbNYPwZiPKW3je/DR0k7w8/gLa5eaxQ==}
@@ -4517,6 +4526,8 @@ snapshots:
   '@noble/hashes@1.7.1': {}
 
   '@noble/hashes@1.8.0': {}
+
+  '@openzeppelin/contracts@5.7.0': {}
 
   '@paulmillr/qr@0.2.1': {}
 
