@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   CARD_FEE_BPS,
   DEMO_MERCHANTS,
@@ -26,6 +27,16 @@ export function DashboardClient() {
   const seen = useRef(new Set<string>());
   const connectedAt = useRef(0);
 
+  // `?handle=` scopes the feed to one merchant — what a shop that just onboarded
+  // wants to see. Bare /dashboard keeps the all-merchants demo view.
+  const scope = useSearchParams().get("handle");
+  // Read inside the SSE handler via a ref: putting `scope` in the effect deps
+  // would tear down and reconnect the EventSource on every scope change.
+  const scopeRef = useRef(scope);
+  useEffect(() => {
+    scopeRef.current = scope;
+  }, [scope]);
+
   useEffect(() => {
     const source = new EventSource(`${backendUrl()}/api/events`);
     connectedAt.current = Date.now();
@@ -48,7 +59,8 @@ export function DashboardClient() {
       seen.current.add(eventId);
       const live = Date.now() - connectedAt.current > 2000;
       setRows((prev) => [{ ...data, eventId, live }, ...prev]);
-      if (live) chime();
+      // Never chime for a row the current scope hides.
+      if (live && (scopeRef.current === null || data.handle === scopeRef.current)) chime();
     });
 
     source.addEventListener("reset", () => {
@@ -59,14 +71,22 @@ export function DashboardClient() {
     return () => source.close();
   }, []);
 
-  const summary = useMemo(() => {
-    const gross = rows.reduce((sum, row) => sum + BigInt(row.xsgdOut), 0n);
-    const fees = rows.reduce((sum, row) => sum + BigInt(row.feeXsgd), 0n);
-    const cardFees = (gross * BigInt(CARD_FEE_BPS)) / 10_000n;
-    return { count: rows.length, net: gross - fees, saved: cardFees - fees };
-  }, [rows]);
+  const visible = useMemo(
+    () => (scope === null ? rows : rows.filter((row) => row.handle === scope)),
+    [rows, scope],
+  );
 
-  const merchantName = DEMO_MERCHANTS["ah-hock-chicken-rice"]?.displayName ?? "Merchant";
+  const summary = useMemo(() => {
+    const gross = visible.reduce((sum, row) => sum + BigInt(row.xsgdOut), 0n);
+    const fees = visible.reduce((sum, row) => sum + BigInt(row.feeXsgd), 0n);
+    const cardFees = (gross * BigInt(CARD_FEE_BPS)) / 10_000n;
+    return { count: visible.length, net: gross - fees, saved: cardFees - fees };
+  }, [visible]);
+
+  const merchantName =
+    scope === null
+      ? (DEMO_MERCHANTS["ah-hock-chicken-rice"]?.displayName ?? "Merchant")
+      : (DEMO_MERCHANTS[scope]?.displayName ?? scope);
 
   return (
     <div className="dark min-h-dvh bg-background text-foreground">
@@ -122,7 +142,10 @@ export function DashboardClient() {
           </Card>
         </div>
 
-        <PolicyPanel />
+        {/* The policy panel belongs to the demo agent's wallet, not to any one
+            merchant — showing it under a scoped feed would read as "this shop's
+            agent policy", which it is not. */}
+        {scope === null && <PolicyPanel />}
 
         <Card className="flex-1">
           <CardHeader>
@@ -134,13 +157,13 @@ export function DashboardClient() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {rows.length === 0 ? (
+            {visible.length === 0 ? (
               <p className="py-12 text-center text-sm text-muted-foreground">
                 Waiting for payments — scan the QR or send an agent.
               </p>
             ) : (
               <ul className="space-y-2">
-                {rows.map((row) => (
+                {visible.map((row) => (
                   <SettlementRow key={row.eventId} row={row} />
                 ))}
               </ul>

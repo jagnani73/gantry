@@ -30,6 +30,23 @@ export interface MerchantResponse {
   location?: string;
 }
 
+/**
+ * Onboarding. `categoryId` is narrowed to the ids in CATEGORIES — the chain
+ * accepts any value < 256, but an unlisted one has no label and no policy bit.
+ * Registration is permissionless on-chain; the backend relays it and pays the
+ * gas, so this route carries faucet-level trust.
+ */
+export interface RegisterMerchantRequest {
+  handle: string;
+  payout: Address;
+  categoryId: number;
+}
+
+/** The merchant as it now reads on-chain, plus the relayer tx that put it there. */
+export interface RegisterMerchantResponse extends MerchantResponse {
+  txHash: Hex;
+}
+
 /** The door is NOT client-suppliable — it is derived from the route (QR/payer
  * page ⇒ Human; the facilitator bridge and POST /api/pbm/intent ⇒ Agent). */
 export interface CreateIntentRequest {

@@ -5,6 +5,8 @@ import type {
   IntentResponse,
   MerchantResponse,
   PolicyResponse,
+  RegisterMerchantRequest,
+  RegisterMerchantResponse,
   RevokePolicyResponse,
   SettleRequest,
   SettleResponse,
@@ -46,6 +48,11 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   merchant: (handle: string) => call<MerchantResponse>(`/api/merchants/${handle}`),
+  registerMerchant: (req: RegisterMerchantRequest) =>
+    call<RegisterMerchantResponse>("/api/merchants", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
   createIntent: (req: CreateIntentRequest) =>
     call<IntentResponse>("/api/intents", { method: "POST", body: JSON.stringify(req) }),
   settle: (intentId: string, req: SettleRequest) =>

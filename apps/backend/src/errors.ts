@@ -31,6 +31,7 @@ function statusForContractError(name: string): number {
     case "IntentWasCancelled":
     case "IntentExpired":
     case "AuthorizationAlreadyUsed":
+    case "HandleTaken":
       return 409;
     default:
       return 400;

@@ -14,6 +14,11 @@ export default function Home() {
       </div>
       {[
         {
+          href: "/onboard",
+          title: "Onboard a merchant",
+          desc: "Register on-chain and walk out with a printable QR",
+        },
+        {
           href: `/pay/${DEMO_HANDLE}`,
           title: "Payer page",
           desc: "Scan-to-pay flow (what the printed QR opens)",

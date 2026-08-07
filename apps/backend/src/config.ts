@@ -35,6 +35,8 @@ const EnvSchema = z.object({
   FAUCET_ENABLED: z.enum(["0", "1"]).default("1"),
   /** Gates the browser-triggered POST /api/policy/revoke (faucet precedent). */
   POLICY_ADMIN_ENABLED: z.enum(["0", "1"]).default("1"),
+  /** Gates POST /api/merchants — relayer-paid registration, same precedent. */
+  ONBOARDING_ENABLED: z.enum(["0", "1"]).default("1"),
   INTENT_TTL_SECONDS: z.coerce.number().min(60).default(600),
   DB_PATH: z.string().default("./gantry.db"),
   DEFAULT_TOKEN: z.enum(["MUSDC", "USDC", "XSGD"]).default("MUSDC"),
@@ -124,6 +126,7 @@ export const config = {
   adminToken: env.ADMIN_TOKEN,
   faucetEnabled: env.FAUCET_ENABLED === "1",
   policyAdminEnabled: env.POLICY_ADMIN_ENABLED === "1",
+  onboardingEnabled: env.ONBOARDING_ENABLED === "1",
   /** The demo AgentPBMWallet the policy routes read/manage; null = routes 404. */
   demoPbmWallet: (env.PBM_WALLET_ADDRESS ?? addresses.demoAgentPbmWallet) as
     | `0x${string}`
