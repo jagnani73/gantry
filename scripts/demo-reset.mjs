@@ -102,9 +102,14 @@ const gadgetLine = gadget.ok
 // Best-effort probe: a flaky RPC must not crash the script AFTER a successful
 // reset (the cheat sheet below is the whole point of running it).
 let relayerEth = "?";
-if (process.env.BASE_SEPOLIA_RPC_URL) {
+// BASE_SEPOLIA_RPC_URL is a comma-separated fallback list; probe the primary.
+const probeRpc = (process.env.BASE_SEPOLIA_RPC_URL ?? "")
+  .split(",")
+  .map((u) => u.trim())
+  .find((u) => u.length > 0);
+if (probeRpc) {
   try {
-    const res = await fetch(process.env.BASE_SEPOLIA_RPC_URL, {
+    const res = await fetch(probeRpc, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

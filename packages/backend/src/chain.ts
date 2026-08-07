@@ -12,9 +12,18 @@ import { config } from "./config";
 
 export const chain = config.chainId === ANVIL_CHAIN_ID ? foundry : baseSepolia;
 
+/**
+ * Ordered fallback across every configured RPC. Ranking is deliberately NOT
+ * enabled: it would let viem migrate to a lower-latency provider mid-demo based
+ * on background samples, so a payment could land on the rate-limited public
+ * node while the paid provider is healthy. Ordered failover only moves on a
+ * real error, which is the behaviour we can rehearse.
+ */
+const rpcTransport = () => fallback(config.rpcUrls.map((url) => http(url)));
+
 export const publicClient = createPublicClient({
   chain,
-  transport: fallback([http(config.rpcUrl), http(config.rpcFallbackUrl)]),
+  transport: rpcTransport(),
 });
 
 /** Dedicated WS client — used only by the indexer's watchContractEvent. */
@@ -28,7 +37,7 @@ export const relayerAccount = privateKeyToAccount(config.relayerPrivateKey);
 export const walletClient = createWalletClient({
   chain,
   account: relayerAccount,
-  transport: fallback([http(config.rpcUrl), http(config.rpcFallbackUrl)]),
+  transport: rpcTransport(),
 });
 
 const domainReadAbi = [
