@@ -43,11 +43,6 @@ export function burnerEnvKey(): `0x${string}` | undefined {
   return config.on ? config.key : undefined;
 }
 
-export function walletPayToken(): "USDC" | "MUSDC" | "XSGD" {
-  const token = process.env.NEXT_PUBLIC_PAY_TOKEN;
-  return token === "MUSDC" || token === "XSGD" ? token : "USDC";
-}
-
 export function walletConnectProjectId(): string {
   return process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "gantry-dev-placeholder";
 }

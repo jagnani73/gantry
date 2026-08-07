@@ -34,7 +34,7 @@ async function buildOrderPrice(context: HTTPRequestContext) {
   }
   await getMerchant(order.handle); // unknown merchant → 404 before any quote
   const xsgdAmount = parseSgd(order.sgd); // cannot throw: parseOrderResource validated it
-  const token = config.orderToken;
+  const token = "USDC" as const;
   let rate: bigint;
   try {
     rate = await readRate(token);
@@ -118,7 +118,7 @@ ordersRouter.post("/api/order/:handle", async (req, res) => {
       ...(merchant.location ? { location: merchant.location } : {}),
       sgd: formatUnits6(xsgdAmount),
       xsgdAmount: xsgdAmount.toString(),
-      token: config.orderToken,
+      token: "USDC" as const,
     },
     message: "order confirmed — the settlement receipt travels in the PAYMENT-RESPONSE header",
   });

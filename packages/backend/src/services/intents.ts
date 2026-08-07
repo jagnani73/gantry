@@ -29,7 +29,7 @@ const XSGD_IDENTITY_RATE = 1_000_000n;
 const AUTH_WINDOW_SLACK_SECONDS = 120;
 
 export async function readRate(token: TokenId): Promise<bigint> {
-  if (token === "XSGD") return XSGD_IDENTITY_RATE;
+  if (token === "MockXSGD") return XSGD_IDENTITY_RATE;
   const rate = await publicClient.readContract({
     address: config.addresses.fixedRateSwap,
     abi: fixedRateSwapAbi,
@@ -62,7 +62,7 @@ export async function createIntent(
   const token = req.token;
   const tokenIn = tokenAddress(config.addresses, token);
   const rate = await readRate(token);
-  const amountIn = token === "XSGD" ? xsgdAmount : quoteAmountIn(xsgdAmount, rate);
+  const amountIn = token === "MockXSGD" ? xsgdAmount : quoteAmountIn(xsgdAmount, rate);
 
   // Chain time, not server clock — a skewed laptop otherwise mints born-expired intents.
   const block = await publicClient.getBlock();

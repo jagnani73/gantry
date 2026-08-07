@@ -200,7 +200,8 @@ export interface FaucetRequest {
 
 export interface FaucetResponse {
   txHash: Hex;
-  minted: string;
+  /** 6dp USDC units transferred from the funder. */
+  funded: string;
 }
 
 /** SSE `settlement` event payload (event id = `${blockNumber}:${logIndex}`). */

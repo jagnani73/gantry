@@ -15,7 +15,7 @@ import {
 } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
 import { getBurnerAccount } from "@/lib/burner";
-import { burnerEnvEnabled, walletPayToken } from "@/lib/env";
+import { burnerEnvEnabled } from "@/lib/env";
 import { AmountPad } from "@/components/amount-pad";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,13 +108,15 @@ export function PayClient({ handle }: { handle: string }) {
       const intent = await api.createIntent({
         handle,
         xsgdAmount,
-        token: burner ? "MUSDC" : walletPayToken(),
+        token: "USDC",
       });
       setStep({ name: "review", intent });
     } catch (err) {
       fail(null, err);
     }
-  }, [amount, burner, handle, fail]);
+    // `burner` is deliberately absent: with one pay token it no longer affects
+    // the quote, only who signs it later.
+  }, [amount, handle, fail]);
 
   const requote = useCallback(async (old: IntentResponse) => {
     setStep({ name: "quoting" });
@@ -152,10 +154,10 @@ export function PayClient({ handle }: { handle: string }) {
             if ((await readBalance()) < BigInt(intent.amountIn)) {
               setStep({ name: "funding", intent });
               await api.faucet(payer);
-              // The mint is mined, but RPC replicas can lag — wait until the
+              // The transfer is mined, but RPC replicas can lag — wait until the
               // balance is actually visible before signing.
               for (let i = 0; (await readBalance()) < BigInt(intent.amountIn); i++) {
-                if (i >= 10) throw new Error("faucet funds not visible yet — try again");
+                if (i >= 10) throw new Error("funds not visible yet — try again");
                 await new Promise((resolve) => setTimeout(resolve, 1500));
               }
             }
@@ -234,9 +236,10 @@ export function PayClient({ handle }: { handle: string }) {
           value={amount}
           onChange={setAmount}
           onSubmit={quote}
-          // Faucet mints 100 USDC ≈ S$134 — cap below it so burner payments can't strand.
-          max={burner ? 130 : 9999}
-          maxHint={burner ? "Demo wallet caps at S$130" : undefined}
+          // The funder grants 2 real USDC ≈ S$2.68 per top-up — cap well below
+          // what a demo needs so a fat-fingered amount can't drain it.
+          max={burner ? 10 : 9999}
+          maxHint={burner ? "Demo wallet caps at S$10" : undefined}
         />
       )}
 

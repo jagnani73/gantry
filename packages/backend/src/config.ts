@@ -25,7 +25,6 @@ const EnvSchema = z.object({
    * spend one: an open revoke lets anyone zero the agent's policy, and only the
    * admin token can re-arm it. */
   POLICY_ADMIN_ENABLED: z.enum(["0", "1"]).default("1"),
-  ORDER_TOKEN: z.enum(["MUSDC", "USDC"]).default("MUSDC"),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -92,7 +91,4 @@ export const config = {
   /** SQLite is a disposable cache — the chain is the source of truth — so the
    * location has never needed to vary. */
   dbPath: resolve(backendRoot, "./gantry.db"),
-  /** The x402 order asset. MUSDC by default: the PBM wallet is MUSDC-funded and
-   * the faucet cannot mint real USDC. */
-  orderToken: env.ORDER_TOKEN,
 } as const;

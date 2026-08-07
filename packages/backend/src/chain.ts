@@ -3,6 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import {
   TOKENS,
+  TOKEN_IDS,
   tokenAddress,
   type Eip712TokenDomain,
   type TokenId,
@@ -60,7 +61,7 @@ const domainReadAbi = [
 const tokenDomains = new Map<TokenId, Eip712TokenDomain>();
 
 export async function assertTokenDomains(): Promise<void> {
-  const ids: TokenId[] = ["MUSDC", "XSGD", "USDC"];
+  const ids = TOKEN_IDS;
   for (const id of ids) {
     const address = tokenAddress(config.addresses, id);
     const [name, version] = await Promise.all([

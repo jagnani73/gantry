@@ -25,19 +25,19 @@ import {
 const payer = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
 const NOW = 1_754_000_000;
 const domain = {
-  ...TOKENS.MUSDC.eip712,
+  ...TOKENS.USDC.eip712,
   chainId: BASE_SEPOLIA_CHAIN_ID,
-  verifyingContract: BASE_SEPOLIA_ADDRESSES.mockUsdc,
+  verifyingContract: BASE_SEPOLIA_ADDRESSES.realUsdc,
 };
 
 const requirements: X402PaymentRequirements = {
   scheme: "exact",
   network: caip2(BASE_SEPOLIA_CHAIN_ID),
-  asset: BASE_SEPOLIA_ADDRESSES.mockUsdc,
+  asset: BASE_SEPOLIA_ADDRESSES.realUsdc,
   amount: "4843156",
   payTo: BASE_SEPOLIA_RELAYER,
   maxTimeoutSeconds: 600,
-  extra: { name: TOKENS.MUSDC.eip712.name, version: TOKENS.MUSDC.eip712.version },
+  extra: { name: TOKENS.USDC.eip712.name, version: TOKENS.USDC.eip712.version },
 };
 
 const authorization = {

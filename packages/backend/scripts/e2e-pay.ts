@@ -6,7 +6,7 @@
  * Usage: pnpm --filter @gantry/backend e2e:pay [-- --sgd 6.50 --handle ah-hock-chicken-rice]
  * Env: E2E_PAYER_KEY (optional; fresh random key when unset),
  *      GANTRY_API (default http://localhost:4000)
- * The faucet mint always runs (per-address 60s cooldown applies).
+ * The funder top-up always runs (per-address 60s cooldown applies).
  */
 import { parseArgs } from "node:util";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -47,16 +47,16 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 async function main() {
   console.log(`payer: ${payer.address}${process.env.E2E_PAYER_KEY ? "" : " (fresh burner)"}`);
 
-  const faucet = await call<{ txHash: string; minted: string }>("/api/faucet", {
+  const faucet = await call<{ txHash: string; funded: string }>("/api/faucet", {
     method: "POST",
     body: JSON.stringify({ address: payer.address }),
   });
-  console.log(`faucet: minted ${formatUnits6(BigInt(faucet.minted))} MUSDC (${faucet.txHash})`);
+  console.log(`funder: sent ${formatUnits6(BigInt(faucet.funded))} USDC (${faucet.txHash})`);
 
   const xsgdAmount = parseSgd(args.sgd!).toString();
   const intent = await call<IntentResponse>("/api/intents", {
     method: "POST",
-    body: JSON.stringify({ handle: args.handle, xsgdAmount, token: "MUSDC" }),
+    body: JSON.stringify({ handle: args.handle, xsgdAmount, token: "USDC" }),
   });
   console.log(
     `intent ${intent.intentId}\n  S$${formatUnits6(BigInt(intent.xsgdAmount))} → ${formatUnits6(BigInt(intent.amountIn), 6)} ${intent.tokenSymbol} @ ${formatUnits6(BigInt(intent.rate), 4)}`,

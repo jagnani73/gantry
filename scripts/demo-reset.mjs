@@ -63,19 +63,24 @@ if (arm.ok) {
     policyLine =
       `policy re-armed: S$${sgd(p.dailyCap)}/day · ${p.categories.join(", ")} · ` +
       `spent S$${sgd(p.spentToday)} · wallet S$${sgd(p.balance)} ${p.token}`;
-    if (BigInt(p.balance) < BigInt(p.dailyCap)) {
-      if (p.token === "MUSDC") {
-        // Only MockUSDC has an open mint — the faucet cannot serve real USDC.
-        const faucet = await fetch(`${backend}/api/faucet`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ address: p.wallet }),
-        }).catch(() => null);
-        policyLine += faucet?.ok
-          ? " (low — faucet top-up sent)"
-          : ` ⚠ LOW and faucet top-up failed (${faucet ? `status ${faucet.status}: ${await faucet.text()}` : "network error"})`;
+    // Enough for one agent purchase (S$4.50 ~ 3.35 USDC) plus margin. NOT the
+    // daily cap: that is 37 USDC of real money sitting idle in a demo wallet.
+    const WALLET_FLOOR = 4_000_000n;
+    if (BigInt(p.balance) < WALLET_FLOOR) {
+      const funder = await fetch(`${backend}/api/faucet`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ address: p.wallet }),
+      }).catch(() => null);
+      if (funder?.ok) {
+        const { funded } = await funder.json();
+        const after = BigInt(p.balance) + BigInt(funded);
+        policyLine +=
+          after < WALLET_FLOOR
+            ? ` ⚠ topped up but STILL LOW (${(Number(after) / 1e6).toFixed(2)} USDC) — run demo:reset again or fund the wallet directly`
+            : ` (low — funder sent ${(Number(BigInt(funded)) / 1e6).toFixed(2)} USDC)`;
       } else {
-        policyLine += ` ⚠ LOW on ${p.token} and the faucet cannot mint it — fund the wallet manually or set ORDER_TOKEN=MUSDC`;
+        policyLine += ` ⚠ LOW and the funder failed (${funder ? `status ${funder.status}: ${await funder.text()}` : "network error"})`;
       }
     }
   } else {

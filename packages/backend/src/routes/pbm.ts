@@ -33,7 +33,7 @@ pbmRouter.post("/api/pbm/intent", async (req, res) => {
   // Door derived from the route, never client-supplied: this route exists
   // only for the agent scheme, so everything it creates is an Agent intent.
   const intent = await createIntent(
-    { handle: body.handle, xsgdAmount: body.xsgdAmount, token: config.orderToken },
+    { handle: body.handle, xsgdAmount: body.xsgdAmount, token: "USDC" as const },
     Door.Agent,
   );
   const response: PbmIntentResponse = {

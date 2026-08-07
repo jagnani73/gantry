@@ -21,7 +21,7 @@ import { readRate } from "./intents";
 
 export async function readPolicy(): Promise<PolicyResponse> {
   const wallet = config.demoPbmWallet;
-  const token = config.orderToken;
+  const token = "USDC" as const;
   const [policy, spentToday, agentSigner, balance, rate] = await Promise.all([
     publicClient.readContract({ address: wallet, abi: agentPbmWalletAbi, functionName: "policy" }),
     publicClient.readContract({ address: wallet, abi: agentPbmWalletAbi, functionName: "spentToday" }),

@@ -6,8 +6,8 @@
  * display/explorer helpers.
  *
  * Usage: pnpm --filter @gantry/backend x402:buy [-- --sgd 19.50 --handle ah-hock-chicken-rice]
- * Env: X402_PAYER_KEY (optional; fresh random key when unset — fine for MUSDC,
- *      real Circle USDC needs a pre-funded key), GANTRY_API (default http://localhost:4000)
+ * Env: X402_PAYER_KEY (optional; a fresh random key is funded from the demo
+ *      funder when unset), GANTRY_API (default http://localhost:4000)
  */
 import { parseArgs } from "node:util";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -51,26 +51,23 @@ async function main() {
   console.log(`  ${formatUnits6(BigInt(offer.amount), 6)} of ${offer.asset} → payTo ${offer.payTo}`);
   console.log(`  domain ${JSON.stringify(offer.extra)} timeout ${offer.maxTimeoutSeconds}s`);
 
-  // 2. The faucet mints MockUSDC only — useless when the offer is priced in
-  //    real Circle USDC (keyed off the offer's EIP-712 domain name).
-  if (offer.extra["name"] === "Mock USDC") {
-    try {
-      const faucet = await fetch(`${api}/api/faucet`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address: payer.address }),
-      });
-      if (faucet.ok) {
-        const minted = (await faucet.json()) as { minted: string };
-        console.log(`faucet: minted ${formatUnits6(BigInt(minted.minted))} MUSDC`);
-      } else {
-        console.log(`faucet refused (${faucet.status}): ${await faucet.text()} — continuing anyway`);
-      }
-    } catch (err) {
-      console.log(`faucet unreachable (${err instanceof Error ? err.message : err}) — continuing anyway`);
+  // 2. Fund the fresh payer from the demo funder (a real USDC transfer, not a
+  //    mint — see services/faucet.ts). Best-effort: a pre-funded
+  //    X402_PAYER_KEY needs nothing.
+  try {
+    const funder = await fetch(`${api}/api/faucet`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ address: payer.address }),
+    });
+    if (funder.ok) {
+      const { funded } = (await funder.json()) as { funded: string };
+      console.log(`funder: sent ${formatUnits6(BigInt(funded))} USDC`);
+    } else {
+      console.log(`funder refused (${funder.status}): ${await funder.text()} — continuing anyway`);
     }
-  } else {
-    console.log(`offer is ${String(offer.extra["name"])} — fund X402_PAYER_KEY via the Circle faucet`);
+  } catch (err) {
+    console.log(`funder unreachable (${err instanceof Error ? err.message : err}) — continuing anyway`);
   }
 
   // 3. The vanilla client: standard scheme registration, then one call.

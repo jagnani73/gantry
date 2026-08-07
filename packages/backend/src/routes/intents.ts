@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
+import { TOKEN_IDS } from "@gantry/shared";
 import type { Hex } from "viem";
 import { createIntent, getIntentStatusResponse, requoteIntent } from "../services/intents";
 import { settle } from "../services/settlement";
-import { faucetMint } from "../services/faucet";
+import { fundPayer } from "../services/faucet";
 
 export const intentsRouter = Router();
 
@@ -14,8 +15,9 @@ const CreateIntentSchema = z.object({
   handle: z.string(),
   xsgdAmount: z.string(),
   // Required: every caller already pins it, and a server-side default would
-  // silently decide which asset a payer signs for.
-  token: z.enum(["MUSDC", "USDC", "XSGD"]),
+  // silently decide which asset a payer signs for. Derived from TOKENS so the
+  // schema cannot drift from the token set.
+  token: z.enum(TOKEN_IDS),
 });
 
 const SettleSchema = z.object({
@@ -58,5 +60,5 @@ intentsRouter.post("/api/intents/:intentId/requote", async (req, res) => {
 
 intentsRouter.post("/api/faucet", async (req, res) => {
   const body = FaucetSchema.parse(req.body);
-  res.json(await faucetMint(body.address as `0x${string}`));
+  res.json(await fundPayer(body.address as `0x${string}`));
 });
