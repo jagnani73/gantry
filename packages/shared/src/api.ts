@@ -18,6 +18,10 @@ export interface HealthResponse {
   block: number;
   relayer: Address;
   indexerCursor: number;
+  /** Whether POST /api/merchants is accepting registrations here — off on
+   * public hosts, so the web app hides onboarding rather than offering a form
+   * that can only 403. */
+  onboardingEnabled: boolean;
 }
 
 export interface MerchantResponse {
@@ -42,9 +46,15 @@ export interface RegisterMerchantRequest {
   categoryId: number;
 }
 
-/** The merchant as it now reads on-chain, plus the relayer tx that put it there. */
 export interface RegisterMerchantResponse extends MerchantResponse {
-  txHash: Hex;
+  /**
+   * The relayer tx that registered this merchant, or null when the handle was
+   * already on-chain pointing at this exact payout — a retry after a lost
+   * response or a receipt timeout, where nothing new was sent.
+   */
+  txHash: Hex | null;
+  /** True in that no-op case. The merchant owns the handle either way. */
+  alreadyRegistered: boolean;
 }
 
 /** The door is NOT client-suppliable — it is derived from the route (QR/payer

@@ -11,6 +11,8 @@ export * from "./categories";
 export * from "./constants";
 export * from "./quote";
 export * from "./handle";
+export * from "./payout";
+export * from "./dashboardScope";
 export * from "./eip3009";
 export * from "./agentPolicy";
 export * from "./errors";

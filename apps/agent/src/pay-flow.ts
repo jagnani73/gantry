@@ -77,15 +77,27 @@ export async function listMerchants(): Promise<MerchantListEntry[]> {
   return merchants;
 }
 
-export async function checkPolicy(): Promise<PolicyResponse> {
-  const res = await fetch(`${env.gantryApi}/api/policy`);
-  if (!res.ok) throw new Error(`GET /api/policy failed: ${res.status} ${await res.text()}`);
-  return (await res.json()) as PolicyResponse;
+export type PolicyResult = PolicyResponse | { error: string };
+
+/** Like listMerchants, a failure stays IN the result: a thrown read tool is
+ * swallowed by the AI SDK and fed back to the model as narration input, which
+ * it may paraphrase away. A structured `error` field it is told to report is
+ * strictly better than an exception it never sees. */
+export async function checkPolicy(): Promise<PolicyResult> {
+  try {
+    const res = await fetch(`${env.gantryApi}/api/policy`);
+    if (!res.ok) {
+      console.error(`checkPolicy: GET /api/policy failed (${res.status})`);
+      return { error: `policy lookup failed (status ${res.status})` };
+    }
+    return (await res.json()) as PolicyResponse;
+  } catch (err) {
+    console.error("checkPolicy: GET /api/policy threw", err);
+    return { error: "policy lookup failed (network error)" };
+  }
 }
 
 export async function payMerchant(handle: string, sgd: string): Promise<PayResult> {
-  const { key, wallet } = requireSigningEnv();
-  const orderUrl = `${env.gantryApi}/api/order/${handle}?sgd=${encodeURIComponent(sgd)}`;
   const fail = (errorReason: string, errorMessage: string): PayResult => ({
     success: false,
     handle,
@@ -94,7 +106,18 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
     errorMessage,
   });
 
-  parseSgd(sgd); // fail fast on garbage before any HTTP
+  // Inside the never-throws contract, not above it: both of these can throw on
+  // a malformed env or an LLM-supplied amount like "S$19.50", and a thrown tool
+  // reaches the model as a bare error result it might reasonably retry.
+  let signing: { key: `0x${string}`; wallet: `0x${string}` };
+  try {
+    signing = requireSigningEnv();
+    parseSgd(sgd); // fail fast on garbage before any HTTP
+  } catch (err) {
+    return fail("invalid_request", err instanceof Error ? err.message : String(err));
+  }
+  const { key, wallet } = signing;
+  const orderUrl = `${env.gantryApi}/api/order/${handle}?sgd=${encodeURIComponent(sgd)}`;
 
   // ------------------------------------------------------------------ pre-payment
   // Steps 1-5: nothing irreversible happens here (an abandoned intent just

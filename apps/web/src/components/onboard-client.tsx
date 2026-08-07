@@ -5,7 +5,9 @@ import Link from "next/link";
 import {
   BASESCAN_BASE_URL,
   CATEGORY_OPTIONS,
+  GANTRY_FEE_BPS,
   isValidHandle,
+  normalizePayout,
   type RegisterMerchantResponse,
 } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
@@ -29,7 +31,6 @@ type Step =
   | { name: "registered"; merchant: RegisterMerchantResponse }
   | { name: "failed"; errorName: string; message: string };
 
-const ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
 const DEBOUNCE_MS = 400;
 const INPUT_CLASS =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
@@ -42,7 +43,31 @@ export function OnboardClient() {
   const [categoryId, setCategoryId] = useState(CATEGORY_OPTIONS[0]?.id ?? 1);
   const [availability, setAvailability] = useState<Availability>({ name: "idle" });
   const [step, setStep] = useState<Step>({ name: "form" });
+  // Bumping this re-runs the availability check without changing the handle —
+  // otherwise one transient failure locks the form until the merchant happens
+  // to edit the input, which nobody discovers live.
+  const [recheck, setRecheck] = useState(0);
+  // null = not yet known. Public hosts run ONBOARDING_ENABLED=0 (registration
+  // spends relayer gas), so ask before offering a form that can only 403.
+  const [hostEnabled, setHostEnabled] = useState<boolean | null>(null);
   const submitInFlight = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .health()
+      .then((health) => {
+        if (!cancelled) setHostEnabled(health.onboardingEnabled);
+      })
+      // A flaky /health must not hide a working form — assume enabled and let
+      // the submit surface the real error if it isn't.
+      .catch(() => {
+        if (!cancelled) setHostEnabled(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (handle === "") {
@@ -84,26 +109,31 @@ export function OnboardClient() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [handle]);
+  }, [handle, recheck]);
 
-  const payoutValid = ADDRESS_REGEX.test(payout);
-  const canSubmit = availability.name === "available" && payoutValid && step.name === "form";
+  // Same EIP-55 check the backend runs, so the form can't green-light an
+  // address the route will reject — or worse, accept a mistyped one.
+  const payoutCheck = normalizePayout(payout);
+  const canSubmit = availability.name === "available" && payoutCheck.ok && step.name === "form";
 
   async function submit() {
-    if (!canSubmit || submitInFlight.current) return;
+    if (!canSubmit || !payoutCheck.ok || submitInFlight.current) return;
     submitInFlight.current = true;
     setStep({ name: "submitting" });
     try {
       const merchant = await api.registerMerchant({
         handle,
-        payout: payout as `0x${string}`,
+        payout: payoutCheck.address,
         categoryId,
       });
       setStep({ name: "registered", merchant });
     } catch (err: unknown) {
       const errorName = err instanceof ApiClientError ? err.errorName : "NetworkError";
       // Someone took the handle between the availability check and the tx.
-      // That is a "pick another name", not a failure worth a red card.
+      // That is a "pick another name", not a failure worth a red card. (If the
+      // handle is taken by THIS payout, the backend proves it on-chain and
+      // returns success instead, so reaching here means it really is someone
+      // else's.)
       if (errorName === "HandleTaken") {
         setAvailability({ name: "taken" });
         setStep({ name: "form" });
@@ -119,6 +149,14 @@ export function OnboardClient() {
     }
   }
 
+  /** Returning to the form after a failure must re-check the handle: the
+   * previous verdict is stale, and the attempt itself may have claimed it. */
+  function backToForm(): void {
+    setStep({ name: "form" });
+    setAvailability({ name: "checking" });
+    setRecheck((n) => n + 1);
+  }
+
   return (
     <div className="dark min-h-dvh bg-background text-foreground">
       <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-4 pt-8">
@@ -130,7 +168,33 @@ export function OnboardClient() {
           </p>
         </div>
 
-        {(step.name === "form" || step.name === "submitting") && (
+        {hostEnabled === false && (
+          <Card>
+            <CardContent className="space-y-3 py-8 text-sm text-muted-foreground">
+              <p className="text-base font-semibold text-foreground">
+                Onboarding is off on this deployment
+              </p>
+              <p>
+                Registering a merchant is a real on-chain transaction paid for by Gantry&apos;s
+                relayer, so it stays disabled on the public demo. It runs on the demo laptop, and
+                you can watch it in the submission clip.
+              </p>
+              <p>
+                Everything else is live — try the{" "}
+                <Link className="text-primary underline underline-offset-2" href="/pay/ah-hock-chicken-rice">
+                  payer page
+                </Link>{" "}
+                or the{" "}
+                <Link className="text-primary underline underline-offset-2" href="/dashboard">
+                  merchant dashboard
+                </Link>
+                .
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {hostEnabled !== false && (step.name === "form" || step.name === "submitting") && (
           <Card>
             <CardHeader>
               <CardTitle>Your shop</CardTitle>
@@ -151,7 +215,14 @@ export function OnboardClient() {
                   disabled={step.name === "submitting"}
                   onChange={(e) => setHandle(e.target.value.toLowerCase())}
                 />
-                <AvailabilityHint availability={availability} handle={handle} />
+                <AvailabilityHint
+                  availability={availability}
+                  handle={handle}
+                  onRetry={() => {
+                    setAvailability({ name: "checking" });
+                    setRecheck((n) => n + 1);
+                  }}
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -168,11 +239,15 @@ export function OnboardClient() {
                   disabled={step.name === "submitting"}
                   onChange={(e) => setPayout(e.target.value.trim())}
                 />
-                <p className="text-xs text-muted-foreground">
-                  {payout === "" || payoutValid
-                    ? "Every payment lands here as XSGD, minus the 0.5% protocol fee."
-                    : "That doesn't look like a wallet address (0x + 40 hex characters)."}
-                </p>
+                {payout === "" || payoutCheck.ok ? (
+                  <p className="text-xs text-muted-foreground">
+                    Every payment lands here as XSGD, minus the{" "}
+                    {(GANTRY_FEE_BPS / 100).toFixed(1)}% protocol fee. This address cannot be
+                    changed by anyone but itself — check it carefully.
+                  </p>
+                ) : (
+                  <p className="text-xs text-destructive">{payoutCheck.message}</p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -227,14 +302,24 @@ export function OnboardClient() {
                 Live on Base Sepolia · {step.merchant.categoryName} · paying out to{" "}
                 <span className="tabular-nums">{shortAddr(step.merchant.payout)}</span>
               </p>
-              <a
-                className="text-sm text-primary underline underline-offset-4"
-                href={`${BASESCAN_BASE_URL}/tx/${step.merchant.txHash}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                View on Basescan
-              </a>
+              {step.merchant.txHash ? (
+                <a
+                  className="text-sm text-primary underline underline-offset-4"
+                  href={`${BASESCAN_BASE_URL}/tx/${step.merchant.txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View on Basescan
+                </a>
+              ) : (
+                // alreadyRegistered: an earlier attempt landed (lost response or
+                // receipt timeout) and the chain says this payout owns the
+                // handle. It's theirs — say so, don't send them to pick another.
+                <p className="text-sm text-muted-foreground">
+                  This handle was already registered to your payout address — your earlier attempt
+                  went through.
+                </p>
+              )}
 
               <div className="mt-2 flex w-full flex-col gap-2">
                 <Button size="lg" className="w-full" asChild>
@@ -261,7 +346,14 @@ export function OnboardClient() {
               </div>
               <p className="font-semibold">{step.errorName}</p>
               <p className="text-sm text-muted-foreground">{step.message}</p>
-              <Button variant="outline" onClick={() => setStep({ name: "form" })}>
+              <p className="text-xs text-muted-foreground">
+                If the registration may have been sent, open{" "}
+                <Link className="text-primary underline underline-offset-2" href={`/pay/${handle}`}>
+                  /pay/{handle}
+                </Link>{" "}
+                before retrying — if it loads, you are already registered.
+              </p>
+              <Button variant="outline" onClick={backToForm}>
                 Back to the form
               </Button>
             </CardContent>
@@ -279,9 +371,11 @@ export function OnboardClient() {
 function AvailabilityHint({
   availability,
   handle,
+  onRetry,
 }: {
   availability: Availability;
   handle: string;
+  onRetry: () => void;
 }) {
   switch (availability.name) {
     case "idle":
@@ -307,9 +401,19 @@ function AvailabilityHint({
         </p>
       );
     case "unknown":
+      // Without a way back this state is terminal — the effect only re-runs
+      // when the handle string changes, so one blip would otherwise disable
+      // registration until the merchant happened to retype the name.
       return (
         <p className="text-xs text-destructive">
-          Couldn&apos;t check that handle: {availability.message}
+          Couldn&apos;t check that handle: {availability.message}{" "}
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            onClick={onRetry}
+          >
+            try again
+          </button>
         </p>
       );
   }

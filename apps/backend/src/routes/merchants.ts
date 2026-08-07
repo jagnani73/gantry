@@ -5,10 +5,13 @@ import { getMerchant, registerMerchant } from "../services/merchants";
 
 export const merchantsRouter = Router();
 
+// Shape only. Payout validation (EIP-55, zero-address) lives in the shared
+// normalizePayout that registerMerchant calls, so the route and the form cannot
+// drift apart on what counts as a valid address.
 const RegisterMerchantSchema = z.object({
   handle: z.string(),
-  payout: z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x-prefixed address"),
-  categoryId: z.coerce.number().int(),
+  payout: z.string(),
+  categoryId: z.number().int(),
 });
 
 merchantsRouter.get("/api/merchants/:handle", async (req, res) => {

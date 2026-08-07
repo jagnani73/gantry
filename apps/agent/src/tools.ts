@@ -46,6 +46,7 @@ export async function runCheckPolicy(): Promise<string> {
   toolCallsStarted++;
   narrator.toolStatus("check_my_policy");
   const policy = await checkPolicy();
+  if ("error" in policy) return JSON.stringify(policy);
   // Pre-digest the S$ conversions so the model narrates consistent numbers.
   const rate = BigInt(policy.rate);
   const toSgd = (units: string) => formatUnits6((BigInt(units) * rate) / 1_000_000n);
@@ -73,7 +74,7 @@ export const agentTools = {
   }),
   check_my_policy: tool({
     description:
-      "Read the agent's on-chain PBM spend policy: daily cap, spent so far today, allowed categories, expiry, wallet balance (raw 6dp token units plus pre-converted S$ fields).",
+      "Read the agent's on-chain PBM spend policy: daily cap, spent so far today, allowed categories, expiry, wallet balance (raw 6dp token units plus pre-converted S$ fields). A result carrying an `error` field means the policy could not be read — say so instead of assuming any particular policy.",
     inputSchema: z.object({}),
     execute: guardLive(runCheckPolicy),
   }),

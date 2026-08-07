@@ -2,6 +2,7 @@ import type {
   ApiErrorBody,
   CreateIntentRequest,
   FaucetResponse,
+  HealthResponse,
   IntentResponse,
   MerchantResponse,
   PolicyResponse,
@@ -26,11 +27,33 @@ export class ApiClientError extends Error {
   }
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${backendUrl()}${path}`, {
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
-  });
+/**
+ * `timeoutMs` is opt-in per call, deliberately. A dropped connection leaves
+ * fetch pending until the OS gives up (minutes), which pins a caller's UI in a
+ * loading state with no way out — but the settle path legitimately waits on a
+ * relayer transaction plus stale-state retries, so it keeps its unbounded wait
+ * rather than risking a spurious abort on the demo spine.
+ */
+async function call<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const { timeoutMs, ...rest } = init ?? {};
+  let res: Response;
+  try {
+    res = await fetch(`${backendUrl()}${path}`, {
+      ...rest,
+      ...(timeoutMs === undefined ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
+      headers: { "content-type": "application/json", ...rest.headers },
+    });
+  } catch (err) {
+    const timedOut = err instanceof DOMException && err.name === "TimeoutError";
+    throw new ApiClientError(0, {
+      name: timedOut ? "RequestTimeout" : "NetworkError",
+      message: timedOut
+        ? `the backend did not respond within ${Math.round((timeoutMs ?? 0) / 1000)}s`
+        : err instanceof Error
+          ? err.message
+          : String(err),
+    });
+  }
   const body = (await res.json().catch(() => undefined)) as T | ApiErrorBody | undefined;
   if (!res.ok) {
     throw new ApiClientError(res.status, (body as ApiErrorBody | undefined)?.error);
@@ -47,11 +70,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  merchant: (handle: string) => call<MerchantResponse>(`/api/merchants/${handle}`),
+  health: () => call<HealthResponse>("/health", { timeoutMs: 6_000 }),
+  merchant: (handle: string) => call<MerchantResponse>(`/api/merchants/${handle}`, { timeoutMs: 12_000 }),
   registerMerchant: (req: RegisterMerchantRequest) =>
     call<RegisterMerchantResponse>("/api/merchants", {
       method: "POST",
       body: JSON.stringify(req),
+      // Registration waits on a real receipt; the relayer caps that at 20s.
+      timeoutMs: 45_000,
     }),
   createIntent: (req: CreateIntentRequest) =>
     call<IntentResponse>("/api/intents", { method: "POST", body: JSON.stringify(req) }),

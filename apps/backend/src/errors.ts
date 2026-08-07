@@ -40,11 +40,19 @@ function statusForContractError(name: string): number {
 
 export function errorMiddleware(
   err: unknown,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction,
 ): void {
+  // Every branch below returns a response; without this line the handled ones
+  // (409 HandleTaken, 429 cooldowns, 403 kill switches) leave no server-side
+  // trace at all — which is how "the relayer ran dry and every door died at
+  // once" becomes unattributable.
+  const trace = (name: string): void => {
+    console.warn(`${req.method} ${req.originalUrl} → ${name}`);
+  };
   if (err instanceof ApiError) {
+    trace(err.errorName);
     const body: ApiErrorBody = {
       error: { name: err.errorName, args: serializeArgs(err.args), message: err.message },
     };
@@ -52,6 +60,7 @@ export function errorMiddleware(
     return;
   }
   if (err instanceof ZodError) {
+    trace("ValidationError");
     const body: ApiErrorBody = {
       error: {
         name: "ValidationError",
@@ -66,6 +75,7 @@ export function errorMiddleware(
     const decoded = decodeGantryError(err);
     const message = describeGantryError(decoded);
     if (decoded.kind === "custom") {
+      trace(decoded.name);
       const body: ApiErrorBody = {
         error: { name: decoded.name, args: serializeArgs(decoded.args), message },
       };
@@ -73,6 +83,7 @@ export function errorMiddleware(
       return;
     }
     if (decoded.kind === "string") {
+      trace(`StringRevert(${decoded.reason})`);
       // Real Circle USDC reverts with strings ("FiatTokenV2: …").
       const status = decoded.reason.includes("used or canceled") ? 409 : 400;
       const body: ApiErrorBody = { error: { name: "StringRevert", message: decoded.reason } };

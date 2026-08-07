@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   CARD_FEE_BPS,
   DEMO_MERCHANTS,
   GANTRY_FEE_BPS,
   formatUnits6,
+  resolveScope,
+  shouldChime,
+  visibleRows,
   type SettlementEvent,
 } from "@gantry/shared";
 import { backendUrl } from "@/lib/env";
@@ -29,7 +33,7 @@ export function DashboardClient() {
 
   // `?handle=` scopes the feed to one merchant — what a shop that just onboarded
   // wants to see. Bare /dashboard keeps the all-merchants demo view.
-  const scope = useSearchParams().get("handle");
+  const scope = resolveScope(useSearchParams().get("handle"));
   // Read inside the SSE handler via a ref: putting `scope` in the effect deps
   // would tear down and reconnect the EventSource on every scope change.
   const scopeRef = useRef(scope);
@@ -59,8 +63,7 @@ export function DashboardClient() {
       seen.current.add(eventId);
       const live = Date.now() - connectedAt.current > 2000;
       setRows((prev) => [{ ...data, eventId, live }, ...prev]);
-      // Never chime for a row the current scope hides.
-      if (live && (scopeRef.current === null || data.handle === scopeRef.current)) chime();
+      if (shouldChime(live, data.handle, scopeRef.current)) chime();
     });
 
     source.addEventListener("reset", () => {
@@ -71,10 +74,7 @@ export function DashboardClient() {
     return () => source.close();
   }, []);
 
-  const visible = useMemo(
-    () => (scope === null ? rows : rows.filter((row) => row.handle === scope)),
-    [rows, scope],
-  );
+  const visible = useMemo(() => visibleRows(rows, scope), [rows, scope]);
 
   const summary = useMemo(() => {
     const gross = visible.reduce((sum, row) => sum + BigInt(row.xsgdOut), 0n);
@@ -141,6 +141,22 @@ export function DashboardClient() {
             </CardHeader>
           </Card>
         </div>
+
+        {/* A scoped feed hides other merchants' rows AND the policy panel, so
+            without this banner an empty scoped dashboard is indistinguishable
+            from a broken one — and at ?handle=ah-hock-chicken-rice the header
+            alone renders identically to the unscoped view. */}
+        {scope !== null && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">
+              Showing only <span className="font-medium text-foreground">{scope}</span> · agent
+              policy hidden
+            </span>
+            <Link className="shrink-0 text-primary underline underline-offset-2" href="/dashboard">
+              show all merchants
+            </Link>
+          </div>
+        )}
 
         {/* The policy panel belongs to the demo agent's wallet, not to any one
             merchant — showing it under a scoped feed would read as "this shop's

@@ -24,6 +24,7 @@ const DEFINITE_NO_FUNDS = new Set([
   "InvalidAgentSignature",
   "InsufficientWalletBalance",
   "insufficient_funds",
+  "invalid_request",
   "quote_changed",
   "intent_creation_failed",
   "transport_error",
@@ -31,6 +32,15 @@ const DEFINITE_NO_FUNDS = new Set([
   "missing_header",
   "malformed_header",
 ]);
+
+/** checkPolicy reports failures in-band for the live model's benefit; the
+ * scripted path has no model to narrate them, so surface it as a throw the
+ * runScripted catch already handles. */
+function requirePolicy(json: string): PolicyResponse {
+  const parsed = JSON.parse(json) as PolicyResponse | { error: string };
+  if ("error" in parsed) throw new Error(parsed.error);
+  return parsed;
+}
 
 export function isDenialPrompt(prompt: string): boolean {
   return /powerbank|power bank|gadget|electronic/i.test(prompt);
@@ -87,7 +97,7 @@ export async function runScripted(prompt: string): Promise<void> {
     if (isDenialPrompt(prompt)) {
       const sgd = sgdFromPrompt(prompt, POWERBANK.sgd);
       await narrator.type(`A S$${sgd} powerbank from GadgetHub SG — let me check my spend policy first.\n`);
-      const policy = JSON.parse(await runCheckPolicy()) as PolicyResponse;
+      const policy = requirePolicy(await runCheckPolicy());
       await narrator.type(
         `${policySummary(policy)} A powerbank is electronics, but the wallet enforces policy ` +
           `on-chain — I'll submit the payment and let the contract decide.\n`,
