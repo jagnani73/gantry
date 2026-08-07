@@ -15,9 +15,9 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 export const env = {
   gantryApi: process.env.GANTRY_API ?? "http://localhost:4000",
   agentSessionKey: process.env.AGENT_SESSION_KEY as `0x${string}` | undefined,
-  pbmWallet: (process.env.PBM_WALLET_ADDRESS ??
-    BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet ??
-    undefined) as `0x${string}` | undefined,
+  /** Pinned in shared, not env: the backend verifies against the same pin, and
+   * two env copies that disagree fail as InvalidAgentSignature. */
+  pbmWallet: BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet ?? undefined,
   /** Google AI Studio key (free tier) — absent ⇒ scripted mode. */
   googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   llmTimeoutMs: Number(process.env.AGENT_LLM_TIMEOUT_MS ?? 8000),
@@ -30,7 +30,7 @@ export function requireSigningEnv(): { key: `0x${string}`; wallet: `0x${string}`
     throw new Error("AGENT_SESSION_KEY missing or malformed — expected 0x + 64 hex chars");
   }
   if (!env.pbmWallet || !/^0x[0-9a-fA-F]{40}$/.test(env.pbmWallet)) {
-    throw new Error("PBM_WALLET_ADDRESS missing or malformed — expected a 0x address");
+    throw new Error("demo AgentPBMWallet address missing from @gantry/shared addresses");
   }
   return { key: env.agentSessionKey, wallet: env.pbmWallet };
 }

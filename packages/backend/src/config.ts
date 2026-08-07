@@ -12,15 +12,12 @@ const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envFile = resolve(backendRoot, ".env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
-const hexAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x-prefixed address");
 
 const EnvSchema = z.object({
   /** Comma-separated, tried in order. One URL is a valid single-entry list. */
   BASE_SEPOLIA_RPC_URL: z.string().optional(),
   BASE_SEPOLIA_WS_URL: z.string().optional(),
   RELAYER_PRIVATE_KEY: z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected 0x-prefixed 32-byte key"),
-  /** Overrides the shared demo wallet pin (a fresh deploy). */
-  PBM_WALLET_ADDRESS: hexAddress.optional(),
   PORT: z.coerce.number().default(4000),
   CORS_ORIGIN: z.string().default("*"),
   ADMIN_TOKEN: z.string().min(8),
@@ -88,10 +85,10 @@ export const config = {
   corsOrigin: env.CORS_ORIGIN,
   adminToken: env.ADMIN_TOKEN,
   policyAdminEnabled: env.POLICY_ADMIN_ENABLED === "1",
-  /** The demo AgentPBMWallet the policy routes read/manage; null = routes 404. */
-  demoPbmWallet: (env.PBM_WALLET_ADDRESS ?? BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet) as
-    | `0x${string}`
-    | null,
+  /** The demo AgentPBMWallet the policy routes read/manage. Pinned in shared
+   * like every other contract address — one committed source all three
+   * runtimes read, rather than per-process env copies that must agree. */
+  demoPbmWallet: BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet,
   /** SQLite is a disposable cache — the chain is the source of truth — so the
    * location has never needed to vary. */
   dbPath: resolve(backendRoot, "./gantry.db"),
