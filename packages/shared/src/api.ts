@@ -35,8 +35,9 @@ export interface MerchantResponse {
 }
 
 /**
- * Onboarding. `categoryId` is narrowed to the ids in CATEGORIES — the chain
- * accepts any value < 256, but an unlisted one has no label and no policy bit.
+ * Onboarding. `categoryId` is validated at the route against CATEGORIES — the
+ * chain accepts any value < 256, but an unlisted one has no label and no bit in
+ * the demo agent policy, so nothing here could ever spend at it.
  * Registration is permissionless on-chain; the backend relays it and pays the
  * gas, so this route carries faucet-level trust.
  */

@@ -361,7 +361,7 @@ export function OnboardClient() {
         )}
 
         <footer className="mt-auto pb-2 text-center text-xs text-muted-foreground">
-          Gantry · one rail, two doors · settles in XSGD on Base Sepolia
+          Gantry · one rail, two doors · settles in XSGD (testnet mock) on Base Sepolia
         </footer>
       </main>
     </div>

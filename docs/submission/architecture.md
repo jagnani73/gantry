@@ -37,7 +37,7 @@ The convergence is the thesis. A QR code and an HTTP `402 Payment Required` resp
 - **Demo (Base Sepolia):** `FixedRateSwap`, an owner-set rate seeded at 1.3421. Honest label: this is not a market. No oracle, no slippage, no depth.
 - **Production:** real XSGD liquidity on a supported mainnet through an aggregator or an RFQ quote, optionally bounded by a Chainlink SGD/USD sanity check. Same interface, same min-out guard, same settlement path.
 
-An AMM was deliberately **not** built. A self-seeded toy pool would have been just as fake as a fixed rate while costing days — and it would have broken the x402 middleware's requirement that a quote stay byte-identical between the 402 challenge and the retry.
+An AMM was deliberately **not** built: a self-seeded toy pool is no closer to real FX than a fixed rate, and it would have cost days. A moving rate would also have needed a short-lived quote pin, since the x402 middleware requires the quote to stay byte-identical between the 402 challenge and the retry — solvable, but work spent making a fake pool behave rather than on either door.
 
 ## Callout 2 — the two agent sub-paths differ in trust
 

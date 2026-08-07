@@ -95,7 +95,7 @@ export function DashboardClient() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{merchantName}</h1>
             <p className="text-sm text-muted-foreground">
-              Live settlements · Base Sepolia · payouts in XSGD
+              Live settlements · Base Sepolia · payouts in XSGD (testnet mock)
             </p>
           </div>
           <div className="flex items-center gap-2">

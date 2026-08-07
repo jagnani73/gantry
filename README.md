@@ -14,8 +14,8 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 ## Why Singapore
 
-- PayNow is excellent — for payers with a Singapore bank account. The ~16M tourists who land at Changi each year have none; they fall back to cards (~2–3% merchant fees) or cash.
-- AI agents can't open bank accounts at all. Since April 2026, x402 (Linux Foundation) gives them a standard way to pay — Gantry gives them somewhere to spend.
+- PayNow is excellent — for payers with a Singapore bank account. The ~16M international visitors who arrive each year have none; they fall back to cards (~2–3% merchant fees) or cash.
+- AI agents can't open bank accounts at all. [x402](https://github.com/x402-foundation/x402) — launched May 2025, contributed to the Linux Foundation, whose x402 Foundation went operational in July 2026 — gives them a standard way to pay. Gantry gives them somewhere to spend.
 - Agent spending runs inside on-chain allowances — daily caps, merchant-category allowlists, expiry — [MAS Project Orchid's Purpose-Bound Money](https://www.mas.gov.sg/schemes-and-initiatives/project-orchid) idea, applied to AI agents.
 
 ## Status
@@ -26,7 +26,8 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 - [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` via the bridge AND the non-custodial `gantry-pbm` scheme; unmodified `@x402/fetch` still pays end-to-end)
 - [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E))
-- [x] Any-stablecoin-in → XSGD-out atomic FX, behind the `IGantrySwap` seam — shipping on `FixedRateSwap` (owner-set rate). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
+- [x] Stablecoin-in → XSGD-out atomic FX behind the `IGantrySwap` seam — shipping on `FixedRateSwap`, which accepts any token with an owner-listed rate (USDC today). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
+- [x] Merchant onboarding — one form, live handle availability, on-chain registration, printable QR (`/onboard`)
 - [x] Merchant dashboard — live SSE feed with Human/Agent badges, agent policy panel with on-chain revoke, one feed for both doors
 - [x] LLM-powered agent CLI (Gemini via the Vercel AI SDK) paying — and getting rejected on-chain — autonomously, with a visually-identical scripted fallback
 
@@ -65,8 +66,9 @@ pnpm dev                                         # backend :4000 + web :3000 (bi
 - **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or `NEXT_PUBLIC_BURNER=1`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
-- **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache and prints addresses + demo URLs (<1s; chain state is reused).
-- Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`.
+- **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache, re-arms the agent policy on-chain, and prints addresses + demo URLs (~5–10s; it waits on a real `setPolicy` receipt. Contracts persist, so nothing is redeployed).
+- **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), paste a payout address, register. Needs `ONBOARDING_ENABLED=1` — it defaults off, since registration spends the relayer's gas.
+- Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
 
 ## Tech
 
@@ -78,7 +80,7 @@ Everything that matters here runs for real: the contracts are deployed and verif
 
 What is not real, and why:
 
-- **`MockXSGD`.** XSGD exists on no testnet (and not on Base), so testnet runs use a clearly-labeled mock. The mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain.
+- **`MockXSGD`.** XSGD exists on no testnet (and not on Base), so testnet runs use a mock, labelled as such in the payer page and dashboard footers. The mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain.
 - **The FX rate is owner-set**, not market-derived — `FixedRateSwap` behind the `IGantrySwap` interface. Production means real XSGD liquidity through an aggregator or RFQ behind that same interface; the seam is the part that's meant to survive.
 - **One trusted relayer/facilitator key.** It pays all gas, and on the vanilla-x402 `exact` path it briefly custodies the agent's funds (one hop, PSP-style) because spec-compliant clients generate their own EIP-3009 nonce. The `gantry-pbm` path has no such hop. Merchant registration is relayer-paid too — permissionless on-chain, so it's faucet trust level.
 - **Merchant categories are self-attested.** No KYC, and no fiat off-ramp.

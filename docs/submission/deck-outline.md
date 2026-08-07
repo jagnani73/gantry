@@ -37,8 +37,8 @@ Columns: PayNow · cards · Gantry.
 
 Gantry's column is the only one with three ticks. **The pitch is not "cheaper
 QR" — PayNow is already free domestically. It is "the payers PayNow cannot
-reach."** ~16M travellers arrive through Changi each year; the agent column is
-new demand that has no rail at all.
+reach."** ~16M international visitors arrive in Singapore each year; the agent
+column is new demand that has no rail at all.
 
 ### 3. Thesis — one intent, two encodings
 The same `PaymentIntent` shown twice, side by side: rendered as a QR code, and
@@ -105,7 +105,7 @@ Fee economics from the demo day itself, on S$26 of takings:
 
 | | Rate | On S$26 |
 |---|---|---|
-| Cards | ~2.8% | **S$0.72** |
+| Cards | ~2.8% | **S$0.73** |
 | Gantry | 0.5% | **S$0.13** |
 
 Roadmap: finals → institutions door (payroll, disbursements) → SGQR+
@@ -125,7 +125,7 @@ deck.
 3. **Architecture** — the diagram, both callouts.
 4. **What's real vs mocked** — kept whole. This is the slide that earns the
    others; it is the last one to cut.
-5. **Fee story + both doors** — the S$0.13-vs-S$0.72 table, with the human and
+5. **Fee story + both doors** — the S$0.13-vs-S$0.73 table, with the human and
    agent screenshots flanking it, and `CategoryNotAllowed(2)` shown.
 6. **Roadmap + ask** — including one line of regulation posture.
 
@@ -150,4 +150,5 @@ These have all drifted at least once. Check them before export.
 | Human demo amount | S$6.50 → 4.843157 USDC @ 1.3421 |
 | Agent demo amount | S$19.50 team lunch → 14.529469 USDC |
 | Rejection | GadgetHub SG, S$29 powerbank, `CategoryNotAllowed(2)` |
-| Fee comparison | S$0.13 (0.5%) vs S$0.72 (~2.8%) on S$26 |
+| Fee comparison | S$0.13 (0.5%) vs **S$0.73** (~2.8%) on S$26 — 26 × 0.028 = 0.728, so S$0.72 is a truncation |
+| Dashboard strip | shows net S$25.87 and saved S$0.59, not the gross or the card fee |

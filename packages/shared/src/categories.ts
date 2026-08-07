@@ -27,10 +27,12 @@ export const CATEGORY_OPTIONS: readonly CategoryOption[] = Object.keys(CATEGORIE
   .map((id) => ({ id, name: CATEGORIES[id]!, label: CATEGORY_LABELS[id] ?? CATEGORIES[id]! }));
 
 /**
- * The chain accepts any categoryId < 256, but only these four have a name, a
- * label and a PBM bitmap bit that the demo policy knows about — an unlisted id
- * renders as `category_7` everywhere and can never be allowed by a policy.
- * Registration therefore narrows to the known set; the contract stays permissive.
+ * The chain accepts any categoryId < 256, and AgentPBMWallet's categoryBitmap
+ * is a uint256 — so a bit exists for every id, and an owner could allow one of
+ * these on-chain. What an unlisted id lacks is a name, a label, and a bit in
+ * the DEMO policy: it renders as `category_7` in every UI and no agent here can
+ * spend at it. Registration therefore narrows to the known set while the
+ * contract stays permissive.
  */
 export function isKnownCategory(id: number): boolean {
   return Number.isInteger(id) && Object.prototype.hasOwnProperty.call(CATEGORIES, id);

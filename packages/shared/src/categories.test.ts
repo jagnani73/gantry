@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CATEGORIES, CATEGORY_OPTIONS, categoryName, isKnownCategory } from "./categories";
+import {
+  CATEGORIES,
+  CATEGORY_LABELS,
+  CATEGORY_OPTIONS,
+  categoryName,
+  isKnownCategory,
+} from "./categories";
 
 test("known categories", () => {
   for (const id of Object.keys(CATEGORIES).map(Number)) {
@@ -9,10 +15,19 @@ test("known categories", () => {
 });
 
 test("unknown categories", () => {
-  // 0 and 5..255 are accepted by the contract (uint16 < 256) but have no name,
-  // no label and no policy bit — registration must refuse them.
+  // 0 and 5..255 are accepted by the contract (uint16 < 256) but have no name
+  // and no label, so they would render as `category_7` — registration refuses
+  // them even though the on-chain bitmap could technically address them.
   for (const id of [0, 5, 255, 256, -1, 1.5, NaN, Infinity]) {
     assert.ok(!isKnownCategory(id), `expected unknown: ${id}`);
+  }
+});
+
+test("every category id fits the on-chain uint16 < 256 constraint", () => {
+  // GantryCore.registerMerchant reverts InvalidCategory at >= 256, and the id
+  // doubles as a bit index in AgentPBMWallet's uint256 categoryBitmap.
+  for (const id of Object.keys(CATEGORIES).map(Number)) {
+    assert.ok(Number.isInteger(id) && id >= 0 && id < 256, `out of range: ${id}`);
   }
 });
 
@@ -24,7 +39,10 @@ test("options cover every category and carry a label", () => {
   );
   for (const option of CATEGORY_OPTIONS) {
     assert.equal(option.name, CATEGORIES[option.id]);
-    assert.ok(option.label.length > 0, `missing label: ${option.id}`);
+    // Assert the LABEL exists, not that option.label is non-empty: label falls
+    // back to the wire name, so the latter can never fail and a missing label
+    // would silently ship "food_beverage" into the dropdown.
+    assert.ok(CATEGORY_LABELS[option.id], `missing label: ${option.id}`);
   }
 });
 

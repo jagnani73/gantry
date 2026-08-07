@@ -374,7 +374,7 @@ export function PayClient({ handle }: { handle: string }) {
       )}
 
       <footer className="mt-auto pb-2 text-center text-xs text-muted-foreground">
-        Gantry · gasless EIP-3009 · settles in XSGD on Base Sepolia
+        Gantry · gasless EIP-3009 · settles in XSGD (testnet mock) on Base Sepolia
       </footer>
     </main>
   );

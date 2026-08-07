@@ -118,7 +118,7 @@ export function PolicyPanel() {
             <>
               S${toSgd(policy.spentToday, policy.rate)} of S${toSgd(policy.dailyCap, policy.rate)}{" "}
               spent today{" "}
-              <span title="Caps live on-chain in token units; S$ shown at the demo pool rate">
+              <span title="Caps live on-chain in token units; S$ shown at the owner-set demo rate (no market, no oracle)">
                 @ {(Number(policy.rate) / 1e6).toFixed(4)}
               </span>{" "}
               · {policy.categories.join(", ") || "no categories"}

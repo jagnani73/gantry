@@ -9,9 +9,15 @@ Sepolia over the laptop's own hotspot** — never venue wifi. Local Anvil was
 considered and deliberately not built; the hotspot covers the same failure mode
 without a second orchestration path to maintain.
 
-**Before every run:** `pnpm demo:reset` (<2s — clears the dashboard cache,
-re-arms the agent policy, tops up the faucet, and prints the relayer's ETH
-balance). Check that balance. Every register and every settle spends it.
+**Before every run:** `pnpm demo:reset` (~5–10s — it clears the dashboard cache,
+re-arms the agent policy with a real on-chain `setPolicy`, tops the agent wallet
+up via the faucet if it's low, checks `gadgethub-sg` is still registered, and
+prints the relayer's ETH balance). Check that balance. Every register and every
+settle spends it.
+
+**The onboarding cooldown survives `demo:reset`** — it's a 30s in-process
+per-IP guard, so two registration takes inside 30s will 429. Space them, or
+restart the backend between takes.
 
 **Agent prompts must carry the amount.** "Buy the team lunch (S$19.50) from Ah
 Hock", not "buy lunch". An amount-less prompt lets the live model pick its own
@@ -28,11 +34,11 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 | 0:22–0:45 | **Tourist pays** | Phone mirrored: scan → S$6.50 → Confirm | "A tourist lands at Changi with no Singapore bank account. She scans. She signs one authorization — she holds no ETH, and she never sends a transaction. Our relayer pays the gas." |
 | 0:45–1:00 | **WOW 1** | Dashboard: chime, row slides in, open FX drawer | "Under two seconds. 4.84 USDC came in, 6.50 XSGD went out — swapped atomically inside the settlement contract. Ah Hock only ever sees Singapore dollars." |
 | 1:00–1:08 | **Pivot** | Dashboard stays up | "That's the easy customer. My next customer has no hands." |
-| 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — the x402 standard, Linux Foundation, live since April. It reads the price, checks its own on-chain policy, and pays. S$19.50." |
+| 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$19.50." |
 | 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same contract. Same feed. Ah Hock does not know or care that one of these customers is software." |
 | 1:48–2:12 | **WOW 2** | Terminal: powerbank → red row on dashboard | "Now watch it get told no. I ask it for a S$29 powerbank from an electronics shop. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
 | 2:12–2:26 | **Revoke** | Dashboard policy panel: cap meter, click Revoke | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a daily cap, an allowlist, an expiry, and a kill switch the human owner holds. One click, on-chain, done." |
-| 2:26–2:44 | **Fee strip** | Dashboard summary strip | "Today's takings: S$26. Cards would have taken S$0.72. Gantry took thirteen cents." |
+| 2:26–2:44 | **Fee strip** | Dashboard summary strip | "Two payments. Ah Hock keeps S$25.87 of them — that tile says we saved him fifty-nine cents against card rates today. On S$26 of takings, cards would have taken seventy-three; we took thirteen." |
 | 2:44–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike. Every contract is verified on Base Sepolia — the address is on the slide." |
 
 ### Optional opening beat — live onboarding (~25s, decide against the clock)
@@ -67,6 +73,7 @@ add it. If not, it lives in the clip and the deck only.
 | Row never lands | Hotkey the backup clip for that beat, say "here's the recorded run", continue |
 | Agent LLM stalls | It self-fallbacks to scripted narration at 8s with identical wire traffic. Say nothing — the payment is real either way |
 | RPC dies entirely | Full-run backup video, narrate over it, and be honest that we're on the recording |
+| Register says it failed | Open `/pay/<handle>` BEFORE retrying. If it loads, the tx mined past the 20s receipt cap and you're already registered — the form now detects this and shows the success card, but check before burning a second handle |
 
 ---
 
@@ -96,9 +103,9 @@ covered by the deck.
 
 **1. Why not just use PayNow?**
 For a Singaporean paying a Singaporean, you should — it's free and it works.
-PayNow requires a Singapore bank account, so it cannot serve the ~16M travellers
-arriving through Changi each year, and it certainly cannot serve a piece of
-software. We're not competing with PayNow's domestic case; we're covering the
+PayNow requires a Singapore bank account, so it cannot serve the ~16M
+international visitors who arrive each year, and it certainly cannot serve a
+piece of software. We're not competing with PayNow's domestic case; we're covering the
 payers it structurally cannot reach.
 
 **2. Who carries the regulatory liability?**
@@ -131,10 +138,12 @@ cards. The real answer is that agent payments are a new volume category, not a
 margin fight with Visa.
 
 **6. Is agent commerce actually a thing, or is this speculative?**
-Partly speculative, and I'd rather say so. What isn't speculative: x402 is a
-Linux Foundation standard with client libraries shipping today, and our endpoint
-is paid end-to-end by an *unmodified* one. We built for a standard that exists
-rather than inventing a protocol and hoping.
+Partly speculative, and I'd rather say so. What isn't speculative: x402 launched
+in May 2025, was contributed to the Linux Foundation, and its foundation went
+operational in July 2026 with 40 founding members including Google, Visa and
+Cloudflare. Client libraries ship today, and our endpoint is paid end-to-end by
+an *unmodified* one. We built for a standard that exists rather than inventing a
+protocol and hoping.
 
 **7. Where does the FX rate come from?**
 On testnet, from me — it's an owner-set fixed rate at 1.3421 and it's labelled
