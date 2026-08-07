@@ -20,7 +20,6 @@ export const env = {
     undefined) as `0x${string}` | undefined,
   /** Google AI Studio key (free tier) — absent ⇒ scripted mode. */
   googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-  llmModel: process.env.AGENT_LLM_MODEL ?? "gemini-flash-latest",
   llmTimeoutMs: Number(process.env.AGENT_LLM_TIMEOUT_MS ?? 8000),
 } as const;
 

@@ -37,6 +37,10 @@ Pay exactly the amount the user asked for; if no amount was given, use the merch
  */
 const SYNTHETIC_PARTS = new Set(["start", "start-step"]);
 
+/** Google AI Studio free tier. Fixed: swapping models is a code change with
+ * prompt implications, not a deployment knob. */
+const LLM_MODEL = "gemini-flash-latest";
+
 async function runLive(prompt: string): Promise<"done" | "timeout"> {
   const google = createGoogleGenerativeAI({ apiKey: env.googleApiKey });
   const controller = new AbortController();
@@ -45,7 +49,7 @@ async function runLive(prompt: string): Promise<"done" | "timeout"> {
 
   const consume = (async (): Promise<"done"> => {
     const result = streamText({
-      model: google(env.llmModel),
+      model: google(LLM_MODEL),
       system: SYSTEM_PROMPT,
       prompt,
       tools: agentTools,
