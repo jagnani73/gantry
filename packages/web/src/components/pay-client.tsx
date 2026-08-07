@@ -236,10 +236,10 @@ export function PayClient({ handle }: { handle: string }) {
           value={amount}
           onChange={setAmount}
           onSubmit={quote}
-          // The funder grants 2 real USDC ≈ S$2.68 per top-up — cap well below
-          // what a demo needs so a fat-fingered amount can't drain it.
-          max={burner ? 10 : 9999}
-          maxHint={burner ? "Demo wallet caps at S$10" : undefined}
+          // One funder grant is 4 real USDC ≈ S$5.37, and the payer page funds
+          // once before signing — so the cap must sit under a single grant.
+          max={burner ? 5 : 9999}
+          maxHint={burner ? "Demo wallet caps at S$5" : undefined}
         />
       )}
 

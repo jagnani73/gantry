@@ -11,7 +11,7 @@ import type { MerchantListEntry, PayResult } from "./pay-flow";
  */
 
 const DRINKS = { handle: "ah-hock-chicken-rice", sgd: "4.50" };
-const POWERBANK = { handle: "gadgethub-sg", sgd: "29" };
+const CABLE = { handle: "gadgethub-sg", sgd: "4" };
 
 /** Reasons that PROVE nothing moved. Anything else (outcome_unknown,
  * unexpected_status, unresolved settle outcomes) must not be narrated as
@@ -43,7 +43,7 @@ function requirePolicy(json: string): PolicyResponse {
 }
 
 export function isDenialPrompt(prompt: string): boolean {
-  return /powerbank|power bank|gadget|electronic/i.test(prompt);
+  return /cable|charger|powerbank|power bank|gadget|electronic/i.test(prompt);
 }
 
 function sgdFromPrompt(prompt: string, fallback: string): string {
@@ -95,14 +95,14 @@ async function narratePayment(result: PayResult, displayName: string): Promise<v
 export async function runScripted(prompt: string): Promise<void> {
   try {
     if (isDenialPrompt(prompt)) {
-      const sgd = sgdFromPrompt(prompt, POWERBANK.sgd);
-      await narrator.type(`A S$${sgd} powerbank from GadgetHub SG — let me check my spend policy first.\n`);
+      const sgd = sgdFromPrompt(prompt, CABLE.sgd);
+      await narrator.type(`A S$${sgd} phone cable from GadgetHub SG — let me check my spend policy first.\n`);
       const policy = requirePolicy(await runCheckPolicy());
       await narrator.type(
-        `${policySummary(policy)} A powerbank is electronics, but the wallet enforces policy ` +
+        `${policySummary(policy)} A cable is electronics, but the wallet enforces policy ` +
           `on-chain — I'll submit the payment and let the contract decide.\n`,
       );
-      const result = JSON.parse(await runPayMerchant({ handle: POWERBANK.handle, sgd })) as PayResult;
+      const result = JSON.parse(await runPayMerchant({ handle: CABLE.handle, sgd })) as PayResult;
       await narratePayment(result, "GadgetHub SG");
       return;
     }

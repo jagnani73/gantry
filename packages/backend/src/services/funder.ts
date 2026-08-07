@@ -175,3 +175,44 @@ export async function topUpFunder(): Promise<FunderStatus> {
       `(was ${formatUnits(balance, 6)}, target ${formatUnits(TARGET, 6)})`,
   );
 }
+
+/**
+ * Tops the demo PBM wallet up so the agent beats can run. Admin-gated and
+ * cooldown-free, unlike the public payer faucet — the wallet needs enough for
+ * one drinks order (S$4.50 ≈ 3.36) AND enough left over for the rejection
+ * attempt's balance pre-check, which the facilitator runs before the on-chain
+ * policy check. Underfund it and the rejection beat fails as insufficient_funds
+ * instead of CategoryNotAllowed, which is the wrong story entirely.
+ */
+const WALLET_FLOOR = 8_000_000n; // 8 USDC
+const WALLET_TARGET = 10_000_000n; // 10 USDC
+
+export async function topUpPbmWallet(): Promise<{ wallet: Address; usdc: string; sent: string }> {
+  const wallet = config.demoPbmWallet;
+  const balance = await publicClient.readContract({
+    address: config.addresses.realUsdc,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [wallet],
+  });
+  if (balance >= WALLET_FLOOR) {
+    return { wallet, usdc: formatUnits(balance, 6), sent: "0" };
+  }
+
+  const send = WALLET_TARGET - balance;
+  const funderBalance = await usdcBalance();
+  if (funderBalance < send) {
+    throw new ApiError(
+      503,
+      "FunderExhausted",
+      `need ${formatUnits(send, 6)} USDC for the PBM wallet but the funder holds ${formatUnits(funderBalance, 6)}`,
+    );
+  }
+  await sendRelayerTx({
+    address: config.addresses.realUsdc,
+    abi: erc20Abi,
+    functionName: "transfer",
+    args: [wallet, send],
+  });
+  return { wallet, usdc: formatUnits(WALLET_TARGET, 6), sent: formatUnits(send, 6) };
+}

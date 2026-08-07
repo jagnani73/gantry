@@ -68,7 +68,7 @@ The raw `402` challenge, the policy JSON, and the revert, in that order:
   challenge, not a redrawing of it).
 - `Policy { dailyCap: S$50, categories: [food_beverage], expiry: 30d }`.
 - `CategoryNotAllowed(2)` — an actual on-chain revert when the agent tries a
-  S$29 powerbank, surfaced verbatim as the x402 `errorReason`.
+  S$4 phone cable, surfaced verbatim as the x402 `errorReason`.
 
 The point to land: **the denial is a contract revert, not a backend
 `if` statement.** MAS Project Orchid's Purpose-Bound Money, applied to AI agents.
@@ -150,6 +150,6 @@ These have all drifted at least once. Check them before export.
 | Agent door | two sub-paths; `exact` is custodial, `gantry-pbm` is not |
 | Human demo amount | iced tea S$1.50 → 1.117652 USDC @ 1.3421 |
 | Agent demo amount | 3 iced teas S$4.50 → 3.352955 USDC |
-| Rejection | GadgetHub SG, S$29 powerbank, `CategoryNotAllowed(2)` |
+| Rejection | GadgetHub SG, S$4 phone cable, `CategoryNotAllowed(2)` |
 | Fee comparison | 0.5% vs ~2.8% — quote the monthly figures (S$10 vs S$56), not the S$6 day |
 | Dashboard strip | shows net S$5.97 and saved S$0.13 — the S$0.13 is the SAVING now, not Gantry's cut |

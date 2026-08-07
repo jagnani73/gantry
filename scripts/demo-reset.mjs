@@ -56,33 +56,36 @@ const arm = await fetch(`${backend}/api/admin/policy/arm`, {
   headers: { "x-admin-token": adminToken },
 });
 if (arm.ok) {
+  // Top up BEFORE reading the policy back: the readback reports the wallet
+  // balance, and a transfer settled a moment ago can still read stale off a
+  // lagging replica. Ordering it first means the number printed is the one the
+  // top-up just wrote. Cooldown-free and target-based, unlike the payer faucet,
+  // so one reset always leaves the wallet able to run BOTH agent beats — the
+  // drinks order and the rejection attempt, whose balance pre-check runs before
+  // the on-chain policy check.
+  let topLine = "";
+  const top = await fetch(`${backend}/api/admin/wallet/topup`, {
+    method: "POST",
+    headers: { "x-admin-token": adminToken },
+  }).catch(() => null);
+  let walletUsdc = null;
+  if (top?.ok) {
+    const t = await top.json();
+    walletUsdc = Number(t.usdc);
+    if (t.sent !== "0") topLine = ` (topped up +${Number(t.sent).toFixed(2)} USDC)`;
+  } else {
+    topLine = ` ⚠ wallet top-up failed (${top ? `status ${top.status}: ${await top.text()}` : "network error"})`;
+  }
+
   const policyRes = await fetch(`${backend}/api/policy`).catch(() => null);
   if (policyRes?.ok) {
     const p = await policyRes.json();
     const sgd = (units) => (Number(BigInt(units) * BigInt(p.rate)) / 1e12).toFixed(2);
+    // Prefer the top-up's own figure — it is the post-transfer truth.
+    const wallet = walletUsdc ?? Number(p.balance) / 1e6;
     policyLine =
       `policy re-armed: S$${sgd(p.dailyCap)}/day · ${p.categories.join(", ")} · ` +
-      `spent S$${sgd(p.spentToday)} · wallet S$${sgd(p.balance)} ${p.token}`;
-    // Enough for one agent purchase (S$4.50 ~ 3.35 USDC) plus margin. NOT the
-    // daily cap: that is 37 USDC of real money sitting idle in a demo wallet.
-    const WALLET_FLOOR = 4_000_000n;
-    if (BigInt(p.balance) < WALLET_FLOOR) {
-      const funder = await fetch(`${backend}/api/faucet`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address: p.wallet }),
-      }).catch(() => null);
-      if (funder?.ok) {
-        const { funded } = await funder.json();
-        const after = BigInt(p.balance) + BigInt(funded);
-        policyLine +=
-          after < WALLET_FLOOR
-            ? ` ⚠ topped up but STILL LOW (${(Number(after) / 1e6).toFixed(2)} USDC) — run demo:reset again or fund the wallet directly`
-            : ` (low — funder sent ${(Number(BigInt(funded)) / 1e6).toFixed(2)} USDC)`;
-      } else {
-        policyLine += ` ⚠ LOW and the funder failed (${funder ? `status ${funder.status}: ${await funder.text()}` : "network error"})`;
-      }
-    }
+      `spent S$${sgd(p.spentToday)} · wallet ${wallet.toFixed(2)} ${p.token}${topLine}`;
   } else {
     // The arm LANDED — do not claim the wallet is missing; the readback flaked.
     policyLine = `⚠ policy re-armed but readback failed (${policyRes ? `status ${policyRes.status}` : "network error"}) — verify GET /api/policy manually`;
@@ -148,7 +151,7 @@ demo urls
 
 agent beats
   drinks     pnpm --filter @gantry/agent start "buy 3 iced teas for the team (S\\$4.50) from Ah Hock"
-  rejection  pnpm --filter @gantry/agent start "buy a S\\$29 powerbank at GadgetHub"
-  e2e        pnpm --filter @gantry/agent e2e:pbm [-- --handle gadgethub-sg --sgd 29 --expect-denial]
+  rejection  pnpm --filter @gantry/agent start "buy a S\\$4 phone cable at GadgetHub"
+  e2e        pnpm --filter @gantry/agent e2e:pbm [-- --handle gadgethub-sg --sgd 4 --expect-denial]
 
 done in ${((Date.now() - started) / 1000).toFixed(1)}s`);

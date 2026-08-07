@@ -40,10 +40,15 @@ must already hold the token.
 | Balance vs `amountIn` | Result |
 |---|---|
 | sufficient | Straight to signing, no faucet call. |
-| insufficient | `funding` step → mint 100 MUSDC (60s cooldown per address) → poll balance 10× 1.5s → sign, or fail "faucet funds not visible yet" after ~15s. |
+| insufficient | `funding` step → the funder **transfers 4 real USDC** (60s cooldown per address) → poll balance 10× 1.5s → sign, or fail "faucet funds not visible yet" after ~15s. |
 
-Amount cap: **S$130** on the burner, S$9999 on a connected wallet
-(`pay-client.tsx:242`). The cap follows from the faucet minting 100 MUSDC.
+The funder is the relayer wallet: settlement is in real Circle USDC, which
+cannot be minted, so the grant is a transfer out of a finite balance and can run
+out (`FunderExhausted`).
+
+Amount cap: **S$5** on the burner, S$9999 on a connected wallet
+(`pay-client.tsx:239`). The burner cap follows from the 4 USDC grant — it keeps
+one grant sufficient for the payment it was requested for.
 
 ---
 

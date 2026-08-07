@@ -23,6 +23,9 @@ import {
 } from "@gantry/shared";
 
 const { values: args } = parseArgs({
+  // pnpm forwards the `--` separator literally — drop it or parseArgs demotes
+  // every following option to a positional.
+  args: process.argv.slice(2).filter((arg) => arg !== "--"),
   options: {
     sgd: { type: "string", default: "4.50" },
     handle: { type: "string", default: "ah-hock-chicken-rice" },

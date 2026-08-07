@@ -4,7 +4,7 @@ import { resetIndexer } from "../indexer";
 import { broadcast } from "../sse";
 import { ApiError } from "../errors";
 import { armDemoPolicy } from "../services/policy";
-import { topUpFunder } from "../services/funder";
+import { topUpFunder, topUpPbmWallet } from "../services/funder";
 
 export const adminRouter = Router();
 
@@ -33,4 +33,11 @@ adminRouter.post("/api/admin/policy/arm", async (req, res) => {
 adminRouter.post("/api/admin/funder/topup", async (req, res) => {
   requireAdminToken(req.get("x-admin-token"));
   res.json(await topUpFunder());
+});
+
+/** demo-reset's agent-wallet top-up. Admin-gated and cooldown-free, so one
+ * reset always leaves the wallet able to run both agent beats. */
+adminRouter.post("/api/admin/wallet/topup", async (req, res) => {
+  requireAdminToken(req.get("x-admin-token"));
+  res.json(await topUpPbmWallet());
 });

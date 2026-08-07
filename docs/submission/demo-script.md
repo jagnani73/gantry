@@ -36,7 +36,7 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 | 1:00–1:08 | **Pivot** | Dashboard stays up | "That's the easy customer. My next customer has no hands." |
 | 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$4.50." |
 | 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same contract. Same feed. Ah Hock does not know or care that one of these customers is software." |
-| 1:48–2:12 | **WOW 2** | Terminal: powerbank → red row on dashboard | "Now watch it get told no. I ask it for a S$29 powerbank from an electronics shop. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
+| 1:48–2:12 | **WOW 2** | Terminal: phone cable → red row on dashboard | "Now watch it get told no. I ask it for a S$4 phone cable from an electronics shop — well inside its budget. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
 | 2:12–2:26 | **Revoke** | Dashboard policy panel: cap meter, click Revoke | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a daily cap, an allowlist, an expiry, and a kill switch the human owner holds. One click, on-chain, done." |
 | 2:26–2:44 | **Fee strip** | Dashboard summary strip | "Two payments. Ah Hock keeps five ninety-seven of six dollars — that tile is what we saved him. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
 | 2:44–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike. Every contract is verified on Base Sepolia — the address is on the slide." |
@@ -91,7 +91,7 @@ audio take, not one screen take. Shoot each screen action twice.
 | 5 | 10s | Dashboard: chime, row lands — 1.12 USDC in, S$1.50 XSGD out, net and fee inline on the row |
 | 6 | 14s | Terminal: the 402 challenge scrolling, the agent's reasoning, `200 OK` |
 | 7 | 10s | Dashboard: both rows side by side, Human badge and Agent badge |
-| 8 | 8s | The powerbank attempt → red `CategoryNotAllowed` row |
+| 8 | 8s | The phone-cable attempt → red `CategoryNotAllowed` row |
 | 9 | 6s | Closing card: pitch line, repo URL, Basescan address |
 
 Total ≈ 82s. If it runs long, shot 2 is the one to cut — onboarding is well

@@ -6,7 +6,7 @@ import { payMerchant } from "../src/pay-flow";
  * the LLM. Exit code asserts the outcome, so rehearsal scripts can gate on it:
  *
  *   pnpm --filter @gantry/agent e2e:pbm                       # S$4.50 team drinks must settle
- *   pnpm --filter @gantry/agent e2e:pbm -- --handle gadgethub-sg --sgd 29 --expect-denial
+ *   pnpm --filter @gantry/agent e2e:pbm -- --handle gadgethub-sg --sgd 4 --expect-denial
  *                                                             # must revert CategoryNotAllowed
  */
 const { values } = parseArgs({

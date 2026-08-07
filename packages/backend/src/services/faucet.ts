@@ -16,7 +16,11 @@ import { sendRelayerTx } from "../relayer";
  * open mint never had — so it is reported as itself rather than as a bare
  * revert.
  */
-const GRANT = 2_000_000n; // 2 USDC — a demo payment is ~1.12
+/** Must cover the LARGEST single payment a funded payer makes, because the
+ * payer page funds once and then signs: the agent-door order is S$4.50 ≈ 3.36
+ * USDC, and the burner amount cap (S$5 ≈ 3.73) is deliberately set just under
+ * this so one grant always suffices. */
+const GRANT = 4_000_000n; // 4 USDC
 const COOLDOWN_MS = 60_000;
 
 const lastFunded = new Map<string, number>();
