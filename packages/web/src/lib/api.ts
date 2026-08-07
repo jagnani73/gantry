@@ -2,7 +2,6 @@ import type {
   ApiErrorBody,
   CreateIntentRequest,
   FaucetResponse,
-  HealthResponse,
   IntentResponse,
   MerchantResponse,
   PolicyResponse,
@@ -70,7 +69,6 @@ async function call<T>(path: string, init?: RequestInit & { timeoutMs?: number }
 }
 
 export const api = {
-  health: () => call<HealthResponse>("/health", { timeoutMs: 6_000 }),
   merchant: (handle: string) => call<MerchantResponse>(`/api/merchants/${handle}`, { timeoutMs: 12_000 }),
   registerMerchant: (req: RegisterMerchantRequest) =>
     call<RegisterMerchantResponse>("/api/merchants", {

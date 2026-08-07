@@ -69,16 +69,6 @@ transactions.
 | `1` *(default)* | `POST /api/faucet` mints 100 MUSDC, 60s cooldown per address. |
 | `0` | Route returns 403 `FaucetDisabled`. |
 
-#### `ONBOARDING_ENABLED`
-
-| Value | Behaviour |
-|---|---|
-| `0` *(default)* | `POST /api/merchants` returns 403. `/onboard` reads the flag from `/health` and renders an explanatory card instead of a form. |
-| `1` | Registration allowed: relayer-paid, 30s per-IP cooldown recorded only after success, plus a per-IP in-flight guard. |
-
-Defaults off because it spends relayer ETH on an unauthenticated request while
-`CORS_ORIGIN` is `*` by default.
-
 #### `POLICY_ADMIN_ENABLED`
 
 | Value | Behaviour |
@@ -286,8 +276,6 @@ Resolved at `pay-client.tsx:63` as `burnerEnvEnabled() || query.get("burner") ==
 | `gantry-pbm` | agent CLI or `e2e:pbm` | on-chain payer is the PBM wallet; policy enforced by contract revert |
 | Live narration | LLM key set | model decides and narrates; timeout falls back |
 | Scripted narration | key unset, or fallback fired | identical wire traffic; announced on stderr |
-| Onboarding enabled | `ONBOARDING_ENABLED=1` | relayer-paid registration, 30s per-IP cooldown |
-| Onboarding disabled | default | route 403s; the form explains itself |
 
 ---
 

@@ -14,7 +14,6 @@ healthRouter.get("/health", async (_req, res) => {
     block: Number(block),
     relayer: relayerAccount.address,
     indexerCursor: Number(getCursor() ?? config.deployBlock),
-    onboardingEnabled: config.onboardingEnabled,
   };
   res.json(body);
 });

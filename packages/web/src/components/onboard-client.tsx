@@ -47,27 +47,7 @@ export function OnboardClient() {
   // otherwise one transient failure locks the form until the merchant happens
   // to edit the input, which nobody discovers live.
   const [recheck, setRecheck] = useState(0);
-  // null = not yet known. Public hosts run ONBOARDING_ENABLED=0 (registration
-  // spends relayer gas), so ask before offering a form that can only 403.
-  const [hostEnabled, setHostEnabled] = useState<boolean | null>(null);
   const submitInFlight = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .health()
-      .then((health) => {
-        if (!cancelled) setHostEnabled(health.onboardingEnabled);
-      })
-      // A flaky /health must not hide a working form — assume enabled and let
-      // the submit surface the real error if it isn't.
-      .catch(() => {
-        if (!cancelled) setHostEnabled(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (handle === "") {
@@ -168,33 +148,7 @@ export function OnboardClient() {
           </p>
         </div>
 
-        {hostEnabled === false && (
-          <Card>
-            <CardContent className="space-y-3 py-8 text-sm text-muted-foreground">
-              <p className="text-base font-semibold text-foreground">
-                Onboarding is off on this deployment
-              </p>
-              <p>
-                Registering a merchant is a real on-chain transaction paid for by Gantry&apos;s
-                relayer, so it stays disabled on the public demo. It runs on the demo laptop, and
-                you can watch it in the submission clip.
-              </p>
-              <p>
-                Everything else is live — try the{" "}
-                <Link className="text-primary underline underline-offset-2" href="/pay/ah-hock-chicken-rice">
-                  payer page
-                </Link>{" "}
-                or the{" "}
-                <Link className="text-primary underline underline-offset-2" href="/dashboard">
-                  merchant dashboard
-                </Link>
-                .
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {hostEnabled !== false && (step.name === "form" || step.name === "submitting") && (
+        {(step.name === "form" || step.name === "submitting") && (
           <Card>
             <CardHeader>
               <CardTitle>Your shop</CardTitle>

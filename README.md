@@ -77,7 +77,7 @@ Every environment variable, what it changes and how the options interact is docu
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
 - **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache, re-arms the agent policy on-chain, and prints addresses + demo URLs (~5–10s; it waits on a real `setPolicy` receipt. Contracts persist, so nothing is redeployed).
-- **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), paste a payout address, register. Needs `ONBOARDING_ENABLED=1` — it defaults off, since registration spends the relayer's gas.
+- **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), paste a payout address, register. The relayer pays the gas, so the merchant needs no ETH.
 - **Agent CLI:** `AGENT_SESSION_KEY` cannot be a freshly generated key — its address must match the `agentSigner` stored on the demo `AgentPBMWallet`, or every `gantry-pbm` payment fails with `InvalidAgentSignature`. Rotate on-chain via `setAgentSigner` if you need a different one.
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
 

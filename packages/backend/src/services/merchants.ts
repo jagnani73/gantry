@@ -67,8 +67,7 @@ function toMerchantResponse(
  * Onboarding. `registerMerchant` is permissionless on-chain — anyone can call
  * it with their own gas — so relaying it here is faucet trust level: an
  * unauthenticated request that spends relayer ETH. Guarded the same way as the
- * faucet, with a per-IP cooldown and an ONBOARDING_ENABLED kill switch for
- * public hosts.
+ * faucet, with a per-IP cooldown and an in-flight guard.
  *
  * A taken handle is not pre-checked: sendRelayerTx simulates first, so the
  * duplicate reverts with HandleTaken before any gas is spent and the decoded
@@ -88,9 +87,6 @@ export async function registerMerchant(
   req: RegisterMerchantRequest,
   ip: string | undefined,
 ): Promise<RegisterMerchantResponse> {
-  if (!config.onboardingEnabled) {
-    throw new ApiError(403, "OnboardingDisabled", "merchant onboarding is disabled here");
-  }
   if (!isValidHandle(req.handle)) {
     throw new ApiError(
       400,

@@ -23,10 +23,9 @@ Cut from the bottom if time runs short.
       on this list and entirely outside our control. Do this first.
 - [ ] Deploy web to Vercel and backend to Railway/Fly (backend needs long-lived
       SSE, so serverless is out).
-- [ ] On the public backend: leave `ONBOARDING_ENABLED` unset (it now defaults
-      off) and set `POLICY_ADMIN_ENABLED=0`. Both spend relayer ETH or expose a
-      kill switch; the demo laptop opts in explicitly. `/onboard` reads the flag
-      from `/health` and explains itself rather than offering a dead form.
+- [ ] On the public backend set `POLICY_ADMIN_ENABLED=0` — an open revoke lets
+      any visitor zero the agent's policy and break the demo, and only the
+      ADMIN_TOKEN can re-arm it.
 - [ ] Export the mermaid diagram to PNG and check it reads at thumbnail size.
 - [ ] Print slide 1 and confirm the QR scans off a projected image, not just
       off a screen.
