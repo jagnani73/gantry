@@ -4,6 +4,7 @@ import { resetIndexer } from "../indexer";
 import { broadcast } from "../sse";
 import { ApiError } from "../errors";
 import { armDemoPolicy } from "../services/policy";
+import { topUpFunder } from "../services/funder";
 
 export const adminRouter = Router();
 
@@ -25,4 +26,11 @@ adminRouter.post("/api/admin/reset", async (req, res) => {
 adminRouter.post("/api/admin/policy/arm", async (req, res) => {
   requireAdminToken(req.get("x-admin-token"));
   res.json({ txHash: await armDemoPolicy() });
+});
+
+/** demo-reset's funder check: swaps ETH for USDC when the funder runs low.
+ * Admin-gated and deliberately out of the payment path — see services/funder.ts. */
+adminRouter.post("/api/admin/funder/topup", async (req, res) => {
+  requireAdminToken(req.get("x-admin-token"));
+  res.json(await topUpFunder());
 });

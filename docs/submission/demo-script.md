@@ -19,7 +19,7 @@ settle spends it.
 per-IP guard, so two registration takes inside 30s will 429. Space them, or
 restart the backend between takes.
 
-**Agent prompts must carry the amount.** "Buy the team lunch (S$19.50) from Ah
+**Agent prompts must carry the amount.** "Buy 3 iced teas for the team (S$4.50) from Ah
 Hock", not "buy lunch". An amount-less prompt lets the live model pick its own
 basket — during testing it once spent its entire remaining S$30.50 budget.
 
@@ -31,14 +31,14 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 |---|---|---|---|
 | 0:00–0:12 | **Hook** | Title slide, dashboard behind | "Every payment system ever built assumes the payer is a human. That assumption is about to break." |
 | 0:12–0:22 | **Scene** | Printed QR standee held up | "This is Ah Hock, Maxwell Food Centre. One printed sticker. He set it up in about two minutes and he has never heard of a blockchain." |
-| 0:22–0:45 | **Tourist pays** | Phone mirrored: scan → S$6.50 → Confirm | "A tourist lands at Changi with no Singapore bank account. She scans. She signs one authorization — she holds no ETH, and she never sends a transaction. Our relayer pays the gas." |
-| 0:45–1:00 | **WOW 1** | Dashboard: chime, row slides in — 4.84 USDC in, S$6.50 XSGD out, net and fee inline on the row | "Under two seconds. 4.84 USDC came in, 6.50 XSGD went out — swapped atomically inside the settlement contract. Ah Hock only ever sees Singapore dollars." |
+| 0:22–0:45 | **Tourist pays** | Phone mirrored: scan → S$1.50 → Confirm | "A tourist lands at Changi with no Singapore bank account. She scans. She signs one authorization — she holds no ETH, and she never sends a transaction. Our relayer pays the gas." |
+| 0:45–1:00 | **WOW 1** | Dashboard: chime, row slides in — 1.12 USDC in, S$1.50 XSGD out, net and fee inline on the row | "Under two seconds. 1.12 USDC came in — real Circle USDC, not a testnet toy — and 1.50 XSGD went out, swapped atomically inside the settlement contract. Ah Hock only ever sees Singapore dollars." |
 | 1:00–1:08 | **Pivot** | Dashboard stays up | "That's the easy customer. My next customer has no hands." |
-| 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$19.50." |
+| 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$4.50." |
 | 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same contract. Same feed. Ah Hock does not know or care that one of these customers is software." |
 | 1:48–2:12 | **WOW 2** | Terminal: powerbank → red row on dashboard | "Now watch it get told no. I ask it for a S$29 powerbank from an electronics shop. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
 | 2:12–2:26 | **Revoke** | Dashboard policy panel: cap meter, click Revoke | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a daily cap, an allowlist, an expiry, and a kill switch the human owner holds. One click, on-chain, done." |
-| 2:26–2:44 | **Fee strip** | Dashboard summary strip | "Two payments. Ah Hock keeps S$25.87 of them — that tile says we saved him fifty-nine cents against card rates today. On S$26 of takings, cards would have taken seventy-three; we took thirteen." |
+| 2:26–2:44 | **Fee strip** | Dashboard summary strip | "Two payments. Ah Hock keeps five ninety-seven of six dollars — that tile is what we saved him. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
 | 2:44–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike. Every contract is verified on Base Sepolia — the address is on the slide." |
 
 ### Optional opening beat — live onboarding (~25s, decide against the clock)
@@ -87,8 +87,8 @@ audio take, not one screen take. Shoot each screen action twice.
 | 1 | 6s | Title card — "One rail, every payer" + the Gantry mark |
 | 2 | 10s | `/onboard`: type a handle, availability flips green, register → success card with the Basescan link |
 | 3 | 8s | Real hand, real phone, scanning the printed standee |
-| 4 | 10s | Payer page: S$6.50, tap "Confirm & pay — no gas needed" |
-| 5 | 10s | Dashboard: chime, row lands — 4.84 USDC in, S$6.50 XSGD out, net and fee inline on the row |
+| 4 | 10s | Payer page: S$1.50, tap "Confirm & pay — no gas needed" |
+| 5 | 10s | Dashboard: chime, row lands — 1.12 USDC in, S$1.50 XSGD out, net and fee inline on the row |
 | 6 | 14s | Terminal: the 402 challenge scrolling, the agent's reasoning, `200 OK` |
 | 7 | 10s | Dashboard: both rows side by side, Human badge and Agent badge |
 | 8 | 8s | The powerbank attempt → red `CategoryNotAllowed` row |

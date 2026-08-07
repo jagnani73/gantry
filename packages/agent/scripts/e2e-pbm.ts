@@ -5,7 +5,7 @@ import { payMerchant } from "../src/pay-flow";
  * Deterministic gantry-pbm acceptance harness — the agent's pay flow without
  * the LLM. Exit code asserts the outcome, so rehearsal scripts can gate on it:
  *
- *   pnpm --filter @gantry/agent e2e:pbm                       # S$19.50 lunch must settle
+ *   pnpm --filter @gantry/agent e2e:pbm                       # S$4.50 team drinks must settle
  *   pnpm --filter @gantry/agent e2e:pbm -- --handle gadgethub-sg --sgd 29 --expect-denial
  *                                                             # must revert CategoryNotAllowed
  */
@@ -15,7 +15,7 @@ const { values } = parseArgs({
   args: process.argv.slice(2).filter((arg) => arg !== "--"),
   options: {
     handle: { type: "string", default: "ah-hock-chicken-rice" },
-    sgd: { type: "string", default: "19.50" },
+    sgd: { type: "string", default: "4.50" },
     "expect-denial": { type: "boolean", default: false },
   },
 });

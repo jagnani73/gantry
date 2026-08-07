@@ -49,7 +49,7 @@ if (!healthRes.ok) {
 const health = await healthRes.json();
 
 // Re-arm the agent policy: setPolicy resets the wallet's spentToday counter,
-// so ten S$19.50 rehearsals never pile into the S$50/day cap.
+// so ten S$4.50 rehearsals never pile into the S$50/day cap.
 let policyLine;
 const arm = await fetch(`${backend}/api/admin/policy/arm`, {
   method: "POST",
@@ -104,36 +104,33 @@ const gadgetLine = gadget.ok
   ? "gadgethub-sg registered (category electronics — the rejection beat)"
   : "⚠ gadgethub-sg NOT registered on-chain — the rejection beat will fail";
 
-// Best-effort probe: a flaky RPC must not crash the script AFTER a successful
-// reset (the cheat sheet below is the whole point of running it).
-let relayerEth = "?";
-// BASE_SEPOLIA_RPC_URL is a comma-separated fallback list; probe the primary.
-const probeRpc = (process.env.BASE_SEPOLIA_RPC_URL ?? "")
-  .split(",")
-  .map((u) => u.trim())
-  .find((u) => u.length > 0);
-if (probeRpc) {
-  try {
-    const res = await fetch(probeRpc, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_getBalance",
-        params: [BASE_SEPOLIA_RELAYER, "latest"],
-      }),
-    }).then((r) => r.json());
-    if (res.result) relayerEth = (Number(BigInt(res.result)) / 1e18).toFixed(4);
-  } catch {
-    relayerEth = "? (balance probe failed)";
+// Funder: reports ETH + USDC and swaps ETH for USDC when it runs low. Best
+// effort — a flaky RPC must not crash the script AFTER a successful reset (the
+// cheat sheet below is the whole point of running it).
+let funderLine = `relayer  ${BASE_SEPOLIA_RELAYER}  (balance probe skipped)`;
+try {
+  const res = await fetch(`${backend}/api/admin/funder/topup`, {
+    method: "POST",
+    headers: { "x-admin-token": adminToken },
+  });
+  if (res.ok) {
+    const f = await res.json();
+    funderLine =
+      `funder   ${f.funder}  ${Number(f.eth).toFixed(4)} ETH · ${Number(f.usdc).toFixed(2)} USDC` +
+      (f.swapped ? `
+         ↳ ${f.detail}` : "");
+  } else {
+    const body = await res.text();
+    funderLine = `⚠ funder  ${BASE_SEPOLIA_RELAYER}  top-up failed (${res.status}): ${body}`;
   }
+} catch (err) {
+  funderLine = `⚠ funder  ${BASE_SEPOLIA_RELAYER}  unreachable (${err instanceof Error ? err.message : err})`;
 }
 
 console.log(`✓ dashboard cleared, indexer cursor → block ${health.indexerCursor} (chain ${health.chainId})
 ✓ ${policyLine}
 ✓ ${gadgetLine}
-relayer  ${BASE_SEPOLIA_RELAYER}  (${relayerEth} ETH)
+${funderLine}
 
 contracts (Base Sepolia)
   GantryCore     ${BASE_SEPOLIA_ADDRESSES.gantryCore}
@@ -150,7 +147,7 @@ demo urls
   print QR   ${app}/qr/ah-hock-chicken-rice
 
 agent beats
-  lunch      pnpm --filter @gantry/agent start "buy the team lunch (S\\$19.50) from Ah Hock"
+  drinks     pnpm --filter @gantry/agent start "buy 3 iced teas for the team (S\\$4.50) from Ah Hock"
   rejection  pnpm --filter @gantry/agent start "buy a S\\$29 powerbank at GadgetHub"
   e2e        pnpm --filter @gantry/agent e2e:pbm [-- --handle gadgethub-sg --sgd 29 --expect-denial]
 

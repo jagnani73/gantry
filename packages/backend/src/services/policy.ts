@@ -67,7 +67,7 @@ export async function revokePolicy(): Promise<Hex> {
 }
 
 /** The rehearsal re-arm: setPolicy resets the wallet's spentToday counter, so
- * ten S$19.50 rehearsals never pile into the S$50 cap. Chain time for expiry
+ * ten S$4.50 rehearsals never pile into the S$50 cap. Chain time for expiry
  * (a skewed laptop otherwise arms an already-expired policy). */
 export async function armDemoPolicy(): Promise<Hex> {
   const wallet = config.demoPbmWallet;

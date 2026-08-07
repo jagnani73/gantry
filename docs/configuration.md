@@ -47,39 +47,6 @@ Amount cap: **S$130** on the burner, S$9999 on a connected wallet
 
 ---
 
-## Which token moves
-
-Two variables, one per door.
-
-#### `ORDER_TOKEN`
-
-| Value | Behaviour |
-|---|---|
-| `MUSDC` | Agent-door asset: the x402 402 offer, `POST /api/pbm/intent`, and the policy panel's display token. |
-| `USDC` | Same, real USDC. |
-| unset *(default)* | `USDC` when the chain has real USDC, else `MUSDC`. |
-
-Must match what the PBM wallet actually holds, or every agent payment fails on
-balance; `demo:reset` warns when it diverges.
-
-#### `NEXT_PUBLIC_PAY_TOKEN`
-
-| Value | Behaviour |
-|---|---|
-| `USDC` *(default)* | Connected-wallet path pays in real USDC. |
-| `MUSDC` / `XSGD` | Connected-wallet path pays in that token. |
-| any value, burner active | **Ignored** — the burner is hardcoded to MUSDC (`pay-client.tsx:115`), because the faucet can only mint MUSDC. |
-
-### Combined
-
-| Path | Token |
-|---|---|
-| burner | always `MUSDC` |
-| connected wallet | `NEXT_PUBLIC_PAY_TOKEN` |
-| agent door (`exact` and `gantry-pbm`) | `ORDER_TOKEN` |
-
----
-
 ## Whether the agent thinks for itself
 
 #### `GOOGLE_GENERATIVE_AI_API_KEY`
@@ -152,7 +119,6 @@ not a spending one.
 
 1. `NEXT_PUBLIC_*` values are read at build time — restart after editing.
 2. Switching payer modes needs an env edit and a restart — there is no per-request override.
-5. `ORDER_TOKEN` must match what the PBM wallet holds.
 6. `AGENT_SESSION_KEY` must match the wallet's on-chain `agentSigner`.
 7. `NEXT_PUBLIC_APP_URL` is encoded into the printed QR
    (`app/qr/[handle]/page.tsx:10`) — a standee printed against `localhost` is

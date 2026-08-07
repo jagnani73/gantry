@@ -44,11 +44,12 @@ Full plan (architecture, demo script, submission package, timeline): `C:\Users\y
 ## Canonical demo facts (bake into seed data / `demo-reset` script)
 
 - Merchant: **"Ah Hock Chicken Rice"**, Maxwell Food Centre, category `food_beverage`.
-- Human payment: S$6.50 → 4.84 USDC → 6.50 XSGD @ 1.3421 (seed the pool to produce this rate).
-- Agent payment: team lunch 3× = S$19.50 (14.53 USDC).
+- Human payment: **iced tea S$1.50** → 1.117652 USDC → 1.50 MockXSGD @ 1.3421.
+- Agent payment: **3 iced teas for the team = S$4.50** (3.352955 USDC).
+- Prices are hawker-drink scale on purpose: settlement is in REAL Circle USDC now, which is finite, and S$1.50 is a real drink price so the Singapore framing survives. A full run costs ~4.5 USDC.
 - Agent policy: S$50/day cap, categories `[food_beverage]`, 30-day expiry, revocable.
 - Rejection beat: "GadgetHub SG" (`electronics`), S$29 powerbank → on-chain revert `CategoryNotAllowed`.
-- Fee story: Gantry 0.5% (S$0.13 on the day's S$26) vs ~2.8% cards (**S$0.73** — 26 × 0.028 = 0.728; the old S$0.72 was a truncation and is checkable on a slide in one second). The dashboard strip shows *net collected* (S$25.87) and *saved* (S$0.59, truncated by `formatUnits6`), NOT the gross or the card fee — narrate what's on screen.
+- Fee story: on the day's **S$6.00**, Gantry takes **S$0.03** and cards would take **S$0.168**. Narrate it as a rate against real volume, not a day's total — "three cents on six dollars; a hawker doing S$2,000 a month pays S$10 with us and S$56 with cards". **Trap:** the strip's *saved* tile renders **S$0.13**, which was the OLD number for Gantry's cut — do not say "we took thirteen". The strip shows net (**S$5.97**) and saved (**S$0.13**), never the gross or the card fee.
 - `demo-reset` = one command, Sepolia-based: clear the dashboard cache, re-arm the policy on-chain, top up the agent wallet if low, check gadgethub-sg is registered; contracts persist and the relayer holds gas ETH. Takes ~5–10s (it waits on a real `setPolicy` receipt — the "<1s" figure predates M3) and must stay <30s: that budget is what enables rehearsal. **The 30s register cooldown is in-process and survives `demo-reset`** — back-to-back onboarding takes inside 30s will 429; restart the backend between them. (The full deploy/mint/fund/seed orchestration returns only if Anvil local mode is revived — deferred 6 Aug 2026, see Chain/infra.)
 
 ## Milestones & cut list
@@ -139,8 +140,8 @@ Design notes that bind future work:
 
 ## What's real vs mocked (keep these labels honest everywhere)
 
-Real: all contracts on Sepolia, x402 v2 wire format, EIP-3009 vs real Circle USDC, on-chain PBM denials (contract reverts — never backend if-statements), live LLM tool-use decisions (Gemini free tier; scripted fallback runs the same real wire traffic), real phone + printed QR.
-Mocked: MockXSGD (no testnet XSGD), owner-set fixed FX rate (GantrySwap skipped — the `IGantrySwap` seam is the production-FX story), single trusted relayer/facilitator key (including the exact-scheme bridge's one-hop custody of agent funds), self-attested merchant categories (no KYC), relayer-paid merchant registration (permissionless on-chain, so faucet trust level), no fiat off-ramp.
+Real: all contracts on Sepolia, **payments settle in real Circle USDC** (the payer signs an EIP-3009 authorization against Circle's own contract; the relayer funds burners by transferring real USDC, not minting), x402 v2 wire format, on-chain PBM denials (contract reverts — never backend if-statements), live LLM tool-use decisions (Gemini free tier; scripted fallback runs the same real wire traffic), real phone + printed QR.
+Mocked: MockXSGD — **the only mocked token**, and unavoidable: XSGD exists on no testnet, only on mainnet via StraitsX. MockUSDC was removed from the app on 7 Aug 2026 (the contract stays deployed but unused); owner-set fixed FX rate (GantrySwap skipped — the `IGantrySwap` seam is the production-FX story), single trusted relayer/facilitator key (including the exact-scheme bridge's one-hop custody of agent funds), self-attested merchant categories (no KYC), relayer-paid merchant registration (permissionless on-chain, so faucet trust level), no fiat off-ramp.
 
 ## Conventions
 

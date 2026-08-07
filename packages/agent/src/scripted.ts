@@ -10,7 +10,7 @@ import type { MerchantListEntry, PayResult } from "./pay-flow";
  * missing key) — the demo's money path never depends on the LLM.
  */
 
-const LUNCH = { handle: "ah-hock-chicken-rice", sgd: "19.50" };
+const DRINKS = { handle: "ah-hock-chicken-rice", sgd: "4.50" };
 const POWERBANK = { handle: "gadgethub-sg", sgd: "29" };
 
 /** Reasons that PROVE nothing moved. Anything else (outcome_unknown,
@@ -107,20 +107,20 @@ export async function runScripted(prompt: string): Promise<void> {
       return;
     }
 
-    const sgd = sgdFromPrompt(prompt, LUNCH.sgd);
-    await narrator.type("I'll get the team lunch sorted. Checking the merchants first.\n");
+    const sgd = sgdFromPrompt(prompt, DRINKS.sgd);
+    await narrator.type("I'll get the team their drinks. Checking the merchants first.\n");
     const merchants = JSON.parse(await runListMerchants()) as MerchantListEntry[];
     const ahHock = merchants.find(
       (m): m is Extract<MerchantListEntry, { displayName?: string }> =>
-        m.handle === LUNCH.handle && !("error" in m),
+        m.handle === DRINKS.handle && !("error" in m),
     );
     await narrator.type(
       `${ahHock?.displayName ?? "Ah Hock Chicken Rice"} is live at Maxwell Food Centre. ` +
         `Now checking what my policy allows.\n`,
     );
     const policy = JSON.parse(await runCheckPolicy()) as PolicyResponse;
-    await narrator.type(`${policySummary(policy)} S$${sgd} for lunch fits — paying now.\n`);
-    const result = JSON.parse(await runPayMerchant({ handle: LUNCH.handle, sgd })) as PayResult;
+    await narrator.type(`${policySummary(policy)} S$${sgd} for three iced teas fits — paying now.\n`);
+    const result = JSON.parse(await runPayMerchant({ handle: DRINKS.handle, sgd })) as PayResult;
     await narratePayment(result, ahHock?.displayName ?? "Ah Hock Chicken Rice");
   } catch (err) {
     // Only the read tools (checkPolicy) throw; payMerchant returns structured

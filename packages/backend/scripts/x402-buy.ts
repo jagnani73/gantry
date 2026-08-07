@@ -5,7 +5,7 @@
  * 402 challenge and the PAYMENT-RESPONSE receipt for display) and
  * display/explorer helpers.
  *
- * Usage: pnpm --filter @gantry/backend x402:buy [-- --sgd 19.50 --handle ah-hock-chicken-rice]
+ * Usage: pnpm --filter @gantry/backend x402:buy [-- --sgd 4.50 --handle ah-hock-chicken-rice]
  * Env: X402_PAYER_KEY (optional; a fresh random key is funded from the demo
  *      funder when unset), GANTRY_API (default http://localhost:4000)
  */
@@ -24,7 +24,7 @@ import {
 
 const { values: args } = parseArgs({
   options: {
-    sgd: { type: "string", default: "19.50" },
+    sgd: { type: "string", default: "4.50" },
     handle: { type: "string", default: "ah-hock-chicken-rice" },
   },
 });

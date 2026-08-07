@@ -37,12 +37,11 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 |---|---|
 | [`GantryCore`](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0) | `0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0` |
 | [`FixedRateSwap`](https://sepolia.basescan.org/address/0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713) | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
-| [`MockUSDC`](https://sepolia.basescan.org/address/0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9) | `0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9` |
 | [`MockXSGD`](https://sepolia.basescan.org/address/0xd583FaB0Db5c543f5574780f8b899AEb74463361) | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
 | [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0x172905F26F09b41636854338360315971240c1cf) | `0x172905F26F09b41636854338360315971240c1cf` |
 | [`AgentPBMWallet` (demo)](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E) | `0xDD4bbed78B64715288bf10fabB2b62c659299D3E` |
 
-Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settlement is fork-tested against it. Demo merchants `ah-hock-chicken-rice` (food & beverage) and `gadgethub-sg` (electronics — the rejection beat) are registered on-chain.
+The pay token is Circle's real testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settled against live, and fork-tested too. Demo merchants `ah-hock-chicken-rice` (food & beverage) and `gadgethub-sg` (electronics — the rejection beat) are registered on-chain.
 
 ## Layout
 
@@ -97,7 +96,7 @@ Everything that matters here runs for real: the contracts are deployed and verif
 
 What is not real, and why:
 
-- **`MockXSGD`.** XSGD exists on no testnet (and not on Base), so testnet runs use a mock, labelled as such in the payer page and dashboard footers. The mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain.
+- **`MockXSGD` — the only mocked token.** XSGD exists on no testnet (and not on Base), so testnet runs use a mock, labelled as such in the payer page and dashboard footers. The mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain. Payments themselves settle in **real Circle USDC**: the payer signs an EIP-3009 authorization against Circle's own contract, and burner wallets are funded by the relayer *transferring* real USDC rather than minting a mock.
 - **The FX rate is owner-set**, not market-derived — `FixedRateSwap` behind the `IGantrySwap` interface. Production means real XSGD liquidity through an aggregator or RFQ behind that same interface; the seam is the part that's meant to survive.
 - **One trusted relayer/facilitator key.** It pays all gas, and on the vanilla-x402 `exact` path it briefly custodies the agent's funds (one hop, PSP-style) because spec-compliant clients generate their own EIP-3009 nonce. The `gantry-pbm` path has no such hop. Merchant registration is relayer-paid too — permissionless on-chain, so it's faucet trust level.
 - **Merchant categories are self-attested.** No KYC, and no fiat off-ramp.

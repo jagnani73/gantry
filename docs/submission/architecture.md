@@ -70,7 +70,6 @@ Why the hop exists: spec-compliant x402 clients generate their own random EIP-30
 | `AgentPBMWalletFactory` | `0x172905F26F09b41636854338360315971240c1cf` |
 | `AgentPBMWallet` (demo) | `0xDD4bbed78B64715288bf10fabB2b62c659299D3E` |
 | `FixedRateSwap` | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
-| `MockUSDC` | `0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9` |
 | `MockXSGD` | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
 
-Primary pay token is Circle's real testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`), which settlement is fork-tested against.
+The pay token is Circle's **real** testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — payers sign EIP-3009 authorizations against Circle's own contract, and the relayer funds burner wallets by transferring real USDC rather than minting a mock. `MockXSGD` is the only mocked token, because XSGD exists on no testnet.

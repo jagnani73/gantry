@@ -83,7 +83,7 @@ paid end-to-end by an unmodified `@x402/fetch` client · EIP-3009 against real
 Circle testnet USDC · on-chain policy denials · live LLM tool-use decisions ·
 real phone, real printed QR.
 
-Mocked: `MockXSGD` (XSGD exists on no testnet) · owner-set FX rate, not a market ·
+Mocked: `MockXSGD` — the only mocked token, and unavoidable (XSGD exists on no testnet) · owner-set FX rate, not a market ·
 one trusted relayer/facilitator key, which briefly custodies funds on the
 standard `exact` path · self-attested merchant categories, no KYC · no fiat
 off-ramp.
@@ -101,12 +101,13 @@ PSP, not as one → Gantry is the rail and the policy layer, not the regulated
 entity. Says plainly that a hackathon prototype is not a payments licence.
 
 ### 10. Fee story, roadmap, and the ask
-Fee economics from the demo day itself, on S$26 of takings:
+Fee economics as a rate, extrapolated to real volume — a day's takings are
+too small to land as an absolute:
 
-| | Rate | On S$26 |
-|---|---|---|
-| Cards | ~2.8% | **S$0.73** |
-| Gantry | 0.5% | **S$0.13** |
+| | Rate | On the demo's S$6.00 | On a hawker's S$2,000/month |
+|---|---|---|---|
+| Cards | ~2.8% | S$0.168 | **S$56** |
+| Gantry | 0.5% | S$0.03 | **S$10** |
 
 Roadmap: finals → institutions door (payroll, disbursements) → SGQR+
 interoperability and mainnet XSGD. Ask: Best Student Team, and the finals slot.
@@ -125,7 +126,7 @@ deck.
 3. **Architecture** — the diagram, both callouts.
 4. **What's real vs mocked** — kept whole. This is the slide that earns the
    others; it is the last one to cut.
-5. **Fee story + both doors** — the S$0.13-vs-S$0.73 table, with the human and
+5. **Fee story + both doors** — the S$10-vs-S$56-a-month table, with the human and
    agent screenshots flanking it, and `CategoryNotAllowed(2)` shown.
 6. **Roadmap + ask** — including one line of regulation posture.
 
@@ -147,8 +148,8 @@ These have all drifted at least once. Check them before export.
 | FX | `FixedRateSwap`, owner-set (**no** AMM, **no** slippage) |
 | Contract names | `GantryCore`, `AgentPBMWallet` (`SettlementRouter`/`PolicyGuard` never existed) |
 | Agent door | two sub-paths; `exact` is custodial, `gantry-pbm` is not |
-| Human demo amount | S$6.50 → 4.843157 USDC @ 1.3421 |
-| Agent demo amount | S$19.50 team lunch → 14.529469 USDC |
+| Human demo amount | iced tea S$1.50 → 1.117652 USDC @ 1.3421 |
+| Agent demo amount | 3 iced teas S$4.50 → 3.352955 USDC |
 | Rejection | GadgetHub SG, S$29 powerbank, `CategoryNotAllowed(2)` |
-| Fee comparison | S$0.13 (0.5%) vs **S$0.73** (~2.8%) on S$26 — 26 × 0.028 = 0.728, so S$0.72 is a truncation |
-| Dashboard strip | shows net S$25.87 and saved S$0.59, not the gross or the card fee |
+| Fee comparison | 0.5% vs ~2.8% — quote the monthly figures (S$10 vs S$56), not the S$6 day |
+| Dashboard strip | shows net S$5.97 and saved S$0.13 — the S$0.13 is the SAVING now, not Gantry's cut |

@@ -3,7 +3,7 @@
  * The pre-web verification path for the Human door (the agent tooling lives
  * in packages/agent, built on its own pay-flow client).
  *
- * Usage: pnpm --filter @gantry/backend e2e:pay [-- --sgd 6.50 --handle ah-hock-chicken-rice]
+ * Usage: pnpm --filter @gantry/backend e2e:pay [-- --sgd 1.50 --handle ah-hock-chicken-rice]
  * Env: E2E_PAYER_KEY (optional; fresh random key when unset),
  *      GANTRY_API (default http://localhost:4000)
  * The funder top-up always runs (per-address 60s cooldown applies).
@@ -22,7 +22,7 @@ import {
 
 const { values: args } = parseArgs({
   options: {
-    sgd: { type: "string", default: "6.50" },
+    sgd: { type: "string", default: "1.50" },
     handle: { type: "string", default: "ah-hock-chicken-rice" },
   },
 });

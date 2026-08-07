@@ -120,7 +120,7 @@ function refuseFallback(context: string): never {
 async function main(): Promise<void> {
   const prompt = process.argv.slice(2).join(" ").trim();
   if (!prompt) {
-    console.error('usage: pnpm --filter @gantry/agent start "buy the team lunch (S$19.50) from Ah Hock"');
+    console.error('usage: pnpm --filter @gantry/agent start "buy 3 iced teas for the team (S$4.50) from Ah Hock"');
     process.exit(2);
   }
 

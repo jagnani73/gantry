@@ -83,7 +83,7 @@ export const agentTools = {
       "Pay a merchant in SGD through the Gantry x402 gantry-pbm rail (the on-chain policy wallet pays; you only authorize). Returns the settlement result. The on-chain policy may REJECT the payment — if so, report the errorReason name verbatim (e.g. CategoryNotAllowed) and explain it plainly. NEVER call this tool a second time for the same purchase, whatever the first result said — transport errors and unknown outcomes included; report them and stop. Never invent transaction hashes.",
     inputSchema: z.object({
       handle: z.string().describe('Merchant handle, e.g. "ah-hock-chicken-rice"'),
-      sgd: z.string().describe('SGD amount as a decimal string, e.g. "19.50"'),
+      sgd: z.string().describe('SGD amount as a decimal string, e.g. "4.50"'),
     }),
     execute: guardLive(runPayMerchant),
   }),

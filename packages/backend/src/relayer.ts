@@ -47,6 +47,8 @@ export function sendRelayerTx<
   abi: TAbi;
   functionName: TFunctionName;
   args: ContractFunctionArgs<TAbi, "nonpayable" | "payable", TFunctionName>;
+  /** ETH to attach — only WETH.deposit() needs it (the funder top-up swap). */
+  value?: bigint;
 }): Promise<RelayedTx<unknown>> {
   return enqueue(async () => {
     const { request, result } = await publicClient.simulateContract({
@@ -55,6 +57,7 @@ export function sendRelayerTx<
       abi: params.abi,
       functionName: params.functionName,
       args: params.args,
+      ...(params.value === undefined ? {} : { value: params.value }),
     } as Parameters<typeof publicClient.simulateContract>[0]);
 
     let hash: `0x${string}`;

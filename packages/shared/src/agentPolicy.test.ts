@@ -16,7 +16,7 @@ const params: SpendAuthorizationParams = {
   chainId: 84532,
   intentId: "0x1111111111111111111111111111111111111111111111111111111111111111",
   token: "0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9",
-  amount: 14_529_469n, // the S$19.50 team lunch
+  amount: 14_529_469n, // arbitrary — an ENCODING pin, not a demo fact
 };
 
 test("wire round-trip preserves the EIP-712 digest", () => {
