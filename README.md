@@ -56,18 +56,25 @@ packages/agent       LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallba
 
 ## Running locally
 
+Needs Node ≥ 22.18 and pnpm 11 (`corepack enable` picks the pinned version up). Foundry is only needed to run contract tests or regenerate ABIs — the generated ABIs are committed, so the app runs without it.
+
 ```bash
+git submodule update --init                              # forge-std (contract tests only)
 pnpm install
 cp packages/backend/.env.example packages/backend/.env   # fill: RPC URL, relayer key, admin token
 cp packages/web/.env.example packages/web/.env.local     # point NEXT_PUBLIC_* at your laptop's LAN IP
+cp packages/agent/.env.example packages/agent/.env       # fill: AGENT_SESSION_KEY (+ optional Gemini key)
 pnpm dev                                                 # backend :4000 + web :3000 (binds 0.0.0.0)
 ```
+
+The relayer address needs Base Sepolia ETH — it is the only gas key in the system, so with an empty balance every settlement, registration and faucet mint fails. Nothing else needs deploying: the contracts are live and their addresses are pinned in `@gantry/shared`.
 
 - **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or `NEXT_PUBLIC_BURNER=1`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
 - **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache, re-arms the agent policy on-chain, and prints addresses + demo URLs (~5–10s; it waits on a real `setPolicy` receipt. Contracts persist, so nothing is redeployed).
 - **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), paste a payout address, register. Needs `ONBOARDING_ENABLED=1` — it defaults off, since registration spends the relayer's gas.
+- **Agent CLI:** `AGENT_SESSION_KEY` cannot be a freshly generated key — its address must match the `agentSigner` stored on the demo `AgentPBMWallet`, or every `gantry-pbm` payment fails with `InvalidAgentSignature`. Rotate on-chain via `setAgentSigner` if you need a different one.
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
 
 ## Tech
