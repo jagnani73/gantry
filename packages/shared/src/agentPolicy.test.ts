@@ -7,13 +7,15 @@ import {
   reviveSpendAuthorization,
   type SpendAuthorizationParams,
 } from "./agentPolicy";
-import { BASE_SEPOLIA_ADDRESSES } from "./addresses";
 
+// Literal addresses on purpose: this is an ENCODING pin, not a deployment
+// pin — redeploying the demo wallet must not change (and thus fail) the
+// vector, so it deliberately does NOT read from BASE_SEPOLIA_ADDRESSES.
 const params: SpendAuthorizationParams = {
-  wallet: BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet!,
+  wallet: "0xDD4bbed78B64715288bf10fabB2b62c659299D3E",
   chainId: 84532,
   intentId: "0x1111111111111111111111111111111111111111111111111111111111111111",
-  token: BASE_SEPOLIA_ADDRESSES.mockUsdc,
+  token: "0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9",
   amount: 14_529_469n, // the S$19.50 team lunch
 };
 

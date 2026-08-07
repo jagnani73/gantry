@@ -55,33 +55,40 @@ async function buildOrderPrice(context: HTTPRequestContext) {
   };
 }
 
+const orderAccepts = [
+  // `exact` MUST stay first: vanilla clients (and scripts/x402-buy.ts)
+  // take the first matching entry. Funds route to the relayer — the
+  // facilitator bridge's custodial hop.
+  {
+    scheme: "exact",
+    network: caip2(config.chainId),
+    payTo: relayerAccount.address,
+    price: buildOrderPrice,
+    maxTimeoutSeconds: 600,
+  },
+  // `gantry-pbm`: non-custodial — the wallet pushes straight into the
+  // core at settle, so payTo is GantryCore itself. Shares buildOrderPrice
+  // deliberately (one deterministic quote, one drift surface); the static
+  // extra merges after the price extra, adding the intent-endpoint hint
+  // the Gantry agent uses for the pre-signing step.
+  {
+    scheme: "gantry-pbm",
+    network: caip2(config.chainId),
+    payTo: config.addresses.gantryCore,
+    price: buildOrderPrice,
+    maxTimeoutSeconds: 600,
+    extra: { intentEndpoint: "/api/pbm/intent" },
+  },
+];
+// Boot-time guard: the vanilla-interop beat dies silently if a reorder ever
+// demotes `exact` from accepts[0].
+if (orderAccepts[0]?.scheme !== "exact") {
+  throw new Error("orderRoutes invariant violated: `exact` must be the first accepts entry");
+}
+
 export const orderRoutes: RoutesConfig = {
   [ORDER_ROUTE]: {
-    accepts: [
-      // `exact` MUST stay first: vanilla clients (and scripts/x402-buy.ts)
-      // take the first matching entry. Funds route to the relayer — the
-      // facilitator bridge's custodial hop.
-      {
-        scheme: "exact",
-        network: caip2(config.chainId),
-        payTo: relayerAccount.address,
-        price: buildOrderPrice,
-        maxTimeoutSeconds: 600,
-      },
-      // `gantry-pbm`: non-custodial — the wallet pushes straight into the
-      // core at settle, so payTo is GantryCore itself. Shares buildOrderPrice
-      // deliberately (one deterministic quote, one drift surface); the static
-      // extra merges after the price extra, adding the intent-endpoint hint
-      // the Gantry agent uses for the pre-signing step.
-      {
-        scheme: "gantry-pbm",
-        network: caip2(config.chainId),
-        payTo: config.addresses.gantryCore,
-        price: buildOrderPrice,
-        maxTimeoutSeconds: 600,
-        extra: { intentEndpoint: "/api/pbm/intent" },
-      },
-    ],
+    accepts: orderAccepts,
     description: "Gantry order: pay a Singapore hawker in stablecoins over x402",
     mimeType: "application/json",
     // No `resource` override: the middleware then uses the full request URL

@@ -31,7 +31,7 @@ export interface MerchantResponse {
 }
 
 /** The door is NOT client-suppliable — it is derived from the route (QR/payer
- * page ⇒ Human; the x402 facilitator bridge ⇒ Agent). */
+ * page ⇒ Human; the facilitator bridge and POST /api/pbm/intent ⇒ Agent). */
 export interface CreateIntentRequest {
   handle: string;
   /** 6dp XSGD units, e.g. "6500000" for S$6.50. */
@@ -43,9 +43,10 @@ export interface CreateIntentRequest {
  * Field names deliberately map onto x402 vocabulary (tokenIn = asset,
  * amountIn = amount, payTo = GantryCore, intentId = the authorization nonce)
  * because the QR flow signs the same EIP-3009 authorization an x402 `exact`
- * payment carries. The M2 agent door prices its 402 independently (facilitator
- * bridge; payTo = relayer). `typedData.message` is authoritative for the
- * authorization window; the top-level copies exist for convenience.
+ * payment carries. The agent door prices its 402 independently — `exact` via
+ * the facilitator bridge (payTo = relayer), `gantry-pbm` paying GantryCore
+ * directly. `typedData.message` is authoritative for the authorization
+ * window; the top-level copies exist for convenience.
  */
 export interface IntentResponse {
   intentId: Hex;
@@ -138,15 +139,21 @@ export interface PolicyResponse {
   dailyCap: string;
   perTxCap: string;
   spentToday: string;
-  /** Unix seconds; 0 = revoked/unset (expired-by-default). */
+  /** Unix seconds; 0 = revoked/unset (expired-by-default). Note a NATURALLY
+   * lapsed policy (0 < expiry < now) also denies every spend (PolicyExpired)
+   * while `revoked` stays false — consumers rendering "active" should compare
+   * expiry against the clock too. */
   expiry: number;
   categoryBitmap: string;
   /** Decoded category names for bits set in the bitmap. */
   categories: string[];
+  /** The order token whose balance is reported — what a top-up must mint. */
+  token: TokenId;
   /** Wallet's balance of the order token. */
   balance: string;
   /** XSGD 6dp out per 1e6 token units — the display conversion factor. */
   rate: string;
+  /** Derived: always `expiry === 0`. */
   revoked: boolean;
 }
 

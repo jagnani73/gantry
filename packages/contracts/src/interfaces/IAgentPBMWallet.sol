@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 /// @notice The agent door's policy wallet (purpose-bound money applied to AI agents).
-///         The real wallet ships in M3 with Policy {dailyCap, perTxCap, expiry,
+///         Implemented by AgentPBMWallet: Policy {dailyCap, perTxCap, expiry,
 ///         categoryBitmap} and custom errors PerTxCapExceeded, DailyCapExceeded,
 ///         CategoryNotAllowed(uint16), PolicyExpired — all enforced on-chain and
 ///         bubbled through GantryCore so the x402 facilitator can decode them.

@@ -23,11 +23,13 @@ export const env = {
 } as const;
 
 export function requireSigningEnv(): { key: `0x${string}`; wallet: `0x${string}` } {
-  if (!env.agentSessionKey) {
-    throw new Error("AGENT_SESSION_KEY missing — generate one and fund/authorize its wallet");
+  // Shape-check both values so a malformed key fails HERE, before any HTTP —
+  // not at signing time, after an on-chain intent was already created.
+  if (!env.agentSessionKey || !/^0x[0-9a-fA-F]{64}$/.test(env.agentSessionKey)) {
+    throw new Error("AGENT_SESSION_KEY missing or malformed — expected 0x + 64 hex chars");
   }
-  if (!env.pbmWallet) {
-    throw new Error("PBM_WALLET_ADDRESS missing and no demo wallet pinned for this chain");
+  if (!env.pbmWallet || !/^0x[0-9a-fA-F]{40}$/.test(env.pbmWallet)) {
+    throw new Error("PBM_WALLET_ADDRESS missing or malformed — expected a 0x address");
   }
   return { key: env.agentSessionKey, wallet: env.pbmWallet };
 }

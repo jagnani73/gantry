@@ -1,12 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   buildSpendAuthorization,
   type X402PaymentPayload,
   type X402PaymentRequirements,
 } from "@gantry/shared";
-import { GantryPbmPayloadSchema, validatePbmPayment } from "../src/services/pbm-core";
+import {
+  GantryPbmPayloadSchema,
+  PBM_EXPIRY_MARGIN_SECONDS,
+  pbmIntentMismatch,
+  validatePbmPayment,
+  type PbmIntentFacts,
+} from "../src/services/pbm-core";
 
 /** Pure-module tests (no env/config, facilitator-core.test.ts precedent):
  * the session key signs real typed data so the signature path is exercised
@@ -132,6 +139,72 @@ test("signature by a different key fails as invalid_signature", async () => {
   const stranger = privateKeyToAccount(`0x${"22".repeat(32)}`);
   const result = await validatePbmPayment({ ...inputs(reqs, p), agentSigner: stranger.address });
   assert.ok(!result.ok && result.failure.reason === "invalid_signature");
+});
+
+// ---------------------------------------------------------------- intent-vs-pins match
+// The security boundary the signature cannot cover: these checks stop a
+// signed cheap intent from settling a different merchant's or pricier order.
+// Both facilitator loaders (DB row and chain struct) normalize into
+// PbmIntentFacts and share this one matcher — the table below covers every
+// rejection the live e2e paths never trigger.
+
+const NOW = 1_755_000_000;
+const expectedMerchantId = keccak256(toBytes("ah-hock-chicken-rice"));
+
+function intentFacts(overrides: Partial<PbmIntentFacts> = {}): PbmIntentFacts {
+  return {
+    status: "pending",
+    door: 1, // Agent
+    merchantId: expectedMerchantId.toLowerCase(),
+    tokenIn: token.toLowerCase(),
+    amountIn: amount,
+    xsgdAmount: 19_500_000n,
+    expiry: NOW + 600,
+    ...overrides,
+  };
+}
+
+function mismatchReason(overrides: Partial<PbmIntentFacts>): string | null {
+  const pins = { handle: "ah-hock-chicken-rice", xsgdAmount: 19_500_000n };
+  const result = pbmIntentMismatch(intentFacts(overrides), pins, requirements(), expectedMerchantId, NOW);
+  return result?.reason ?? null;
+}
+
+test("matching intent facts pass for both loader shapes", () => {
+  assert.equal(mismatchReason({}), null);
+  // The chain loader lowercases; the matcher itself must also tolerate a
+  // mixed-case expectedMerchantId (it normalizes internally).
+  const pins = { handle: "ah-hock-chicken-rice", xsgdAmount: 19_500_000n };
+  const mixed = pbmIntentMismatch(
+    intentFacts(),
+    pins,
+    requirements(),
+    expectedMerchantId.toUpperCase().replace("0X", "0x"),
+    NOW,
+  );
+  assert.equal(mixed, null);
+});
+
+test("consumed or unknown intents are rejected before any fact comparison", () => {
+  assert.equal(mismatchReason({ status: "unknown" }), "unknown_intent");
+  assert.equal(mismatchReason({ status: "settled" }), "intent_already_settled");
+  assert.equal(mismatchReason({ status: "cancelled" }), "intent_cancelled");
+  // Status precedence beats fact mismatches: a settled intent for the wrong
+  // merchant reports the replay, not the mismatch.
+  assert.equal(mismatchReason({ status: "settled", merchantId: "0xdead" }), "intent_already_settled");
+});
+
+test("expiry margin boundary: must outlive verification by the margin", () => {
+  assert.equal(mismatchReason({ expiry: NOW + PBM_EXPIRY_MARGIN_SECONDS - 1 }), "intent_expired");
+  assert.equal(mismatchReason({ expiry: NOW + PBM_EXPIRY_MARGIN_SECONDS }), null);
+});
+
+test("every pinned fact is enforced: door, merchant, xsgd, token, amount", () => {
+  assert.equal(mismatchReason({ door: 0 }), "intent_mismatch"); // Human intent
+  assert.equal(mismatchReason({ merchantId: keccak256(toBytes("gadgethub-sg")).toLowerCase() }), "intent_mismatch");
+  assert.equal(mismatchReason({ xsgdAmount: 29_000_000n }), "intent_mismatch");
+  assert.equal(mismatchReason({ tokenIn: core.toLowerCase() }), "intent_mismatch");
+  assert.equal(mismatchReason({ amountIn: "1" }), "quote_changed");
 });
 
 test("signature over tampered intentId or amount fails as invalid_signature", async () => {

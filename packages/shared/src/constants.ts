@@ -20,8 +20,8 @@ export const DEMO_MERCHANTS: Record<string, { displayName: string; location: str
 /**
  * The canonical demo agent policy — "S$50/day" stored on-chain in the spend
  * token's 6dp units at the pinned 1.3421 rate: ceil(50e6 * 1e6 / DEMO_RATE).
- * Used by DeployPBM.s.sol (mirrored constants), the admin re-arm endpoint, and
- * demo-reset's printed verification.
+ * Used by DeployPBM.s.sol (mirrored constants) and the admin re-arm endpoint;
+ * demo-reset verifies the armed values via GET /api/policy.
  */
 export const DEMO_POLICY = {
   dailyCap: 37_255_049n,

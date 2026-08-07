@@ -90,9 +90,11 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
     // ---------------------------------------------------------------- modifiers
 
     modifier onlyCore() {
-        // The core passes caller-supplied wallet addresses through unvalidated, so this
-        // gate is the wallet's only defense against a stranger draining it with their
-        // own intents.
+        // authorizeSpend pushes funds to msg.sender and the wallet keeps no per-intent
+        // ledger, so this gate is what makes signatures single-use in practice (replay
+        // safety leans on the core's Settled flip) and stops a direct caller from
+        // redirecting the push to themselves. Strangers routing their own intents
+        // through the permissionless core are stopped by the signature check, not here.
         if (msg.sender != CORE) revert NotCore();
         _;
     }
@@ -146,7 +148,7 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
         uint256 balance = IERC20(token).balanceOf(address(this));
         if (balance < amount) revert InsufficientWalletBalance(balance, amount);
 
-        // casting to 'uint64' is safe: block.timestamp / 1 days fits for ~10^15 years
+        // casting to 'uint64' is safe: block.timestamp / 1 days fits for ~10^16 years
         // forge-lint: disable-next-line(unsafe-typecast)
         _lastSpendDay = uint64(today);
         // casting to 'uint128' is safe: the daily-cap check above bounds attempted <= dailyCap (uint128)
@@ -198,7 +200,8 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
 
     // ---------------------------------------------------------------- views
 
-    /// @notice Spend so far in the current UTC day — 0 if the last spend was yesterday.
+    /// @notice Spend so far in the current UTC day — 0 whenever the last spend (or
+    ///         setPolicy reset) happened on any day other than today.
     function spentToday() public view returns (uint256) {
         return _lastSpendDay == block.timestamp / 1 days ? _spentToday : 0;
     }
@@ -216,7 +219,7 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
 
     function _setPolicy(Policy memory newPolicy) internal {
         policy = newPolicy;
-        // casting to 'uint64' is safe: block.timestamp / 1 days fits for ~10^15 years
+        // casting to 'uint64' is safe: block.timestamp / 1 days fits for ~10^16 years
         // forge-lint: disable-next-line(unsafe-typecast)
         _lastSpendDay = uint64(block.timestamp / 1 days);
         _spentToday = 0;

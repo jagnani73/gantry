@@ -121,8 +121,9 @@ contract AgentPBMWalletTest is Test {
         wallet.setPolicy(_defaultPolicy());
         assertEq(wallet.spentToday(), 0);
 
-        // A fresh full-day budget: three per-tx-cap spends land 10e6 above the old
-        // headroom, proving the counter really was zeroed rather than carried.
+        // A fresh full-day budget: the first two spends alone (40e6) exceed the 30e6
+        // headroom a carried counter would have left, proving the counter was zeroed;
+        // the third lands exactly on the cap.
         _spend(keccak256("r1"), CATEGORY, PER_TX_CAP);
         _spend(keccak256("r2"), CATEGORY, PER_TX_CAP);
         _spend(keccak256("r3"), CATEGORY, 10e6);
@@ -499,6 +500,30 @@ contract AgentPBMWalletTest is Test {
         wallet.authorizeSpend(INTENT_ID, uint16(2), address(usdc), amount, sig);
     }
 
+    function test_errorPrecedence_perTxBeforeDaily() public {
+        uint256 amount = uint256(DAILY_CAP) + 10e6; // exceeds BOTH caps (60e6 > 20e6 per-tx, > 50e6 daily)
+        bytes memory sig = _sig(INTENT_ID, address(usdc), amount);
+        vm.expectRevert(abi.encodeWithSelector(AgentPBMWallet.PerTxCapExceeded.selector, amount, PER_TX_CAP));
+        vm.prank(coreAddr);
+        wallet.authorizeSpend(INTENT_ID, CATEGORY, address(usdc), amount, sig);
+    }
+
+    function test_errorPrecedence_dailyBeforeBalance() public {
+        _spend(keccak256("p1"), CATEGORY, PER_TX_CAP);
+        _spend(keccak256("p2"), CATEGORY, PER_TX_CAP); // 40e6 spent of the 50e6 cap
+        uint256 drain = usdc.balanceOf(address(wallet)) - 5e6; // leave 5e6 < amount
+        vm.prank(owner);
+        wallet.withdraw(address(usdc), owner, drain);
+
+        uint256 amount = 15e6; // within per-tx, busts the daily cap, exceeds the balance
+        bytes memory sig = _sig(INTENT_ID, address(usdc), amount);
+        vm.expectRevert(
+            abi.encodeWithSelector(AgentPBMWallet.DailyCapExceeded.selector, uint256(DAILY_CAP) + 5e6, DAILY_CAP)
+        );
+        vm.prank(coreAddr);
+        wallet.authorizeSpend(INTENT_ID, CATEGORY, address(usdc), amount, sig);
+    }
+
     // ---------------------------------------------------------------- authorizeSpend: edges
 
     function test_zeroAmount_spend_succeedsTransfersNothing() public {
@@ -539,9 +564,7 @@ contract AgentPBMWalletTest is Test {
         // EIP-712 encoding drifts a byte, one of the two pins goes red instead of
         // every signature silently dying on-chain as InvalidAgentSignature.
         address vectorWallet = 0xDD4bbed78B64715288bf10fabB2b62c659299D3E;
-        deployCodeTo(
-            "AgentPBMWallet.sol:AgentPBMWallet", abi.encode(owner, agent, coreAddr), vectorWallet
-        );
+        deployCodeTo("AgentPBMWallet.sol:AgentPBMWallet", abi.encode(owner, agent, coreAddr), vectorWallet);
         vm.chainId(84532);
 
         bytes32 digest = PbmDigest.spendDigest(

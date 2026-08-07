@@ -1,7 +1,8 @@
 // One-command demo reset: clears the backend cache (SQLite + SSE `reset`
-// broadcast, cursor jumped to head) and prints the demo cheat-sheet.
-// Chain state (merchant, pool, contracts) is reused — Sepolia redeploys are
-// not needed per rehearsal. Full local-Anvil redeploy orchestration is M4.
+// broadcast, cursor jumped to head), re-arms the agent policy, and prints the
+// demo cheat-sheet. Chain state (merchant, pool, contracts) is reused —
+// Sepolia redeploys are not needed per rehearsal. (Local-Anvil redeploy
+// orchestration is deferred, not planned — see CLAUDE.md, Chain/infra.)
 //
 // Usage: pnpm demo:reset
 import { existsSync } from "node:fs";
@@ -49,32 +50,46 @@ const health = await healthRes.json();
 
 // Re-arm the agent policy: setPolicy resets the wallet's spentToday counter,
 // so ten S$19.50 rehearsals never pile into the S$50/day cap.
-let policyLine = "⚠ PBM wallet not deployed yet — agent beats unavailable";
+let policyLine;
 const arm = await fetch(`${backend}/api/admin/policy/arm`, {
   method: "POST",
   headers: { "x-admin-token": adminToken },
 });
 if (arm.ok) {
-  const policyRes = await fetch(`${backend}/api/policy`);
-  if (policyRes.ok) {
+  const policyRes = await fetch(`${backend}/api/policy`).catch(() => null);
+  if (policyRes?.ok) {
     const p = await policyRes.json();
     const sgd = (units) => (Number(BigInt(units) * BigInt(p.rate)) / 1e12).toFixed(2);
     policyLine =
       `policy re-armed: S$${sgd(p.dailyCap)}/day · ${p.categories.join(", ")} · ` +
-      `spent S$${sgd(p.spentToday)} · wallet S$${sgd(p.balance)}`;
-    // Top up the wallet through the open-mint faucet when it runs low.
+      `spent S$${sgd(p.spentToday)} · wallet S$${sgd(p.balance)} ${p.token}`;
     if (BigInt(p.balance) < BigInt(p.dailyCap)) {
-      const faucet = await fetch(`${backend}/api/faucet`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ address: p.wallet }),
-      });
-      policyLine += faucet.ok
-        ? " (low — faucet top-up sent)"
-        : " ⚠ low balance and faucet top-up failed";
+      if (p.token === "MUSDC") {
+        // Only MockUSDC has an open mint — the faucet cannot serve real USDC.
+        const faucet = await fetch(`${backend}/api/faucet`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ address: p.wallet }),
+        }).catch(() => null);
+        policyLine += faucet?.ok
+          ? " (low — faucet top-up sent)"
+          : ` ⚠ LOW and faucet top-up failed (${faucet ? `status ${faucet.status}: ${await faucet.text()}` : "network error"})`;
+      } else {
+        policyLine += ` ⚠ LOW on ${p.token} and the faucet cannot mint it — fund the wallet manually or set ORDER_TOKEN=MUSDC`;
+      }
     }
+  } else {
+    // The arm LANDED — do not claim the wallet is missing; the readback flaked.
+    policyLine = `⚠ policy re-armed but readback failed (${policyRes ? `status ${policyRes.status}` : "network error"}) — verify GET /api/policy manually`;
   }
-} else if (arm.status !== 404) {
+} else if (arm.status === 404) {
+  // Distinguish "no wallet configured" from "stale backend without the route".
+  const body = await arm.json().catch(() => null);
+  policyLine =
+    body?.error?.name === "PolicyWalletUnconfigured"
+      ? "⚠ PBM wallet not deployed yet — agent beats unavailable"
+      : "⚠ /api/admin/policy/arm missing (stale backend build?) — re-arm did NOT run; spentToday accumulates";
+} else {
   policyLine = `⚠ policy re-arm failed: ${arm.status} ${await arm.text()}`;
 }
 
@@ -84,19 +99,25 @@ const gadgetLine = gadget.ok
   ? "gadgethub-sg registered (category electronics — the rejection beat)"
   : "⚠ gadgethub-sg NOT registered on-chain — the rejection beat will fail";
 
+// Best-effort probe: a flaky RPC must not crash the script AFTER a successful
+// reset (the cheat sheet below is the whole point of running it).
 let relayerEth = "?";
 if (process.env.BASE_SEPOLIA_RPC_URL) {
-  const res = await fetch(process.env.BASE_SEPOLIA_RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "eth_getBalance",
-      params: [BASE_SEPOLIA_RELAYER, "latest"],
-    }),
-  }).then((r) => r.json());
-  if (res.result) relayerEth = (Number(BigInt(res.result)) / 1e18).toFixed(4);
+  try {
+    const res = await fetch(process.env.BASE_SEPOLIA_RPC_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getBalance",
+        params: [BASE_SEPOLIA_RELAYER, "latest"],
+      }),
+    }).then((r) => r.json());
+    if (res.result) relayerEth = (Number(BigInt(res.result)) / 1e18).toFixed(4);
+  } catch {
+    relayerEth = "? (balance probe failed)";
+  }
 }
 
 console.log(`✓ dashboard cleared, indexer cursor → block ${health.indexerCursor} (chain ${health.chainId})

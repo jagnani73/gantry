@@ -55,6 +55,7 @@ export async function readPolicy(): Promise<PolicyResponse> {
     expiry: Number(expiry),
     categoryBitmap: categoryBitmap.toString(),
     categories,
+    token,
     balance: balance.toString(),
     rate: rate.toString(),
     revoked: Number(expiry) === 0,

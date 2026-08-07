@@ -24,11 +24,11 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 - [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0))
 - [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
-- [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` scheme; unmodified `@x402/fetch` pays end-to-end — `gantry-pbm` lands in M3)
-- [ ] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents
+- [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` via the bridge AND the non-custodial `gantry-pbm` scheme; unmodified `@x402/fetch` still pays end-to-end)
+- [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E))
 - [ ] `GantrySwap` — any-stablecoin-in → XSGD-out atomic FX
-- [x] Merchant dashboard — live SSE feed with Human/Agent badges, one feed for both doors
-- [ ] Claude-powered agent CLI paying (and getting rejected) autonomously
+- [x] Merchant dashboard — live SSE feed with Human/Agent badges, agent policy panel with on-chain revoke, one feed for both doors
+- [x] Claude-powered agent CLI paying (and getting rejected on-chain) autonomously, with a visually-identical scripted fallback
 
 ### Deployed (Base Sepolia, `eip155:84532`)
 
@@ -38,17 +38,19 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 | [`FixedRateSwap`](https://sepolia.basescan.org/address/0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713) | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
 | [`MockUSDC`](https://sepolia.basescan.org/address/0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9) | `0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9` |
 | [`MockXSGD`](https://sepolia.basescan.org/address/0xd583FaB0Db5c543f5574780f8b899AEb74463361) | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
+| [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0x172905F26F09b41636854338360315971240c1cf) | `0x172905F26F09b41636854338360315971240c1cf` |
+| [`AgentPBMWallet` (demo)](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E) | `0xDD4bbed78B64715288bf10fabB2b62c659299D3E` |
 
-Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settlement is fork-tested against it. Demo merchant `ah-hock-chicken-rice` is registered on-chain.
+Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settlement is fork-tested against it. Demo merchants `ah-hock-chicken-rice` (food & beverage) and `gadgethub-sg` (electronics — the rejection beat) are registered on-chain.
 
 ## Layout
 
 ```
-packages/contracts   Foundry — GantryCore, AgentPBMWallet (M3), GantrySwap (M4), mocks
-packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-3009 typed data, API types
-apps/backend         Express — merchant API, relayer, SSE indexer, x402 facilitator + protected order route
-apps/web             Next.js — payer page /pay/[handle], printable QR /qr/[handle], dashboard
-apps/agent           Claude tool-runner CLI agent (M3)
+packages/contracts   Foundry — GantryCore, AgentPBMWallet + factory, GantrySwap (M4), mocks
+packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-712 typed data, API types
+apps/backend         Express — merchant API, relayer, SSE indexer, x402 facilitator (exact + gantry-pbm) + protected order route
+apps/web             Next.js — payer page /pay/[handle], printable QR /qr/[handle], dashboard + policy panel
+apps/agent           Claude tool-runner CLI agent with scripted fallback (pnpm --filter @gantry/agent start "…")
 ```
 
 ## Running locally

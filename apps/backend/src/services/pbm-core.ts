@@ -30,6 +30,73 @@ export type PbmValidation =
   | { ok: true; pbm: X402GantryPbmPayload; pins: { handle: string; xsgdAmount: bigint } }
   | { ok: false; failure: VerifyFailure };
 
+/** Normalized intent facts for the pins match — one shape whether the intent
+ * came from the SQLite cache row or the chain's getIntent struct, so the two
+ * hand-mirrored loaders in facilitator.ts share ONE set of checks. */
+export interface PbmIntentFacts {
+  status: "pending" | "settled" | "cancelled" | "unknown";
+  /** Numeric Door value (0 Human, 1 Agent). */
+  door: number;
+  /** Lowercased 0x hex. */
+  merchantId: string;
+  /** Lowercased 0x hex. */
+  tokenIn: string;
+  /** 6dp decimal string. */
+  amountIn: string;
+  xsgdAmount: bigint;
+  /** Unix seconds (block time). */
+  expiry: number;
+}
+
+/** A pbm intent must stay alive long enough for the single settle tx behind
+ * the FIFO queue — fail a nearly-expired intent fast at verify instead of
+ * burning a settle simulation on IntentExpired. */
+export const PBM_EXPIRY_MARGIN_SECONDS = 30;
+
+const AGENT_DOOR = 1;
+
+/**
+ * The security boundary the SpendAuthorization cannot cover: the signature
+ * binds only (intentId, token, amount), so THESE checks are what stop a
+ * signed cheap intent from settling a different merchant's or a pricier
+ * order. Returns null when the intent matches the server-pinned facts.
+ */
+export function pbmIntentMismatch(
+  facts: PbmIntentFacts,
+  pins: { handle: string; xsgdAmount: bigint },
+  requirements: X402PaymentRequirements,
+  expectedMerchantId: string,
+  now: number,
+): VerifyFailure | null {
+  const mismatch = (message: string): VerifyFailure => ({ reason: "intent_mismatch", message });
+
+  if (facts.status === "unknown") {
+    return { reason: "unknown_intent", message: "intent does not exist — POST /api/pbm/intent first" };
+  }
+  if (facts.status === "settled") {
+    return { reason: "intent_already_settled", message: "intent already settled (replay?)" };
+  }
+  if (facts.status === "cancelled") {
+    return { reason: "intent_cancelled", message: "intent was cancelled — create a fresh one" };
+  }
+  if (facts.expiry < now + PBM_EXPIRY_MARGIN_SECONDS) {
+    return { reason: "intent_expired", message: "intent expired (or expires too soon) — create a fresh one" };
+  }
+  if (facts.door !== AGENT_DOOR) return mismatch("intent is not an Agent-door intent");
+  if (facts.merchantId !== expectedMerchantId.toLowerCase()) {
+    return mismatch("intent merchant does not match the order");
+  }
+  if (facts.xsgdAmount !== pins.xsgdAmount) return mismatch("intent xsgdAmount does not match the order");
+  if (facts.tokenIn !== requirements.asset.toLowerCase()) return mismatch("intent token does not match the offer");
+  if (facts.amountIn !== requirements.amount) {
+    return {
+      reason: "quote_changed",
+      message: `intent amountIn ${facts.amountIn} != offer ${requirements.amount}`,
+    };
+  }
+  return null;
+}
+
 export interface PbmVerifyInputs {
   payload: X402PaymentPayload;
   requirements: X402PaymentRequirements;

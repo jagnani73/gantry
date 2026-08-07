@@ -76,9 +76,9 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
         return abi.encodePacked(r, s, v);
     }
 
-    function _settleLunch(bytes32 salt) internal returns (bytes32 intentId) {
+    /// @dev Distinct intents come from the core's own nonce — no salt needed.
+    function _settleLunch() internal returns (bytes32 intentId) {
         intentId = _createAgentIntent(merchantId, TEAM_LUNCH_XSGD, TEAM_LUNCH_USDC);
-        salt; // silence unused warning — distinct intents come from the core's nonce
         core.settleFromPBM(intentId, address(wallet), _pbmSig(intentId, address(usdc), TEAM_LUNCH_USDC));
     }
 
@@ -144,8 +144,8 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
     }
 
     function test_settleFromPBM_thirdTeamLunch_hitsDailyCap() public {
-        _settleLunch("l1");
-        _settleLunch("l2");
+        _settleLunch();
+        _settleLunch();
         assertEq(wallet.spentToday(), uint256(TEAM_LUNCH_USDC) * 2);
 
         // Third S$19.50 lunch: 43_588_407 attempted vs the 37_255_049 cap — the exact
@@ -161,15 +161,15 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
     }
 
     function test_setPolicy_reArmsRehearsal() public {
-        _settleLunch("l1");
-        _settleLunch("l2");
+        _settleLunch();
+        _settleLunch();
 
         // demo-reset's re-arm: same policy values, fresh window.
         vm.prank(relayer);
         wallet.setPolicy(_demoPolicy());
         assertEq(wallet.spentToday(), 0);
 
-        _settleLunch("l3"); // would have reverted without the reset
+        _settleLunch(); // would have reverted without the reset
         assertEq(wallet.spentToday(), TEAM_LUNCH_USDC);
     }
 

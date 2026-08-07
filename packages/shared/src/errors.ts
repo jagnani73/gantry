@@ -39,8 +39,10 @@ export function isStaleStateRevert(decoded: DecodedGantryError): boolean {
 }
 
 /**
- * Structural revert decoding — M2's facilitator maps this straight onto x402
- * invalidReason; M3's dashboard renders CategoryNotAllowed & co from it.
+ * Structural revert decoding — the facilitator maps this straight onto x402
+ * invalidReason/errorReason (reasonForGantryError passes CategoryNotAllowed &
+ * co through verbatim, which the agent CLI then narrates); the payer page
+ * renders decoded Human-door errors from it.
  */
 export function decodeGantryError(err: unknown): DecodedGantryError {
   if (err instanceof BaseError) {

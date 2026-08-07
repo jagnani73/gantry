@@ -1,6 +1,5 @@
-import { keccak256, toBytes, type Address, type Hex } from "viem";
+import { ContractFunctionExecutionError, keccak256, toBytes, type Address, type Hex } from "viem";
 import {
-  Door,
   IntentStatus,
   agentPbmWalletAbi,
   caip2,
@@ -16,7 +15,12 @@ import { publicClient, relayerAccount, tokenDomain } from "../chain";
 import { config } from "../config";
 import { getIntentRow } from "../db";
 import { validateExactPayment, type VerifyFailure } from "./facilitator-core";
-import { GantryPbmPayloadSchema, validatePbmPayment } from "./pbm-core";
+import {
+  GantryPbmPayloadSchema,
+  pbmIntentMismatch,
+  validatePbmPayment,
+  type PbmIntentFacts,
+} from "./pbm-core";
 
 /**
  * The facilitator's verify side. Spec-shaped: payment problems come back as
@@ -26,11 +30,6 @@ import { GantryPbmPayloadSchema, validatePbmPayment } from "./pbm-core";
 
 const BALANCE_LAG_RETRIES = 4;
 const BALANCE_LAG_DELAY_MS = 1200;
-
-/** A pbm intent must stay alive long enough for the single settle tx behind
- * the FIFO queue — fail a nearly-expired intent fast at verify instead of
- * burning a settle simulation on IntentExpired. */
-const PBM_EXPIRY_MARGIN_SECONDS = 30;
 
 export function getSupported(): X402SupportedResponse {
   return {
@@ -140,17 +139,35 @@ export async function verifyPbm(
   }
   const { pbmWallet, intentId } = parsed.data;
 
-  // The signature verifies against the wallet's LIVE agentSigner — a wrong or
-  // non-wallet address fails here, before any signature math.
+  // The signature verifies against the wallet's LIVE agentSigner, and the
+  // wallet must be bound to OUR core (a foreign-core wallet would pass every
+  // check here and then die at simulation as a confusing NotCore). Chain time
+  // rides along for the expiry margin — intent expiries are block timestamps,
+  // and a skewed laptop clock must not fail healthy intents.
   let agentSigner: Address;
+  let walletCore: Address;
+  let chainNow: number;
   try {
-    agentSigner = await publicClient.readContract({
-      address: pbmWallet,
-      abi: agentPbmWalletAbi,
-      functionName: "agentSigner",
-    });
-  } catch {
-    return invalid("invalid_payload", `${pbmWallet} is not an AgentPBMWallet (agentSigner() unreadable)`);
+    const [signer, core, block] = await Promise.all([
+      publicClient.readContract({ address: pbmWallet, abi: agentPbmWalletAbi, functionName: "agentSigner" }),
+      publicClient.readContract({ address: pbmWallet, abi: agentPbmWalletAbi, functionName: "CORE" }),
+      publicClient.getBlock(),
+    ]);
+    agentSigner = signer;
+    walletCore = core;
+    chainNow = Number(block.timestamp);
+  } catch (err) {
+    // Distinguish "that address is not a wallet" (contract call reverted /
+    // returned no data) from a transport flake — misattributing an RPC blip
+    // as invalid_payload sends the operator debugging the wrong thing.
+    console.error(`pbm verify: wallet read failed for ${pbmWallet}`, err);
+    if (err instanceof ContractFunctionExecutionError) {
+      return invalid("invalid_payload", `${pbmWallet} is not an AgentPBMWallet (agentSigner()/CORE() unreadable)`);
+    }
+    return invalid("network_error", "chain read failed during verification — retry shortly");
+  }
+  if (walletCore.toLowerCase() !== config.addresses.gantryCore.toLowerCase()) {
+    return invalid("invalid_payload", `wallet is bound to a different GantryCore (${walletCore})`, pbmWallet);
   }
 
   const validation = await validatePbmPayment({
@@ -165,13 +182,14 @@ export async function verifyPbm(
     return invalid(validation.failure.reason, validation.failure.message, pbmWallet);
   }
 
-  const intentFailure = await pbmIntentFailure(intentId, validation.pins, requirements);
+  const intentFailure = await pbmIntentFailure(intentId, validation.pins, requirements, chainNow);
   if (intentFailure) {
     return invalid(intentFailure.reason, intentFailure.message, pbmWallet);
   }
 
-  // Single balance read, no lag-retry: the demo wallet is funded at setup time
-  // (unlike exact's faucet-just-funded burners), so a shortfall here is real.
+  // Single balance read, no lag-retry: the demo wallet is funded at deploy
+  // and topped up by demo-reset well before any payment (unlike exact's
+  // faucet-just-funded burners), so a shortfall here is real.
   const balance = await publicClient.readContract({
     address: requirements.asset,
     abi: eip3009TokenAbi,
@@ -186,40 +204,31 @@ export async function verifyPbm(
 }
 
 /**
- * The pre-created intent must match the server-pinned order facts — the
- * signature alone binds only (intentId, token, amount), so this is what stops
- * a signed cheap intent from settling an expensive order (or another
- * merchant's). DB-first with a chain fallback: the SQLite cache is disposable
- * and a mid-demo backend restart must not brick verification.
+ * Loads the pre-created intent (DB-first; chain fallback so a mid-demo
+ * backend restart cannot brick verification), normalizes either shape into
+ * PbmIntentFacts, and delegates the actual pins match to the pure, unit-
+ * tested pbmIntentMismatch in pbm-core.ts.
  */
 async function pbmIntentFailure(
   intentId: Hex,
   pins: { handle: string; xsgdAmount: bigint },
   requirements: X402PaymentRequirements,
+  chainNow: number,
 ): Promise<VerifyFailure | null> {
-  const now = Math.floor(Date.now() / 1000);
-  const expectedMerchantId = keccak256(toBytes(pins.handle)).toLowerCase();
-  const mismatch = (message: string): VerifyFailure => ({ reason: "intent_mismatch", message });
+  const expectedMerchantId = keccak256(toBytes(pins.handle));
 
   const row = getIntentRow(intentId);
   if (row) {
-    if (row.status === "settled") {
-      return { reason: "intent_already_settled", message: "intent already settled (replay?)" };
-    }
-    if (row.status === "cancelled") {
-      return { reason: "intent_cancelled", message: "intent was cancelled — create a fresh one" };
-    }
-    if (row.expiry < now + PBM_EXPIRY_MARGIN_SECONDS) {
-      return { reason: "intent_expired", message: "intent expired (or expires too soon) — create a fresh one" };
-    }
-    if (row.door !== Door.Agent) return mismatch("intent is not an Agent-door intent");
-    if (row.merchant_id !== expectedMerchantId) return mismatch("intent merchant does not match the order");
-    if (row.xsgd_amount !== pins.xsgdAmount.toString()) return mismatch("intent xsgdAmount does not match the order");
-    if (row.token_in !== requirements.asset.toLowerCase()) return mismatch("intent token does not match the offer");
-    if (row.amount_in !== requirements.amount) {
-      return { reason: "quote_changed", message: `intent amountIn ${row.amount_in} != offer ${requirements.amount}` };
-    }
-    return null;
+    const facts: PbmIntentFacts = {
+      status: row.status,
+      door: row.door,
+      merchantId: row.merchant_id,
+      tokenIn: row.token_in,
+      amountIn: row.amount_in,
+      xsgdAmount: BigInt(row.xsgd_amount),
+      expiry: row.expiry,
+    };
+    return pbmIntentMismatch(facts, pins, requirements, expectedMerchantId, chainNow);
   }
 
   const intent = await publicClient.readContract({
@@ -228,29 +237,20 @@ async function pbmIntentFailure(
     functionName: "getIntent",
     args: [intentId],
   });
-  if (intent.status === IntentStatus.None) {
-    return { reason: "unknown_intent", message: "intent does not exist — POST /api/pbm/intent first" };
-  }
-  if (intent.status === IntentStatus.Settled) {
-    return { reason: "intent_already_settled", message: "intent already settled (replay?)" };
-  }
-  if (intent.status === IntentStatus.Cancelled) {
-    return { reason: "intent_cancelled", message: "intent was cancelled — create a fresh one" };
-  }
-  if (intent.expiry < now + PBM_EXPIRY_MARGIN_SECONDS) {
-    return { reason: "intent_expired", message: "intent expired (or expires too soon) — create a fresh one" };
-  }
-  if (intent.door !== Door.Agent) return mismatch("intent is not an Agent-door intent");
-  if (intent.merchantId.toLowerCase() !== expectedMerchantId) return mismatch("intent merchant does not match the order");
-  if (intent.xsgdAmount !== pins.xsgdAmount) return mismatch("intent xsgdAmount does not match the order");
-  if (intent.tokenIn.toLowerCase() !== requirements.asset.toLowerCase()) {
-    return mismatch("intent token does not match the offer");
-  }
-  if (intent.amountIn.toString() !== requirements.amount) {
-    return {
-      reason: "quote_changed",
-      message: `intent amountIn ${intent.amountIn} != offer ${requirements.amount}`,
-    };
-  }
-  return null;
+  const statusMap = {
+    [IntentStatus.None]: "unknown",
+    [IntentStatus.Pending]: "pending",
+    [IntentStatus.Settled]: "settled",
+    [IntentStatus.Cancelled]: "cancelled",
+  } as const;
+  const facts: PbmIntentFacts = {
+    status: statusMap[intent.status as keyof typeof statusMap] ?? "unknown",
+    door: intent.door,
+    merchantId: intent.merchantId.toLowerCase(),
+    tokenIn: intent.tokenIn.toLowerCase(),
+    amountIn: intent.amountIn.toString(),
+    xsgdAmount: intent.xsgdAmount,
+    expiry: intent.expiry,
+  };
+  return pbmIntentMismatch(facts, pins, requirements, expectedMerchantId, chainNow);
 }

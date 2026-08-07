@@ -29,6 +29,7 @@ export function PolicyPanel() {
   const [policy, setPolicy] = useState<PolicyResponse | null>(null);
   const [unconfigured, setUnconfigured] = useState(false);
   const [revoking, setRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -39,7 +40,8 @@ export function PolicyPanel() {
         setUnconfigured(true);
       }
       // Other failures keep the last-known state — a flaky poll must not
-      // blank the panel mid-demo.
+      // blank the panel mid-demo. Logged so a dead backend URL is diagnosable.
+      console.warn("policy poll failed", err);
     }
   }, []);
 
@@ -81,9 +83,17 @@ export function PolicyPanel() {
               onClick={async () => {
                 if (!window.confirm("Revoke the agent's spend policy on-chain?")) return;
                 setRevoking(true);
+                setRevokeError(null);
                 try {
                   await api.revokePolicy();
                   await refresh();
+                } catch (err) {
+                  // The most theatrical button in the demo must never fail
+                  // silently — surface WHY (disabled route, relayer, RPC).
+                  console.error("revoke failed", err);
+                  setRevokeError(
+                    err instanceof ApiClientError ? `${err.errorName}: ${err.message}` : String(err),
+                  );
                 } finally {
                   setRevoking(false);
                 }
@@ -107,12 +117,17 @@ export function PolicyPanel() {
           ) : (
             <>
               S${toSgd(policy.spentToday, policy.rate)} of S${toSgd(policy.dailyCap, policy.rate)}{" "}
-              spent today · {policy.categories.join(", ") || "no categories"}
+              spent today{" "}
+              <span title="Caps live on-chain in token units; S$ shown at the demo pool rate">
+                @ {(Number(policy.rate) / 1e6).toFixed(4)}
+              </span>{" "}
+              · {policy.categories.join(", ") || "no categories"}
               {expiryDate ? <> · expires {expiryDate}</> : null} · signer{" "}
               {shortAddr(policy.agentSigner)}
             </>
           )}
         </p>
+        {revokeError ? <p className="text-sm text-destructive">revoke failed — {revokeError}</p> : null}
       </CardContent>
     </Card>
   );

@@ -43,7 +43,8 @@ export async function readRate(token: TokenId): Promise<bigint> {
 }
 
 /** `door` is caller-derived from the route, never client-supplied: the QR/payer
- * routes create Human intents, the x402 facilitator bridge creates Agent ones. */
+ * routes create Human intents; the x402 facilitator bridge and the gantry-pbm
+ * pre-signing route (POST /api/pbm/intent) create Agent ones. */
 export async function createIntent(
   req: CreateIntentRequest,
   door: Door = Door.Human,
