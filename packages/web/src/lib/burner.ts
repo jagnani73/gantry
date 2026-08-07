@@ -5,9 +5,9 @@ const STORAGE_KEY = "gantry.burner.key";
 
 /**
  * Two key sources, one signing path:
- *  - NEXT_PUBLIC_BURNER_KEY set → the pre-funded deterministic stage key;
- *  - otherwise a per-device key persisted in localStorage, funded on demand
- *    via the backend faucet.
+ *  - NEXT_PUBLIC_BURNER holds a key → that pre-funded deterministic account;
+ *  - otherwise (reached via ?burner=1) a per-device key persisted in
+ *    localStorage, funded on demand via the backend faucet.
  * Call only from the client (effects/handlers) — never during render.
  */
 export function getBurnerAccount(): PrivateKeyAccount {

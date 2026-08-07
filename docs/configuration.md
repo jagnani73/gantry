@@ -19,32 +19,29 @@ The payer page has two key sources behind one signing path.
 
 #### `NEXT_PUBLIC_BURNER`
 
-| Value | Behaviour |
-|---|---|
-| `0` or unset *(default)* | Connected wallet, unless `?burner=1` is in the URL. |
-| `1` | Burner always, on every page load. `?burner=0` does not exist. |
-
-#### `NEXT_PUBLIC_BURNER_KEY`
-
-Only consulted when the burner is active.
+One knob: the value *is* the burner's key, and holding one is what turns the
+burner on.
 
 | Value | Behaviour |
 |---|---|
-| `0x` + 64 hex | That account on every device and session. Fund it once ahead of time. |
-| unset | A key is generated and persisted in `localStorage` under `gantry.burner.key` — one wallet per browser. |
-| malformed | **Silently treated as unset** (`lib/env.ts:17`) — falls through to the localStorage key rather than erroring. |
+| unset or `0` *(default)* | Burner off — connected wallet, unless `?burner=1` is in the URL. |
+| `0x` + 64 hex | Burner on, pinned to that account on every device and session. Fund it once ahead of time. |
+| anything else | Burner off, with a `console.warn`. A malformed value never quietly changes which account signs. |
 
-### Combined
+### Combined with `?burner=1`
 
 Resolved at `pay-client.tsx:63` as `burnerEnvEnabled() || query.get("burner") === "1"`.
 
-| `NEXT_PUBLIC_BURNER` | URL | `NEXT_PUBLIC_BURNER_KEY` | Signing key |
-|---|---|---|---|
-| `0`/unset | `/pay/<handle>` | any | connected wallet |
-| `0`/unset | `?burner=1` | valid | the fixed key |
-| `0`/unset | `?burner=1` | unset/malformed | per-browser localStorage key |
-| `1` | any | valid | the fixed key |
-| `1` | any | unset/malformed | per-browser localStorage key |
+| `NEXT_PUBLIC_BURNER` | URL | Signing key |
+|---|---|---|
+| unset / `0` / malformed | `/pay/<handle>` | connected wallet |
+| unset / `0` / malformed | `?burner=1` | per-browser key from `localStorage` (`gantry.burner.key`), faucet-funded |
+| a `0x` key | any | that fixed account |
+
+There is no `?burner=0` — a configured key cannot be turned off per request.
+
+Note the printed QR encodes `/pay/<handle>` with no query string, so a phone
+scanning it gets the burner **only** when `NEXT_PUBLIC_BURNER` holds a key.
 
 ### Funding and cap
 
@@ -181,8 +178,8 @@ A payer who leaves the review card open past this gets an expiry error and a
 
 | Flow | Condition | Characteristics |
 |---|---|---|
-| Burner, fixed key | burner on + valid `NEXT_PUBLIC_BURNER_KEY` | deterministic account, no faucet round-trip if pre-funded |
-| Burner, per-device | burner on, no valid key | localStorage key, faucet-funded on demand |
+| Burner, fixed key | `NEXT_PUBLIC_BURNER` holds a key | deterministic account, no faucet round-trip if pre-funded |
+| Burner, per-device | `?burner=1`, no env key | localStorage key, faucet-funded on demand |
 | Connected wallet | burner off | real wallet, chain-switch prompt, no faucet |
 | x402 `exact` | vanilla client against the 402 route | on-chain payer is the relayer — one custodial hop |
 | `gantry-pbm` | agent CLI or `e2e:pbm` | on-chain payer is the PBM wallet; policy enforced by contract revert |
@@ -194,8 +191,8 @@ A payer who leaves the review card open past this gets an expiry error and a
 ## Sharp edges
 
 1. `NEXT_PUBLIC_*` values are read at build time — restart after editing.
-2. `NEXT_PUBLIC_BURNER=1` cannot be overridden off per request.
-3. A malformed `NEXT_PUBLIC_BURNER_KEY` degrades silently to a localStorage key.
+2. A configured `NEXT_PUBLIC_BURNER` key cannot be turned off per request — there is no `?burner=0`.
+3. The printed QR carries no query string, so a scanning phone gets the burner only when `NEXT_PUBLIC_BURNER` holds a key.
 4. `FAUCET_ENABLED=0` breaks the burner flow for any unfunded wallet.
 5. `ORDER_TOKEN` must match what the PBM wallet holds.
 6. `AGENT_SESSION_KEY` must match the wallet's on-chain `agentSigner`.

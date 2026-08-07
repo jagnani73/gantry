@@ -73,7 +73,7 @@ The relayer address needs Base Sepolia ETH — it is the only gas key in the sys
 
 Every environment variable, what it changes and how the options interact is documented in **[docs/configuration.md](docs/configuration.md)** — payer key sources, token selection, feature gates, RPC fallback and the flows each combination produces.
 
-- **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or `NEXT_PUBLIC_BURNER=1`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.
+- **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or a key in `NEXT_PUBLIC_BURNER`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
 - **Reset between rehearsals:** `pnpm demo:reset` — clears the dashboard cache, re-arms the agent policy on-chain, and prints addresses + demo URLs (~5–10s; it waits on a real `setPolicy` receipt. Contracts persist, so nothing is redeployed).

@@ -8,13 +8,25 @@ export function backendUrl(): string {
   return process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
 }
 
-export function burnerEnvEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_BURNER === "1";
+/**
+ * One knob: NEXT_PUBLIC_BURNER holds the burner's private key, and holding one
+ * is what turns the burner on. `0`, unset, or anything that is not a
+ * 0x-prefixed 32-byte key leaves it off — a malformed value must never quietly
+ * change which account signs. `?burner=1` still opts in per visit, using a
+ * per-device key instead.
+ */
+export function burnerEnvKey(): `0x${string}` | undefined {
+  const raw = process.env.NEXT_PUBLIC_BURNER;
+  if (!raw || raw === "0") return undefined;
+  if (/^0x[0-9a-fA-F]{64}$/.test(raw)) return raw as `0x${string}`;
+  console.warn(
+    "NEXT_PUBLIC_BURNER is set but is not a 0x-prefixed 32-byte key — the burner stays off.",
+  );
+  return undefined;
 }
 
-export function burnerEnvKey(): `0x${string}` | undefined {
-  const key = process.env.NEXT_PUBLIC_BURNER_KEY;
-  return key && /^0x[0-9a-fA-F]{64}$/.test(key) ? (key as `0x${string}`) : undefined;
+export function burnerEnvEnabled(): boolean {
+  return burnerEnvKey() !== undefined;
 }
 
 export function walletPayToken(): "USDC" | "MUSDC" | "XSGD" {
