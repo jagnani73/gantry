@@ -39,7 +39,7 @@ contract DeployPBM is Script {
 
         GantryCore core = GantryCore(vm.envAddress("GANTRY_CORE_ADDRESS"));
         MockUSDC usdc = MockUSDC(vm.envAddress("MOCK_USDC_ADDRESS"));
-        // Required, no default: a defaulted signer would silently break apps/agent
+        // Required, no default: a defaulted signer would silently break packages/agent
         // signing — fail fast instead.
         address agentSigner = vm.envAddress("AGENT_SIGNER_ADDRESS");
         address gadgetPayout = vm.envOr("GADGETHUB_PAYOUT", deployer);

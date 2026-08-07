@@ -12,8 +12,8 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 for (const envFile of [
-  resolve(repoRoot, "apps/backend/.env"),
-  resolve(repoRoot, "apps/web/.env.local"),
+  resolve(repoRoot, "packages/backend/.env"),
+  resolve(repoRoot, "packages/web/.env.local"),
 ]) {
   if (existsSync(envFile)) process.loadEnvFile(envFile);
 }
@@ -27,7 +27,7 @@ const backend = process.env.NEXT_PUBLIC_BACKEND_URL ?? `http://localhost:${proce
 const app = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 const adminToken = process.env.ADMIN_TOKEN;
 if (!adminToken) {
-  console.error("ADMIN_TOKEN not found (expected in apps/backend/.env)");
+  console.error("ADMIN_TOKEN not found (expected in packages/backend/.env)");
   process.exit(1);
 }
 

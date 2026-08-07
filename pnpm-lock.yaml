@@ -51,14 +51,14 @@ importers:
         specifier: 'catalog:'
         version: 8.66.0(eslint@9.39.5(jiti@2.7.0)(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.9.3)
 
-  apps/agent:
+  packages/agent:
     dependencies:
       '@ai-sdk/google':
         specifier: ^4.0.35
         version: 4.0.35(zod@4.4.3)
       '@gantry/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: link:../shared
       ai:
         specifier: ^7.0.54
         version: 7.0.54(zod@4.4.3)
@@ -79,11 +79,11 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
-  apps/backend:
+  packages/backend:
     dependencies:
       '@gantry/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: link:../shared
       '@x402/core':
         specifier: 2.21.0
         version: 2.21.0
@@ -131,11 +131,27 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
-  apps/web:
+  packages/shared:
+    dependencies:
+      viem:
+        specifier: 'catalog:'
+        version: 2.55.10(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3)
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.20.1
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.5
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
+  packages/web:
     dependencies:
       '@gantry/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: link:../shared
       '@radix-ui/react-slot':
         specifier: ^1.1.0
         version: 1.3.3(@types/react@19.2.18)(react@19.2.8)
@@ -194,22 +210,6 @@ importers:
       tailwindcss:
         specifier: ^4.0.0
         version: 4.3.3
-      typescript:
-        specifier: 'catalog:'
-        version: 5.9.3
-
-  packages/shared:
-    dependencies:
-      viem:
-        specifier: 'catalog:'
-        version: 2.55.10(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.4.3)
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 22.20.1
-      tsx:
-        specifier: 'catalog:'
-        version: 4.23.5
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

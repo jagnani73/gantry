@@ -49,18 +49,18 @@ Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318
 ```
 packages/contracts   Foundry — GantryCore, AgentPBMWallet + factory, FixedRateSwap (IGantrySwap), mocks
 packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-712 typed data, API types
-apps/backend         Express — merchant API, relayer, SSE indexer, x402 facilitator (exact + gantry-pbm) + protected order route
-apps/web             Next.js — payer page /pay/[handle], printable QR /qr/[handle], dashboard + policy panel
-apps/agent           LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallback (pnpm --filter @gantry/agent start "…")
+packages/backend     Express — merchant API, relayer, SSE indexer, x402 facilitator (exact + gantry-pbm) + protected order route
+packages/web         Next.js — onboarding /onboard, payer page /pay/[handle], printable QR /qr/[handle], dashboard + policy panel
+packages/agent       LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallback (pnpm --filter @gantry/agent start "…")
 ```
 
 ## Running locally
 
 ```bash
 pnpm install
-cp apps/backend/.env.example apps/backend/.env   # fill: RPC URL, relayer key, admin token
-cp apps/web/.env.example apps/web/.env.local     # point NEXT_PUBLIC_* at your laptop's LAN IP
-pnpm dev                                         # backend :4000 + web :3000 (binds 0.0.0.0)
+cp packages/backend/.env.example packages/backend/.env   # fill: RPC URL, relayer key, admin token
+cp packages/web/.env.example packages/web/.env.local     # point NEXT_PUBLIC_* at your laptop's LAN IP
+pnpm dev                                                 # backend :4000 + web :3000 (binds 0.0.0.0)
 ```
 
 - **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or `NEXT_PUBLIC_BURNER=1`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.

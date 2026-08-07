@@ -1,7 +1,7 @@
 /**
  * CLI payer harness: quote → create → sign EIP-3009 → settle.
  * The pre-web verification path for the Human door (the agent tooling lives
- * in apps/agent, built on its own pay-flow client).
+ * in packages/agent, built on its own pay-flow client).
  *
  * Usage: pnpm --filter @gantry/backend e2e:pay [-- --sgd 6.50 --handle ah-hock-chicken-rice]
  * Env: E2E_PAYER_KEY (optional; fresh random key when unset),
