@@ -58,6 +58,8 @@ packages/agent       LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallba
 
 Needs Node ≥ 22.18 and pnpm 11 (`corepack enable` picks the pinned version up). Foundry is only needed to run contract tests or regenerate ABIs — the generated ABIs are committed, so the app runs without it.
 
+Order matters: OpenZeppelin is an npm dependency, so `pnpm install` must run **before** `forge build`/`forge test` or the OZ imports will not resolve.
+
 ```bash
 git submodule update --init                              # forge-std (contract tests only)
 pnpm install
