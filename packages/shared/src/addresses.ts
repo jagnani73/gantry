@@ -7,10 +7,9 @@ export interface GantryAddresses {
   fixedRateSwap: Address;
   mockUsdc: Address;
   mockXsgd: Address;
-  realUsdc: Address | null;
-  /** M3 PBM contracts — nullable (like realUsdc) so the Anvil branch stays valid. */
-  agentPbmFactory: Address | null;
-  demoAgentPbmWallet: Address | null;
+  realUsdc: Address;
+  agentPbmFactory: Address;
+  demoAgentPbmWallet: Address;
 }
 
 /** Review-hardened redeploy, 5 Aug 2026; PBM contracts 7 Aug 2026. Basescan-verified. */

@@ -28,10 +28,8 @@ export function tokenAddress(addresses: GantryAddresses, id: TokenId): Address {
       return addresses.mockUsdc;
     case "XSGD":
       return addresses.mockXsgd;
-    case "USDC": {
-      if (!addresses.realUsdc) throw new Error("real USDC is not available on this chain");
+    case "USDC":
       return addresses.realUsdc;
-    }
   }
 }
 
@@ -39,6 +37,6 @@ export function tokenIdByAddress(addresses: GantryAddresses, address: Address): 
   const needle = address.toLowerCase();
   if (needle === addresses.mockUsdc.toLowerCase()) return "MUSDC";
   if (needle === addresses.mockXsgd.toLowerCase()) return "XSGD";
-  if (addresses.realUsdc && needle === addresses.realUsdc.toLowerCase()) return "USDC";
+  if (needle === addresses.realUsdc.toLowerCase()) return "USDC";
   return null;
 }

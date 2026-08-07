@@ -1,4 +1,4 @@
-import type { Address, Hex } from "viem";
+import type { Hex } from "viem";
 import {
   CATEGORIES,
   DEMO_POLICY,
@@ -9,7 +9,6 @@ import {
 } from "@gantry/shared";
 import { publicClient } from "../chain";
 import { config } from "../config";
-import { ApiError } from "../errors";
 import { sendRelayerTx } from "../relayer";
 import { readRate } from "./intents";
 
@@ -20,15 +19,8 @@ import { readRate } from "./intents";
  * setPolicy route through sendRelayerTx.
  */
 
-function requireWallet(): Address {
-  if (!config.demoPbmWallet) {
-    throw new ApiError(404, "PolicyWalletUnconfigured", "no demo PBM wallet configured on this chain");
-  }
-  return config.demoPbmWallet;
-}
-
 export async function readPolicy(): Promise<PolicyResponse> {
-  const wallet = requireWallet();
+  const wallet = config.demoPbmWallet;
   const token = config.orderToken;
   const [policy, spentToday, agentSigner, balance, rate] = await Promise.all([
     publicClient.readContract({ address: wallet, abi: agentPbmWalletAbi, functionName: "policy" }),
@@ -64,7 +56,7 @@ export async function readPolicy(): Promise<PolicyResponse> {
 
 /** The dashboard's Revoke button: zeroes the policy (expired-by-default). */
 export async function revokePolicy(): Promise<Hex> {
-  const wallet = requireWallet();
+  const wallet = config.demoPbmWallet;
   const { receipt } = await sendRelayerTx({
     address: wallet,
     abi: agentPbmWalletAbi,
@@ -78,7 +70,7 @@ export async function revokePolicy(): Promise<Hex> {
  * ten S$19.50 rehearsals never pile into the S$50 cap. Chain time for expiry
  * (a skewed laptop otherwise arms an already-expired policy). */
 export async function armDemoPolicy(): Promise<Hex> {
-  const wallet = requireWallet();
+  const wallet = config.demoPbmWallet;
   const block = await publicClient.getBlock();
   const { receipt } = await sendRelayerTx({
     address: wallet,

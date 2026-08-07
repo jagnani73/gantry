@@ -32,7 +32,7 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 | 0:00–0:12 | **Hook** | Title slide, dashboard behind | "Every payment system ever built assumes the payer is a human. That assumption is about to break." |
 | 0:12–0:22 | **Scene** | Printed QR standee held up | "This is Ah Hock, Maxwell Food Centre. One printed sticker. He set it up in about two minutes and he has never heard of a blockchain." |
 | 0:22–0:45 | **Tourist pays** | Phone mirrored: scan → S$6.50 → Confirm | "A tourist lands at Changi with no Singapore bank account. She scans. She signs one authorization — she holds no ETH, and she never sends a transaction. Our relayer pays the gas." |
-| 0:45–1:00 | **WOW 1** | Dashboard: chime, row slides in, open FX drawer | "Under two seconds. 4.84 USDC came in, 6.50 XSGD went out — swapped atomically inside the settlement contract. Ah Hock only ever sees Singapore dollars." |
+| 0:45–1:00 | **WOW 1** | Dashboard: chime, row slides in — 4.84 USDC in, S$6.50 XSGD out, net and fee inline on the row | "Under two seconds. 4.84 USDC came in, 6.50 XSGD went out — swapped atomically inside the settlement contract. Ah Hock only ever sees Singapore dollars." |
 | 1:00–1:08 | **Pivot** | Dashboard stays up | "That's the easy customer. My next customer has no hands." |
 | 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$19.50." |
 | 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same contract. Same feed. Ah Hock does not know or care that one of these customers is software." |
@@ -44,7 +44,7 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 ### Optional opening beat — live onboarding (~25s, decide against the clock)
 
 Insert between 0:12 and 0:22, pushing everything back by ~25s (so trim the
-revoke beat to ~8s or drop the FX drawer to absorb it).
+revoke beat to ~8s, or skip narrating the row's FX detail, to absorb it).
 
 > Open `/onboard`, type a shop name — availability turns green as I type, and
 > it's green because we're reading the chain. Paste a payout address, pick
@@ -88,7 +88,7 @@ audio take, not one screen take. Shoot each screen action twice.
 | 2 | 10s | `/onboard`: type a handle, availability flips green, register → success card with the Basescan link |
 | 3 | 8s | Real hand, real phone, scanning the printed standee |
 | 4 | 10s | Payer page: S$6.50, tap "Confirm & pay — no gas needed" |
-| 5 | 10s | Dashboard: chime, row lands, FX drawer opens (USDC → XSGD) |
+| 5 | 10s | Dashboard: chime, row lands — 4.84 USDC in, S$6.50 XSGD out, net and fee inline on the row |
 | 6 | 14s | Terminal: the 402 challenge scrolling, the agent's reasoning, `200 OK` |
 | 7 | 10s | Dashboard: both rows side by side, Human badge and Agent badge |
 | 8 | 8s | The powerbank attempt → red `CategoryNotAllowed` row |

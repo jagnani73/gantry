@@ -60,7 +60,7 @@ const domainReadAbi = [
 const tokenDomains = new Map<TokenId, Eip712TokenDomain>();
 
 export async function assertTokenDomains(): Promise<void> {
-  const ids: TokenId[] = ["MUSDC", "XSGD", ...(config.addresses.realUsdc ? (["USDC"] as const) : [])];
+  const ids: TokenId[] = ["MUSDC", "XSGD", "USDC"];
   for (const id of ids) {
     const address = tokenAddress(config.addresses, id);
     const [name, version] = await Promise.all([

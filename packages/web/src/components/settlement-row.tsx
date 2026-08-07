@@ -25,7 +25,7 @@ export function SettlementRow({ row }: { row: SettlementEvent & { live: boolean 
           </span>
         </p>
         <p className="truncate text-xs text-muted-foreground" title={`on-chain payer ${row.payer}`}>
-          {formatUnits6(BigInt(row.amountIn), 6)} {row.tokenSymbol === "MUSDC" ? "USDC" : (row.tokenSymbol ?? "?")} from{" "}
+          {formatUnits6(BigInt(row.amountIn), 6)} {row.tokenSymbol ?? "?"} from{" "}
           {shortAddress(row.agentPayer ?? row.payer)}
           {row.agentPayer ? " · via facilitator" : ""}
         </p>

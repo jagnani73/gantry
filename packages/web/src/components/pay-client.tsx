@@ -271,7 +271,7 @@ export function PayClient({ handle }: { handle: string }) {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">You pay</span>
                 <span>
-                  {formatUnits6(BigInt(step.intent.amountIn), 6)} {step.intent.tokenSymbol === "MUSDC" ? "USDC" : step.intent.tokenSymbol}
+                  {formatUnits6(BigInt(step.intent.amountIn), 6)} {step.intent.tokenSymbol}
                 </span>
               </div>
               <div className="flex justify-between">

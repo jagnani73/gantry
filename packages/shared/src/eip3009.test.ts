@@ -14,7 +14,7 @@ const params: TransferAuthorizationParams = {
     name: "USDC",
     version: "2",
     chainId: 84532,
-    verifyingContract: BASE_SEPOLIA_ADDRESSES.realUsdc!,
+    verifyingContract: BASE_SEPOLIA_ADDRESSES.realUsdc,
   },
   from: "0x82513007C7eB93b54dC555Bdb74341b3084FC47B",
   to: BASE_SEPOLIA_ADDRESSES.gantryCore,
