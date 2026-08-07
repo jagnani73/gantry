@@ -51,17 +51,13 @@ export function PayClient({ handle }: { handle: string }) {
   const [merchant, setMerchant] = useState<MerchantResponse | null>(null);
   const [step, setStep] = useState<Step>({ name: "loading" });
   const [amount, setAmount] = useState("");
-  const [burner, setBurner] = useState(false);
+  // Env-only, so it is known at first render — no URL to read, no flicker.
+  const [burner] = useState(burnerEnvEnabled);
 
   const { address: walletAddress, chainId } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient();
-
-  useEffect(() => {
-    const query = new URLSearchParams(window.location.search);
-    setBurner(burnerEnvEnabled() || query.get("burner") === "1");
-  }, []);
 
   useEffect(() => {
     let cancelled = false;

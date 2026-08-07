@@ -84,7 +84,7 @@ Design notes that bind M2/M3:
 - **Indexer:** WS `watchContractEvent` = latency path; 15s `getLogs` sweep from the persisted cursor = correctness path and sole cursor owner; admin reset bumps an epoch that aborts in-flight sweeps (prevents cleared rows resurrecting). SSE replay via `Last-Event-ID` = `block:logIndex`; settlements dedup on `(tx_hash, log_index)`.
 - **Relayer:** single FIFO queue owns the nonce (local counter, resync on any failure incl. receipt timeout; 20s receipt cap); simulate-before-send everywhere; wallet client has RPC fallback.
 - SQLite is a disposable cache (`db-core.ts` factory; stored statuses only pending/settled/cancelled — expired/unknown are computed; ids lowercased on write).
-- **Burner:** `NEXT_PUBLIC_BURNER` holds the key — a 0x key turns the burner on AND pins the account (deterministic stage mode); 0/unset/malformed = off. `?burner=1` opts in per visit with a per-device localStorage key + backend faucet (100 MUSDC, payer page caps burner at S$130). Backend `DEFAULT_TOKEN` env (USDC rejected at boot on 31337). `door` is client-supplied on `POST /api/intents` for now — *(done in M2: door is route-derived; the client field is gone)*.
+- **Burner:** one env value, no URL override (`?burner=1` removed 7 Aug 2026 — env and URL could disagree about who signs): `NEXT_PUBLIC_BURNER=1` ⇒ per-device localStorage key + backend faucet; `=0x<key>` ⇒ pinned deterministic stage account; `0`/unset/malformed ⇒ connected wallet (100 MUSDC, payer page caps burner at S$130). Backend `DEFAULT_TOKEN` env (USDC rejected at boot on 31337). `door` is client-supplied on `POST /api/intents` for now — *(done in M2: door is route-derived; the client field is gone)*.
 
 ## Status: M2 complete + review-hardened (6 Aug 2026)
 

@@ -140,7 +140,7 @@ contracts (Base Sepolia)
   PBM wallet     ${BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet}
 
 demo urls
-  payer      ${app}/pay/ah-hock-chicken-rice?burner=1
+  payer      ${app}/pay/ah-hock-chicken-rice
   dashboard  ${app}/dashboard
   print QR   ${app}/qr/ah-hock-chicken-rice
 
