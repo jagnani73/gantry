@@ -71,6 +71,8 @@ pnpm dev                                                 # backend :4000 + web :
 
 The relayer address needs Base Sepolia ETH — it is the only gas key in the system, so with an empty balance every settlement, registration and faucet mint fails. Nothing else needs deploying: the contracts are live and their addresses are pinned in `@gantry/shared`.
 
+Every environment variable, what it changes and how the options interact is documented in **[docs/configuration.md](docs/configuration.md)** — payer key sources, token selection, feature gates, RPC fallback and the flows each combination produces.
+
 - **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. `?burner=1` (or `NEXT_PUBLIC_BURNER=1`) uses an in-browser demo wallet — auto-funded by the backend faucet, zero wallet setup.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
@@ -78,6 +80,12 @@ The relayer address needs Base Sepolia ETH — it is the only gas key in the sys
 - **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), paste a payout address, register. Needs `ONBOARDING_ENABLED=1` — it defaults off, since registration spends the relayer's gas.
 - **Agent CLI:** `AGENT_SESSION_KEY` cannot be a freshly generated key — its address must match the `agentSigner` stored on the demo `AgentPBMWallet`, or every `gantry-pbm` payment fails with `InvalidAgentSignature`. Rotate on-chain via `setAgentSigner` if you need a different one.
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
+
+## Docs
+
+- [Configuration reference](docs/configuration.md) — every env var, the flows each produces, and how they interact
+- [Architecture](docs/submission/architecture.md) — the two doors, the `IGantrySwap` seam, deployed addresses
+- [Demo script](docs/submission/demo-script.md) · [Deck outline](docs/submission/deck-outline.md) · [Submission checklist](docs/submission/submission-checklist.md)
 
 ## Tech
 
