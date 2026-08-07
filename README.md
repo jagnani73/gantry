@@ -26,7 +26,7 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 - [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` via the bridge AND the non-custodial `gantry-pbm` scheme; unmodified `@x402/fetch` still pays end-to-end)
 - [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E))
-- [ ] `GantrySwap` — any-stablecoin-in → XSGD-out atomic FX
+- [x] Any-stablecoin-in → XSGD-out atomic FX, behind the `IGantrySwap` seam — shipping on `FixedRateSwap` (owner-set rate). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
 - [x] Merchant dashboard — live SSE feed with Human/Agent badges, agent policy panel with on-chain revoke, one feed for both doors
 - [x] LLM-powered agent CLI (Gemini via the Vercel AI SDK) paying — and getting rejected on-chain — autonomously, with a visually-identical scripted fallback
 
@@ -46,7 +46,7 @@ Primary pay token is Circle's testnet USDC (`0x036CbD53842c5426634e7929541eC2318
 ## Layout
 
 ```
-packages/contracts   Foundry — GantryCore, AgentPBMWallet + factory, GantrySwap (M4), mocks
+packages/contracts   Foundry — GantryCore, AgentPBMWallet + factory, FixedRateSwap (IGantrySwap), mocks
 packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-712 typed data, API types
 apps/backend         Express — merchant API, relayer, SSE indexer, x402 facilitator (exact + gantry-pbm) + protected order route
 apps/web             Next.js — payer page /pay/[handle], printable QR /qr/[handle], dashboard + policy panel
@@ -74,7 +74,16 @@ Solidity ^0.8.24 (Foundry) · Base Sepolia (`eip155:84532`) · x402 v2 (`@x402/*
 
 ## Honest notes
 
-XSGD exists on no testnet (and not on Base), so testnet runs use a clearly-labeled `MockXSGD`; the mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain. FX liquidity is a self-seeded demo pool, not an oracle-fed market. This is a hackathon prototype — production would operate with a licensed PSP under Singapore's Payment Services Act.
+Everything that matters here runs for real: the contracts are deployed and verified on Base Sepolia, the x402 traffic is spec-shaped v2 that an unmodified `@x402/fetch` client pays, the EIP-3009 authorizations are checked against Circle's real testnet USDC, and the agent's policy denials are contract reverts — not backend `if` statements.
+
+What is not real, and why:
+
+- **`MockXSGD`.** XSGD exists on no testnet (and not on Base), so testnet runs use a clearly-labeled mock. The mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain.
+- **The FX rate is owner-set**, not market-derived — `FixedRateSwap` behind the `IGantrySwap` interface. Production means real XSGD liquidity through an aggregator or RFQ behind that same interface; the seam is the part that's meant to survive.
+- **One trusted relayer/facilitator key.** It pays all gas, and on the vanilla-x402 `exact` path it briefly custodies the agent's funds (one hop, PSP-style) because spec-compliant clients generate their own EIP-3009 nonce. The `gantry-pbm` path has no such hop. Merchant registration is relayer-paid too — permissionless on-chain, so it's faucet trust level.
+- **Merchant categories are self-attested.** No KYC, and no fiat off-ramp.
+
+This is a hackathon prototype — production would operate with a licensed PSP under Singapore's Payment Services Act.
 
 ## Team
 
