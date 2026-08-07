@@ -1,4 +1,4 @@
-import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
+import { tool } from "ai";
 import { z } from "zod";
 import { formatUnits6 } from "@gantry/shared";
 import { checkPolicy, listMerchants, payMerchant } from "./pay-flow";
@@ -26,8 +26,8 @@ export function lockLiveTools(): void {
   liveToolsLocked = true;
 }
 
-function guardLive(fn: (input: never) => Promise<string>): (input: never) => Promise<string> {
-  return async (input: never) => {
+function guardLive<Input>(fn: (input: Input) => Promise<string>): (input: Input) => Promise<string> {
+  return async (input: Input) => {
     if (liveToolsLocked) {
       return JSON.stringify({ error: "live run abandoned — tool locked; no action was taken" });
     }
@@ -64,29 +64,26 @@ export async function runPayMerchant(input: { handle: string; sgd: string }): Pr
   return JSON.stringify(result);
 }
 
-export const agentTools = [
-  betaZodTool({
-    name: "list_merchants",
+export const agentTools = {
+  list_merchants: tool({
     description:
       "List the merchants that accept Gantry payments, with display name, location and category. Entries carrying an `error` field failed to load — say so instead of assuming the merchant does not exist.",
     inputSchema: z.object({}),
-    run: guardLive(runListMerchants),
+    execute: guardLive(runListMerchants),
   }),
-  betaZodTool({
-    name: "check_my_policy",
+  check_my_policy: tool({
     description:
       "Read the agent's on-chain PBM spend policy: daily cap, spent so far today, allowed categories, expiry, wallet balance (raw 6dp token units plus pre-converted S$ fields).",
     inputSchema: z.object({}),
-    run: guardLive(runCheckPolicy),
+    execute: guardLive(runCheckPolicy),
   }),
-  betaZodTool({
-    name: "pay_merchant",
+  pay_merchant: tool({
     description:
       "Pay a merchant in SGD through the Gantry x402 gantry-pbm rail (the on-chain policy wallet pays; you only authorize). Returns the settlement result. The on-chain policy may REJECT the payment — if so, report the errorReason name verbatim (e.g. CategoryNotAllowed) and explain it plainly. NEVER call this tool a second time for the same purchase, whatever the first result said — transport errors and unknown outcomes included; report them and stop. Never invent transaction hashes.",
     inputSchema: z.object({
       handle: z.string().describe('Merchant handle, e.g. "ah-hock-chicken-rice"'),
       sgd: z.string().describe('SGD amount as a decimal string, e.g. "19.50"'),
     }),
-    run: guardLive(runPayMerchant),
+    execute: guardLive(runPayMerchant),
   }),
-];
+};

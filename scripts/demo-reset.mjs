@@ -140,7 +140,7 @@ demo urls
   print QR   ${app}/qr/ah-hock-chicken-rice
 
 agent beats
-  lunch      pnpm --filter @gantry/agent start "buy the team lunch from Ah Hock"
+  lunch      pnpm --filter @gantry/agent start "buy the team lunch (S\\$19.50) from Ah Hock"
   rejection  pnpm --filter @gantry/agent start "buy a S\\$29 powerbank at GadgetHub"
   e2e        pnpm --filter @gantry/agent e2e:pbm [-- --handle gadgethub-sg --sgd 29 --expect-denial]
 

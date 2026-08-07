@@ -28,7 +28,7 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 - [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E))
 - [ ] `GantrySwap` — any-stablecoin-in → XSGD-out atomic FX
 - [x] Merchant dashboard — live SSE feed with Human/Agent badges, agent policy panel with on-chain revoke, one feed for both doors
-- [x] Claude-powered agent CLI paying (and getting rejected on-chain) autonomously, with a visually-identical scripted fallback
+- [x] LLM-powered agent CLI (Gemini via the Vercel AI SDK) paying — and getting rejected on-chain — autonomously, with a visually-identical scripted fallback
 
 ### Deployed (Base Sepolia, `eip155:84532`)
 
@@ -50,7 +50,7 @@ packages/contracts   Foundry — GantryCore, AgentPBMWallet + factory, GantrySwa
 packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-712 typed data, API types
 apps/backend         Express — merchant API, relayer, SSE indexer, x402 facilitator (exact + gantry-pbm) + protected order route
 apps/web             Next.js — payer page /pay/[handle], printable QR /qr/[handle], dashboard + policy panel
-apps/agent           Claude tool-runner CLI agent with scripted fallback (pnpm --filter @gantry/agent start "…")
+apps/agent           LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallback (pnpm --filter @gantry/agent start "…")
 ```
 
 ## Running locally
@@ -70,7 +70,7 @@ pnpm dev                                         # backend :4000 + web :3000 (bi
 
 ## Tech
 
-Solidity ^0.8.24 (Foundry) · Base Sepolia (`eip155:84532`) · x402 v2 (`@x402/*`) · EIP-3009 gasless authorizations · viem/wagmi · Next.js 15 · Node 22 + Express · Claude API (tool runner)
+Solidity ^0.8.24 (Foundry) · Base Sepolia (`eip155:84532`) · x402 v2 (`@x402/*`) · EIP-3009 gasless authorizations · viem/wagmi · Next.js 15 · Node 22 + Express · Vercel AI SDK + Gemini (agent tool loop)
 
 ## Honest notes
 

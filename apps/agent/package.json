@@ -2,7 +2,7 @@
   "name": "@gantry/agent",
   "private": true,
   "version": "0.1.0",
-  "description": "Claude tool-runner agent CLI paying merchants over x402 gantry-pbm.",
+  "description": "LLM agent CLI (Vercel AI SDK + Gemini) paying merchants over x402 gantry-pbm.",
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
@@ -10,8 +10,9 @@
     "e2e:pbm": "tsx scripts/e2e-pbm.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.110.0",
+    "@ai-sdk/google": "^4.0.35",
     "@gantry/shared": "workspace:*",
+    "ai": "^7.0.54",
     "viem": "catalog:",
     "zod": "catalog:"
   },

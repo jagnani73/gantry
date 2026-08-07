@@ -18,7 +18,9 @@ export const env = {
   pbmWallet: (process.env.PBM_WALLET_ADDRESS ??
     BASE_SEPOLIA_ADDRESSES.demoAgentPbmWallet ??
     undefined) as `0x${string}` | undefined,
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  /** Google AI Studio key (free tier) — absent ⇒ scripted mode. */
+  googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  llmModel: process.env.AGENT_LLM_MODEL ?? "gemini-flash-latest",
   llmTimeoutMs: Number(process.env.AGENT_LLM_TIMEOUT_MS ?? 8000),
 } as const;
 
