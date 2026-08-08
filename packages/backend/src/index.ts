@@ -9,10 +9,12 @@ import { healthRouter } from "./routes/health";
 import { merchantsRouter } from "./routes/merchants";
 import { intentsRouter } from "./routes/intents";
 import { eventsRouter } from "./routes/events";
+import { settlementsRouter } from "./routes/settlements";
+import { denialsRouter } from "./routes/denials";
+import { agentsRouter } from "./routes/agents";
 import { adminRouter } from "./routes/admin";
 import { facilitatorRouter } from "./routes/facilitator";
 import { pbmRouter } from "./routes/pbm";
-import { policyRouter } from "./routes/policy";
 import { ordersRouter } from "./routes/order";
 import { x402Middleware } from "./x402";
 
@@ -28,10 +30,12 @@ app.use(healthRouter);
 app.use(merchantsRouter);
 app.use(intentsRouter);
 app.use(eventsRouter);
+app.use(settlementsRouter);
+app.use(denialsRouter);
+app.use(agentsRouter);
 app.use(adminRouter);
 app.use(facilitatorRouter);
 app.use(pbmRouter);
-app.use(policyRouter);
 // The x402 middleware must wrap the order route: it 402-challenges unpaid
 // requests and only lets verified ones through to the handler below.
 app.use(x402Middleware);

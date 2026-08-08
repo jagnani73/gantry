@@ -13,7 +13,18 @@ after(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function settlement(block: number, logIndex: number): SettlementRow {
+function settlement(
+  block: number,
+  logIndex: number,
+  overrides: Partial<SettlementRow> = {},
+): SettlementRow {
+  return {
+    ...base(block, logIndex),
+    ...overrides,
+  };
+}
+
+function base(block: number, logIndex: number): SettlementRow {
   return {
     tx_hash: `0xtx${block}-${logIndex}`,
     log_index: logIndex,
@@ -100,10 +111,103 @@ test("setIntentStatus preserves settle_tx via COALESCE", () => {
   assert.equal(store.getIntentRow("0xabcdef")?.settle_tx, "0xsettletx");
 });
 
-test("clearCache empties both tables; cursor survives", () => {
+test("listSettlements pages newest-first and reports hasMore honestly", () => {
+  // Existing rows at this point: (10,0), (10,2), (11,0) — all ah-hock/0xPayer.
+  const first = store.listSettlements({}, null, 2);
+  assert.deepEqual(
+    first.rows.map((r) => [r.block_number, r.log_index]),
+    [
+      [11, 0],
+      [10, 2],
+    ],
+  );
+  assert.equal(first.hasMore, true);
+
+  const second = store.listSettlements({}, { blockNumber: 10, logIndex: 2 }, 2);
+  assert.deepEqual(
+    second.rows.map((r) => [r.block_number, r.log_index]),
+    [[10, 0]],
+  );
+  // The last page must not claim a next one — an off-by-one here paints a
+  // "Load more" link that returns nothing.
+  assert.equal(second.hasMore, false);
+});
+
+test("listSettlements cursor is exclusive within a block", () => {
+  const page = store.listSettlements({}, { blockNumber: 10, logIndex: 2 }, 10);
+  assert.ok(!page.rows.some((r) => r.block_number === 10 && r.log_index === 2));
+});
+
+test("payer filter matches the on-chain payer OR the bridged agent payer", () => {
+  // A vanilla x402 payment settles with the relayer as on-chain payer and the
+  // agent recorded separately — the payer app must still find it as "mine".
+  store.insertSettlementRow(
+    settlement(12, 0, { payer: "0xRelayer", agent_payer: "0xAgent", handle: "gadgethub-sg" }),
+  );
+  store.insertSettlementRow(settlement(13, 0, { payer: "0xAgent", handle: "gadgethub-sg" }));
+
+  const mine = store.listSettlements({ payers: ["0xagent"] }, null, 10);
+  assert.deepEqual(
+    mine.rows.map((r) => r.block_number),
+    [13, 12],
+  );
+  assert.equal(store.countSettlements({ payers: ["0xAGENT"] }), 2); // case-insensitive
+
+  const scoped = store.listSettlements({ handle: "gadgethub-sg", payers: ["0xagent"] }, null, 10);
+  assert.equal(scoped.rows.length, 2);
+  assert.equal(store.countSettlements({ handle: "ah-hock-chicken-rice" }), 3);
+});
+
+test("merchant profiles upsert in place and survive a cache clear", () => {
+  store.upsertMerchantProfile({
+    handle: "Ah-Hock-Chicken-Rice",
+    display_name: "Ah Hock Chicken Rice",
+    location: "Maxwell Food Centre #01-32",
+    blurb: "Hainanese chicken rice since 1987.",
+    updated_at: 1_785_900_000,
+  });
+  store.upsertMerchantProfile({
+    handle: "ah-hock-chicken-rice",
+    display_name: "Ah Hock Chicken Rice",
+    location: "Maxwell Food Centre #01-33",
+    blurb: "Hainanese chicken rice since 1987.",
+    updated_at: 1_785_900_100,
+  });
+  const got = store.getMerchantProfile("ah-hock-chicken-rice");
+  assert.equal(got?.location, "Maxwell Food Centre #01-33");
+});
+
+test("denials record the cancel tx, never a reverted one", () => {
+  store.insertDenial({
+    intent_id: "0xDeniedIntent",
+    handle: "gadgethub-sg",
+    merchant_id: "0xMerchant2",
+    wallet: "0xPbmWallet",
+    token_in: "0xToken",
+    amount_in: "2980405",
+    xsgd_amount: "4000000",
+    error_name: "CategoryNotAllowed",
+    error_args: JSON.stringify({ categoryId: 2 }),
+    // The policy revert is caught in simulation and never broadcast, so the
+    // only real tx is the one that cancelled the intent.
+    cancel_tx: "0xCancelTx",
+    created_at: 1_785_900_200,
+  });
+  const rows = store.listDenials("0xpbmwallet");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.error_name, "CategoryNotAllowed");
+  assert.equal(rows[0]?.intent_id, "0xdeniedintent");
+  assert.equal(store.countDenials("0xPBMWALLET"), 1);
+});
+
+test("clearCache empties transaction tables but keeps merchant identity", () => {
   store.setCursor(45_065_094n);
   store.clearCache();
   assert.deepEqual(store.recentSettlements(), []);
   assert.equal(store.getIntentRow("0xabcdef"), undefined);
+  assert.equal(store.countDenials("0xpbmwallet"), 0);
   assert.equal(store.getCursor(), 45_065_094n);
+  // Identity is the one thing here the chain cannot re-supply, so a reset that
+  // erased it would lose a shop that onboarded live.
+  assert.equal(store.getMerchantProfile("ah-hock-chicken-rice")?.display_name, "Ah Hock Chicken Rice");
 });

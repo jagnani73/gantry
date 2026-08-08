@@ -124,13 +124,20 @@ export function settlementEventOf(row: SettlementRow): SettlementEvent {
     door: doorToWire(row.door as Door),
     txHash: row.tx_hash as Hex,
     blockNumber: row.block_number,
+    logIndex: row.log_index,
     blockTime: row.block_time,
   };
 }
 
-// Must fit EVERY transport in the fallback chain: Alchemy caps getLogs at 10k
-// blocks, the public sepolia.base.org fallback at 2k — a bigger chunk wedges
-// the sweep (cursor never advances) whenever the fallback is serving.
+// Sized to the public sepolia.base.org node's 2,000-block getLogs ceiling.
+//
+// Measured 9 Aug 2026, and worth knowing before trusting the fallback chain
+// here: Alchemy's FREE tier caps eth_getLogs at TEN blocks, not the 10k an
+// earlier version of this comment claimed. So every sweep chunk is rejected by
+// the primary and served by the public node — two RPC calls per chunk, and the
+// rate-limited free node is what actually carries the correctness path. Raising
+// the chunk wedges the sweep entirely (the cursor never advances); lowering it
+// to 10 to satisfy Alchemy would turn a cold backfill into thousands of calls.
 const SWEEP_CHUNK = 1_999n;
 
 let sweeping = false;
