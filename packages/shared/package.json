@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/quote.test.ts src/handle.test.ts src/categories.test.ts src/payout.test.ts src/dashboardScope.test.ts src/eip3009.test.ts src/agentPolicy.test.ts src/errors.test.ts src/x402.test.ts"
+    "test": "tsx --test src/quote.test.ts src/handle.test.ts src/categories.test.ts src/payout.test.ts src/dashboardScope.test.ts src/time.test.ts src/days.test.ts src/cursor.test.ts src/payerFilter.test.ts src/agentStatus.test.ts src/eip3009.test.ts src/agentPolicy.test.ts src/errors.test.ts src/x402.test.ts src/display.test.ts src/profile.test.ts"
   },
   "dependencies": {
     "viem": "catalog:"

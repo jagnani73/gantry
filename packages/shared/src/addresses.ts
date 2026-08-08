@@ -30,6 +30,18 @@ export const BASE_SEPOLIA_ADDRESSES: GantryAddresses = {
 /** GantryCore deploy block — indexer backfill floor. */
 export const BASE_SEPOLIA_DEPLOY_BLOCK = 45065094n;
 
+/**
+ * AgentPBMWalletFactory deploy block — the floor for enumerating `WalletCreated`.
+ *
+ * Verified by binary-searching `eth_getCode`, not by taking the block of the
+ * oldest event a scan happened to find: a floor derived from an observation is
+ * only as old as the observation, and one set too high silently loses wallets
+ * rather than failing. Starting from GantryCore's block instead would scan ~68k
+ * blocks in which this contract did not exist — nearly half the range, and every
+ * chunk is a round trip.
+ */
+export const BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK = 45133047n;
+
 export const BASE_SEPOLIA_RELAYER: Address = "0x82513007C7eB93b54dC555Bdb74341b3084FC47B";
 
 export const BASESCAN_BASE_URL = "https://sepolia.basescan.org";

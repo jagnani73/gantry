@@ -5,6 +5,14 @@ export const DEMO_RATE = 1_342_100n;
 export const GANTRY_FEE_BPS = 50;
 export const CARD_FEE_BPS = 280;
 
+/**
+ * The canonical demo shop. The landing page's entry links, the onboarding gate's
+ * example and demo-reset's cheat sheet all point at it — three literals that
+ * would drift apart the moment the demo merchant changes, and only one of them
+ * would fail loudly.
+ */
+export const DEMO_MERCHANT_HANDLE = "ah-hock-chicken-rice";
+
 /** Off-chain display facts for demo merchants (chain stores only handle/payout/category). */
 export const DEMO_MERCHANTS: Record<string, { displayName: string; location: string }> = {
   "ah-hock-chicken-rice": {
