@@ -24,3 +24,5 @@ broadcast/
 *.db-shm
 *.db-wal
 *.tsbuildinfo
+
+.vercel
