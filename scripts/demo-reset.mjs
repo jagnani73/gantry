@@ -1,7 +1,12 @@
-// One-command demo reset: clears the backend cache (SQLite + SSE `reset`
-// broadcast, cursor jumped to head), re-arms the agent policy, and prints the
-// demo cheat-sheet. Chain state (merchant, pool, contracts) is reused —
-// Sepolia redeploys are not needed per rehearsal.
+// One-command demo reset. In order, it:
+//   1. clears the backend cache (SQLite + SSE `reset`, cursor jumped to head)
+//   2. tops the FUNDER up — this can execute a real three-transaction Uniswap v3
+//      ETH→USDC swap, so this script spends real balances, not just state
+//   3. tops the demo PBM wallet up (a real USDC transfer)
+//   4. re-arms the agent policy on-chain (setPolicy, resets spentToday)
+//   5. checks gadgethub-sg, then prints the cheat sheet
+// Chain state (merchant, contracts, listed swap rate) is reused — Sepolia
+// redeploys are not needed per rehearsal. Exits non-zero if any step degraded.
 //
 // Usage: pnpm demo:reset
 import { existsSync } from "node:fs";
@@ -22,7 +27,15 @@ const { BASE_SEPOLIA_ADDRESSES, BASE_SEPOLIA_RELAYER } = await import(
   "../packages/shared/src/addresses.ts"
 );
 
-const backend = process.env.NEXT_PUBLIC_BACKEND_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+/**
+ * Deliberately localhost, NOT NEXT_PUBLIC_BACKEND_URL. That variable exists so a
+ * PHONE can reach this laptop, so it holds a LAN IP — which changes whenever the
+ * laptop joins a different network, and then `demo:reset` starts failing to talk
+ * to a backend running on the same machine. This script always runs beside the
+ * backend, so the loopback address is both correct and stable.
+ */
+const backend = `http://localhost:${process.env.PORT ?? 4000}`;
+/** The printed URLs DO want the LAN address — that is what the phone scans. */
 const app = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 const adminToken = process.env.ADMIN_TOKEN;
 if (!adminToken) {
@@ -32,105 +45,142 @@ if (!adminToken) {
 
 const started = Date.now();
 
+// Guarded like every other call below: an unreachable backend should say so in
+// one line, not dump an undici stack trace as the first thing an operator sees.
 const reset = await fetch(`${backend}/api/admin/reset`, {
   method: "POST",
   headers: { "x-admin-token": adminToken },
+}).catch((err) => {
+  console.error(`cannot reach the backend at ${backend} (${err instanceof Error ? err.message : err}) — is \`pnpm dev\` running?`);
+  process.exit(1);
 });
 if (!reset.ok) {
   console.error(`reset failed: ${reset.status} ${await reset.text()}`);
   process.exit(1);
 }
-const healthRes = await fetch(`${backend}/health`);
-if (!healthRes.ok) {
-  console.error(`health check failed after reset: ${healthRes.status}`);
+const healthRes = await fetch(`${backend}/health`).catch(() => null);
+if (!healthRes?.ok) {
+  console.error(`health check failed after reset: ${healthRes ? healthRes.status : "network error"}`);
   process.exit(1);
 }
 const health = await healthRes.json();
 
-// Re-arm the agent policy: setPolicy resets the wallet's spentToday counter,
-// so ten S$4.50 rehearsals never pile into the S$50/day cap.
-let policyLine;
-const arm = await fetch(`${backend}/api/admin/policy/arm`, {
-  method: "POST",
-  headers: { "x-admin-token": adminToken },
-});
-if (arm.ok) {
-  // Top up BEFORE reading the policy back: the readback reports the wallet
-  // balance, and a transfer settled a moment ago can still read stale off a
-  // lagging replica. Ordering it first means the number printed is the one the
-  // top-up just wrote. Cooldown-free and target-based, unlike the payer faucet,
-  // so one reset always leaves the wallet able to run BOTH agent beats — the
-  // drinks order and the rejection attempt, whose balance pre-check runs before
-  // the on-chain policy check.
-  let topLine = "";
-  const top = await fetch(`${backend}/api/admin/wallet/topup`, {
-    method: "POST",
-    headers: { "x-admin-token": adminToken },
-  }).catch(() => null);
-  let walletUsdc = null;
-  if (top?.ok) {
-    const t = await top.json();
-    walletUsdc = Number(t.usdc);
-    if (t.sent !== "0") topLine = ` (topped up +${Number(t.sent).toFixed(2)} USDC)`;
-  } else {
-    topLine = ` ⚠ wallet top-up failed (${top ? `status ${top.status}: ${await top.text()}` : "network error"})`;
-  }
+// Order matters below, and it is the reverse of what reads naturally.
+//
+//   funder top-up  →  wallet top-up  →  policy arm  →  readback
+//
+// The funder is the SUPPLY and the PBM wallet is a CONSUMER of it: topUpPbmWallet
+// throws FunderExhausted when the funder cannot cover the send, so refilling the
+// funder afterwards "fixes" it one step too late and the wallet stays empty for
+// that rehearsal. And the wallet top-up is deliberately NOT nested under a
+// successful policy arm — they touch different resources, and a wallet left
+// underfunded makes the S$4 GadgetHub beat die as insufficient_funds instead of
+// CategoryNotAllowed, which is the wrong story entirely.
+let degraded = false;
 
-  const policyRes = await fetch(`${backend}/api/policy`).catch(() => null);
-  if (policyRes?.ok) {
-    const p = await policyRes.json();
-    const sgd = (units) => (Number(BigInt(units) * BigInt(p.rate)) / 1e12).toFixed(2);
-    // Prefer the top-up's own figure — it is the post-transfer truth.
-    const wallet = walletUsdc ?? Number(p.balance) / 1e6;
-    policyLine =
-      `policy re-armed: S$${sgd(p.dailyCap)}/day · ${p.categories.join(", ")} · ` +
-      `spent S$${sgd(p.spentToday)} · wallet ${wallet.toFixed(2)} ${p.token}${topLine}`;
-  } else {
-    // The arm LANDED — do not claim the wallet is missing; the readback flaked.
-    policyLine = `⚠ policy re-armed but readback failed (${policyRes ? `status ${policyRes.status}` : "network error"}) — verify GET /api/policy manually`;
+/** Every network call here is best-effort: a flake must not crash the script
+ * after the cache was cleared and money moved, because the cheat sheet below is
+ * the whole point of running it. */
+async function post(path) {
+  try {
+    const res = await fetch(`${backend}${path}`, { method: "POST", headers: { "x-admin-token": adminToken } });
+    return { res, body: res.ok ? await res.json().catch(() => null) : await res.text().catch(() => "") };
+  } catch (err) {
+    return { res: null, body: err instanceof Error ? err.message : String(err) };
   }
-} else if (arm.status === 404) {
-  // The wallet address is a committed constant, so the route cannot 404 for a
-  // missing wallet — a 404 means the running backend predates the route.
-  policyLine =
-    "⚠ /api/admin/policy/arm missing (stale backend build?) — re-arm did NOT run; spentToday accumulates";
-} else {
-  policyLine = `⚠ policy re-arm failed: ${arm.status} ${await arm.text()}`;
 }
 
-// The rejection beat needs gadgethub-sg registered on-chain.
-const gadget = await fetch(`${backend}/api/merchants/gadgethub-sg`);
-const gadgetLine = gadget.ok
-  ? "gadgethub-sg registered (category electronics — the rejection beat)"
-  : "⚠ gadgethub-sg NOT registered on-chain — the rejection beat will fail";
-
-// Funder: reports ETH + USDC and swaps ETH for USDC when it runs low. Best
-// effort — a flaky RPC must not crash the script AFTER a successful reset (the
-// cheat sheet below is the whole point of running it).
-let funderLine = `relayer  ${BASE_SEPOLIA_RELAYER}  (balance probe skipped)`;
-try {
-  const res = await fetch(`${backend}/api/admin/funder/topup`, {
-    method: "POST",
-    headers: { "x-admin-token": adminToken },
-  });
-  if (res.ok) {
-    const f = await res.json();
+// 1. Funder: reports ETH/USDC/WETH and swaps ETH for USDC when USDC runs low.
+let funderLine;
+{
+  const { res, body } = await post("/api/admin/funder/topup");
+  if (res?.ok && body) {
     funderLine =
-      `funder   ${f.funder}  ${Number(f.eth).toFixed(4)} ETH · ${Number(f.usdc).toFixed(2)} USDC` +
-      (f.swapped ? `
-         ↳ ${f.detail}` : "");
+      `funder   ${body.funder}  ${Number(body.eth).toFixed(4)} ETH · ${Number(body.usdc).toFixed(2)} USDC` +
+      (Number(body.weth) > 0 ? ` · ⚠ ${Number(body.weth).toFixed(4)} WETH stranded` : "") +
+      (body.swapped ? `
+         ↳ ${body.detail}` : "");
   } else {
-    const body = await res.text();
-    funderLine = `⚠ funder  ${BASE_SEPOLIA_RELAYER}  top-up failed (${res.status}): ${body}`;
+    degraded = true;
+    funderLine = `⚠ funder  ${BASE_SEPOLIA_RELAYER}  top-up failed (${res ? `${res.status}: ${body}` : body}) — every door spends this key`;
   }
-} catch (err) {
-  funderLine = `⚠ funder  ${BASE_SEPOLIA_RELAYER}  unreachable (${err instanceof Error ? err.message : err})`;
 }
 
-console.log(`✓ dashboard cleared, indexer cursor → block ${health.indexerCursor} (chain ${health.chainId})
-✓ ${policyLine}
-✓ ${gadgetLine}
-${funderLine}
+// 2. PBM wallet: needs enough for the drinks order AND the rejection attempt,
+//    whose facilitator balance pre-check runs before the on-chain policy check.
+let walletUsdc = null;
+let walletLine;
+{
+  const { res, body } = await post("/api/admin/wallet/topup");
+  if (res?.ok && body) {
+    const usdc = Number(body.usdc);
+    walletUsdc = Number.isFinite(usdc) ? usdc : null;
+    walletLine =
+      `agent wallet ${walletUsdc === null ? "balance unreadable" : `${walletUsdc.toFixed(2)} USDC`}` +
+      (body.sent !== "0" ? ` (topped up +${Number(body.sent).toFixed(2)})` : "");
+  } else {
+    degraded = true;
+    walletLine =
+      `⚠ agent wallet top-up FAILED (${res ? `${res.status}: ${body}` : body}) — ` +
+      `the rejection beat will die as insufficient_funds, not CategoryNotAllowed`;
+  }
+}
+
+// 3. Policy: setPolicy resets the wallet's spentToday counter, so ten S$4.50
+//    rehearsals never pile into the S$50/day cap.
+let policyLine;
+{
+  const { res, body } = await post("/api/admin/policy/arm");
+  if (res?.ok) {
+    const policyRes = await fetch(`${backend}/api/policy`).catch(() => null);
+    if (policyRes?.ok) {
+      const p = await policyRes.json();
+      const sgd = (units) => (Number(BigInt(units) * BigInt(p.rate)) / 1e12).toFixed(2);
+      policyLine =
+        `policy re-armed: S$${sgd(p.dailyCap)}/day · ${p.categories.join(", ")} · ` +
+        `spent S$${sgd(p.spentToday)} · ${walletLine}`;
+    } else {
+      degraded = true;
+      // The arm LANDED — do not claim the wallet is missing; the readback flaked.
+      policyLine = `⚠ policy re-armed but readback failed (${policyRes ? `status ${policyRes.status}` : "network error"}) — verify GET /api/policy manually · ${walletLine}`;
+    }
+  } else {
+    degraded = true;
+    policyLine =
+      (res?.status === 404
+        ? // The wallet address is a committed constant, so the route cannot 404 for a
+          // missing wallet — a 404 means the running backend predates the route.
+          "⚠ /api/admin/policy/arm missing (stale backend build?) — re-arm did NOT run; spentToday accumulates"
+        : `⚠ policy re-arm failed: ${res ? `${res.status} ${body}` : body}`) + ` · ${walletLine}`;
+  }
+}
+
+// 4. The rejection beat needs gadgethub-sg registered on-chain. A non-404 is NOT
+//    evidence of absence — an RPC failure surfaces as a 500 here, and reporting
+//    that as "not registered" sends the operator to re-register a live merchant.
+let gadgetLine;
+{
+  const gadget = await fetch(`${backend}/api/merchants/gadgethub-sg`).catch(() => null);
+  if (gadget?.ok) {
+    gadgetLine = "gadgethub-sg registered (category electronics — the rejection beat)";
+  } else if (gadget?.status === 404) {
+    degraded = true;
+    gadgetLine = "⚠ gadgethub-sg NOT registered on-chain — the rejection beat will fail";
+  } else {
+    degraded = true;
+    gadgetLine = `⚠ could not verify gadgethub-sg (${gadget ? `status ${gadget.status}` : "network error"}) — registration state UNKNOWN`;
+  }
+}
+
+/** A warning must never wear a checkmark. The old template hardcoded `✓ ${line}`
+ * and rendered "✓ ⚠ policy re-arm failed" on the one screen an operator scans
+ * before going on stage. */
+const mark = (line) => (line.startsWith("⚠") ? line : `✓ ${line}`);
+
+console.log(`${mark(`dashboard cleared, indexer cursor → block ${health.indexerCursor} (chain ${health.chainId})`)}
+${mark(policyLine)}
+${mark(gadgetLine)}
+${mark(funderLine)}
 
 contracts (Base Sepolia)
   GantryCore     ${BASE_SEPOLIA_ADDRESSES.gantryCore}
@@ -151,3 +201,12 @@ agent beats
   e2e        pnpm --filter @gantry/agent e2e:pbm [-- --handle gadgethub-sg --sgd 4 --expect-denial]
 
 done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+
+// Exit code asserts the outcome, matching the convention e2e-pbm.ts documents —
+// the pre-rehearsal script was the one thing that could not be gated on. The
+// cheat sheet prints first: it is why the script exists, and a degraded run still
+// needs it.
+if (degraded) {
+  console.error("\n⚠ demo-reset finished DEGRADED — fix the warnings above before rehearsing.");
+  process.exit(1);
+}
