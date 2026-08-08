@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { formatUnits6, type PolicyResponse } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +67,10 @@ export function PolicyPanel() {
           <CardTitle className="text-base">
             Agent spend policy
             <span className="ml-2 text-xs font-normal text-muted-foreground">
-              on-chain PBM wallet {shortAddr(policy.wallet)}
+              on-chain PBM wallet {shortAddr(policy.wallet)} ·{" "}
+              <Link href="/agent" className="underline">
+                owner console
+              </Link>
             </span>
           </CardTitle>
           <div className="flex items-center gap-2">
@@ -85,7 +89,13 @@ export function PolicyPanel() {
                 setRevokeError(null);
                 try {
                   await api.revokePolicy();
-                  await refresh();
+                  // The tx confirmed before this resolved, so the policy IS
+                  // revoked. Set it locally instead of trusting the read that
+                  // follows: a lagging replica answers with the pre-revoke state
+                  // and the button springs back to "Revoke", which on stage reads
+                  // as a failure. The poll reconciles a beat later either way.
+                  setPolicy((p) => (p ? { ...p, revoked: true, expiry: 0 } : p));
+                  void refresh();
                 } catch (err) {
                   // The most theatrical button in the demo must never fail
                   // silently — surface WHY (disabled route, relayer, RPC).
@@ -121,8 +131,11 @@ export function PolicyPanel() {
                 @ {(Number(policy.rate) / 1e6).toFixed(4)}
               </span>{" "}
               · {policy.categories.join(", ") || "no categories"}
-              {expiryDate ? <> · expires {expiryDate}</> : null} · signer{" "}
-              {shortAddr(policy.agentSigner)}
+              {expiryDate ? <> · expires {expiryDate}</> : null} · wallet holds{" "}
+              <span className={BigInt(policy.balance) < 3_352_955n ? "text-destructive" : undefined}>
+                S${toSgd(policy.balance, policy.rate)}
+              </span>{" "}
+              · signer {shortAddr(policy.agentSigner)}
             </>
           )}
         </p>

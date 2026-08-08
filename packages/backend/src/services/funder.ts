@@ -293,14 +293,22 @@ export async function topUpFunder(): Promise<FunderStatus> {
 const WALLET_FLOOR = 8_000_000n; // 8 USDC
 const WALLET_TARGET = 10_000_000n; // 10 USDC
 
-export async function topUpPbmWallet(): Promise<{ wallet: Address; usdc: string; sent: string }> {
-  const wallet = config.demoPbmWallet;
-  const balance = await publicClient.readContract({
+/** Replica lag after a confirmed transfer, bounded — see topUpPbmWallet. */
+const BALANCE_LAG_RETRIES = 5;
+const BALANCE_LAG_DELAY_MS = 1_000;
+
+function readWalletBalance(wallet: Address): Promise<bigint> {
+  return publicClient.readContract({
     address: config.addresses.realUsdc,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [wallet],
   });
+}
+
+export async function topUpPbmWallet(): Promise<{ wallet: Address; usdc: string; sent: string }> {
+  const wallet = config.demoPbmWallet;
+  const balance = await readWalletBalance(wallet);
   if (balance >= WALLET_FLOOR) {
     return { wallet, usdc: formatUnits(balance, 6), sent: "0" };
   }
@@ -325,12 +333,17 @@ export async function topUpPbmWallet(): Promise<{ wallet: Address; usdc: string;
   // rehearsal settlement is in flight — reporting a computed target as an
   // observed balance is wrong in exactly the direction that matters, right before
   // the beat whose failure mode is insufficient_funds.
-  const after = await publicClient.readContract({
-    address: config.addresses.realUsdc,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [wallet],
-  });
+  //
+  // Bounded lag-retry, same class the facilitator already retries: a balance read
+  // straight after a confirmed transfer can still land on a replica that has not
+  // seen it, which reports the PRE-transfer figure and (worse) fires the
+  // shortfall warning below on a wallet that is actually full.
+  const expected = balance + send;
+  let after = await readWalletBalance(wallet);
+  for (let attempt = 0; after < expected && attempt < BALANCE_LAG_RETRIES; attempt++) {
+    await new Promise((r) => setTimeout(r, BALANCE_LAG_DELAY_MS));
+    after = await readWalletBalance(wallet);
+  }
   if (after < WALLET_FLOOR) {
     console.error(
       `funder CRITICAL: the PBM wallet is still below the ${formatUnits(WALLET_FLOOR, 6)} floor ` +

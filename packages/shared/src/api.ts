@@ -157,6 +157,29 @@ export interface PbmIntentResponse {
 /** GET /api/policy — on-chain AgentPBMWallet state for the dashboard panel and
  * the agent's check_my_policy tool. Amounts are raw 6dp token units; the UI
  * converts to S$ via `rate`. */
+/**
+ * Owner-set policy from the agent console. Caps arrive in S$ because that is
+ * what the owner thinks in; the backend converts at the same owner-set rate the
+ * UI displays, since the CONTRACT stores token units. Categories are ids, not
+ * names — the bitmap is built server-side so a client cannot set a bit for a
+ * category the registry does not know.
+ */
+export interface SetPolicyRequest {
+  /** S$, decimal string. */
+  dailyCapSgd: string;
+  /** S$, decimal string. Must be <= dailyCapSgd. */
+  perTxCapSgd: string;
+  categoryIds: number[];
+  /** Days from now. The contract stores an absolute unix expiry, derived from
+   * CHAIN time — a skewed laptop would otherwise arm an already-dead policy. */
+  expiryDays: number;
+}
+
+export interface SetPolicyResponse {
+  txHash: Hex;
+  policy: PolicyResponse;
+}
+
 export interface PolicyResponse {
   wallet: Address;
   agentSigner: Address;

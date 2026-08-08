@@ -10,6 +10,8 @@ import type {
   RevokePolicyResponse,
   SettleRequest,
   SettleResponse,
+  SetPolicyRequest,
+  SetPolicyResponse,
 } from "@gantry/shared";
 import { backendUrl } from "./env";
 
@@ -88,7 +90,9 @@ export const api = {
     call<IntentResponse>(`/api/intents/${intentId}/requote`, { method: "POST", body: "{}" }),
   faucet: (address: string) =>
     call<FaucetResponse>("/api/faucet", { method: "POST", body: JSON.stringify({ address }) }),
-  policy: () => call<PolicyResponse>("/api/policy"),
+  policy: () => call<PolicyResponse>("/api/policy", { timeoutMs: 8_000 }),
+  setPolicy: (req: SetPolicyRequest) =>
+    call<SetPolicyResponse>("/api/policy", { method: "POST", body: JSON.stringify(req) }),
   revokePolicy: () =>
     call<RevokePolicyResponse>("/api/policy/revoke", { method: "POST", body: "{}" }),
 };
