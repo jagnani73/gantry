@@ -1,11 +1,19 @@
-import { verifyTypedData, type Address } from "viem";
+import { isAddress, verifyTypedData, type Address, type Hex } from "viem";
 import { z } from "zod";
 import {
+  agentPbmWalletAbi,
   buildSpendAuthorization,
+  decodeGantryError,
+  serializeArgs,
+  type DenialEvent,
+  type DenialListResponse,
+  type GantryErrorName,
   type X402GantryPbmPayload,
   type X402PaymentPayload,
   type X402PaymentRequirements,
 } from "@gantry/shared";
+import { ApiError } from "../errors";
+import type { DenialRow } from "../db-core";
 import { parseOrderPins, type VerifyFailure } from "./facilitator-core";
 
 /**
@@ -166,4 +174,156 @@ export async function validatePbmPayment(inputs: PbmVerifyInputs): Promise<PbmVa
   }
 
   return { ok: true, pbm, pins };
+}
+
+// ------------------------------------------------------------------- denials
+//
+// The other half of the pbm story: what to write down when the wallet says no,
+// and how to read it back. Pure for the same reason the verification above is —
+// this module never opens the database or the chain clients, so the rules below
+// are testable without an environment. services/pbm.ts supplies the failure,
+// routes/denials.ts supplies the store.
+
+/**
+ * The AgentPBMWallet errors that mean the POLICY refused the spend. Only these
+ * may be recorded as a denial, because the payer's activity renders one as
+ * "Declined on-chain" — a claim about what a contract did. A transport blip, an
+ * RPC failure or an ambiguous settle outcome must never reach that feed, and
+ * nor must a core-level revert (IntentExpired): that is a stale quote, not the
+ * agent being refused.
+ *
+ * Typed against GantryErrorName so a contract-side rename breaks this build
+ * rather than silently emptying the declined feed. Deliberately not every
+ * wallet error — NotCore or ZeroAddress is a wiring bug, not a refusal.
+ */
+export const POLICY_DENIAL_ERRORS = [
+  "CategoryNotAllowed",
+  "PerTxCapExceeded",
+  "DailyCapExceeded",
+  "PolicyExpired",
+  "InsufficientWalletBalance",
+  "InvalidAgentSignature",
+] as const satisfies readonly GantryErrorName[];
+
+const POLICY_DENIAL_NAMES: ReadonlySet<string> = new Set(POLICY_DENIAL_ERRORS);
+
+export interface PolicyDenial {
+  /** Verbatim, e.g. "CategoryNotAllowed" — it is read aloud on stage, and the
+   * UI explains it alongside, never instead of. */
+  errorName: string;
+  /** Named revert args, JSON-safe. Absent when the revert carried none. */
+  errorArgs?: Record<string, unknown>;
+}
+
+/**
+ * A settle failure → the denial to record, or null when it is not one.
+ *
+ * Null is the honest answer for everything that is not a decoded wallet policy
+ * error: only a revert proves the contract refused, and only these names prove
+ * it was the policy. The caller pairs this with `isDefiniteFailure` — a revert
+ * decodes the same way whether or not the tx was broadcast, and a denial that
+ * might still mine is not a denial.
+ */
+export function policyDenialOf(err: unknown): PolicyDenial | null {
+  const decoded = decodeGantryError(err);
+  if (decoded.kind !== "custom" || !POLICY_DENIAL_NAMES.has(decoded.name)) return null;
+  const errorArgs = namedErrorArgs(decoded.name, decoded.args);
+  return { errorName: decoded.name, ...(errorArgs ? { errorArgs } : {}) };
+}
+
+/**
+ * Positional revert args → `{ categoryId: 2 }`, using the wallet ABI's own
+ * parameter names. Two conversions matter downstream: the uint256 pairs of
+ * PerTxCapExceeded/DailyCapExceeded decode to BIGINTS, which `JSON.stringify`
+ * throws on rather than rounds; and stringifying them yields raw 6dp units,
+ * which is the amount convention every other field on the wire already uses —
+ * so the UI renders them with the same formatter and never has to know they
+ * came out of a revert.
+ */
+function namedErrorArgs(
+  name: string,
+  args: readonly unknown[],
+): Record<string, unknown> | undefined {
+  if (args.length === 0) return undefined;
+  const entry = agentPbmWalletAbi.find((item) => item.type === "error" && item.name === name);
+  const inputs = entry?.type === "error" ? entry.inputs : [];
+  return Object.fromEntries(
+    args.map((value, i) => [inputs[i]?.name || `arg${i}`, serializeArgs(value)]),
+  );
+}
+
+/** Stored row → wire event. */
+export function denialEventOf(row: DenialRow): DenialEvent {
+  const errorArgs = parseErrorArgs(row);
+  return {
+    intentId: row.intent_id as Hex,
+    handle: row.handle,
+    merchantId: row.merchant_id as Hex,
+    wallet: row.wallet as Address,
+    tokenIn: row.token_in as Address,
+    amountIn: row.amount_in,
+    xsgdAmount: row.xsgd_amount,
+    errorName: row.error_name,
+    ...(errorArgs !== undefined ? { errorArgs } : {}),
+    cancelTxHash: row.cancel_tx as Hex | null,
+    at: row.created_at,
+  };
+}
+
+function parseErrorArgs(row: DenialRow): unknown {
+  if (row.error_args === null) return undefined;
+  try {
+    return JSON.parse(row.error_args);
+  } catch {
+    // The error NAME is the load-bearing half and it is a column of its own —
+    // dropping unreadable args beats 500ing the whole feed over them.
+    console.warn(`denials: unreadable error_args on ${row.intent_id}, dropping them`);
+    return undefined;
+  }
+}
+
+/** The slice of the store this read needs, so a test can hand it a temp
+ * database (or a spy) without standing up the singleton — settlements.ts
+ * precedent, and the reason this module still imports no `../db`. */
+export interface DenialReader {
+  listDenials(wallet: string, limit?: number): DenialRow[];
+  countDenials(wallet: string): number;
+}
+
+/** One page is the whole screen: a payer with more refusals than this has a
+ * misconfigured agent, not a paging problem, and `total` still says so. */
+export const DENIAL_PAGE_LIMIT = 50;
+
+/**
+ * `wallet` is REQUIRED, and a missing or malformed one is refused rather than
+ * widened: a denial exposes an agent's spend policy — what it may buy and where
+ * it hit its cap — so "no filter" must never mean "every payer's".
+ */
+export function parseDenialQuery(params: Record<string, unknown>): { wallet: Address } {
+  const raw = params["wallet"];
+  if (raw === undefined) {
+    throw new ApiError(400, "MissingWallet", "wallet is required — GET /api/denials?wallet=0x…");
+  }
+  if (typeof raw !== "string") {
+    // A repeated `?wallet=a&wallet=b` arrives as an array; picking a winner
+    // would answer a question the caller did not ask.
+    throw new ApiError(400, "InvalidWallet", "wallet must be given at most once");
+  }
+  // EIP-55 is deliberately not enforced — this is a read filter, so the worst a
+  // wrong one does is return nothing (parsePayerFilter reasons the same way).
+  if (!isAddress(raw.trim(), { strict: false })) {
+    throw new ApiError(400, "InvalidWallet", `wallet is not an address: ${JSON.stringify(raw)}`);
+  }
+  return { wallet: raw.trim().toLowerCase() as Address };
+}
+
+export function listAgentDenials(
+  store: DenialReader,
+  params: Record<string, unknown>,
+): DenialListResponse {
+  const { wallet } = parseDenialQuery(params);
+  return {
+    rows: store.listDenials(wallet, DENIAL_PAGE_LIMIT).map(denialEventOf),
+    total: store.countDenials(wallet),
+  };
 }

@@ -317,33 +317,50 @@ function settleLandedAfterAll(
   };
 }
 
-type CancelOutcome = "cancelled" | "already_settled" | "failed";
+export type CancelOutcome = "cancelled" | "already_settled" | "failed";
+
+export interface CancelResult {
+  outcome: CancelOutcome;
+  /** The cancel tx, and ONLY when one landed. A denied agent purchase leaves no
+   * other transaction behind — its policy revert dies in simulation — so this
+   * is the single hash its receipt can link. null on every other outcome:
+   * there is nothing to show and nothing may be invented. */
+  txHash: Hex | null;
+}
 
 /** Cancels a pending bridge intent, branching on WHY a cancel could not land —
  * IntentAlreadySettled is load-bearing evidence for the settle resolver. */
-export async function tryCancelIntent(intentId: Hex): Promise<CancelOutcome> {
+export async function tryCancelIntentWithTx(intentId: Hex): Promise<CancelResult> {
+  let txHash: Hex;
   try {
-    await sendRelayerTx({
+    const { receipt } = await sendRelayerTx({
       address: config.addresses.gantryCore,
       abi: gantryCoreAbi,
       functionName: "cancelIntent",
       args: [intentId],
     });
+    txHash = receipt.transactionHash;
   } catch (err) {
     const decoded = decodeGantryError(err);
     if (decoded.kind === "custom" && decoded.name === "IntentAlreadySettled") {
       console.error(`bridge: cancel of ${intentId} reverted IntentAlreadySettled — settlement landed`);
-      return "already_settled";
+      return { outcome: "already_settled", txHash: null };
     }
     console.error(`bridge: cancel of intent ${intentId} failed (it will expire on its own):`, err);
-    return "failed";
+    return { outcome: "failed", txHash: null };
   }
   try {
     setIntentStatus(intentId, "cancelled");
   } catch (dbErr) {
     console.error(`bridge: cancel landed but cache update failed for ${intentId}:`, dbErr);
   }
-  return "cancelled";
+  return { outcome: "cancelled", txHash };
+}
+
+/** Outcome-only view for the compensation paths, which branch on WHY a cancel
+ * could not land and have no use for the hash. */
+export async function tryCancelIntent(intentId: Hex): Promise<CancelOutcome> {
+  return (await tryCancelIntentWithTx(intentId)).outcome;
 }
 
 function readAuthorizationState(asset: Address, authorizer: Address, nonce: Hex): Promise<boolean> {

@@ -1,4 +1,4 @@
-import { type Address, type Hex } from "viem";
+import { keccak256, toBytes, type Address, type Hex } from "viem";
 import {
   IntentStatus,
   caip2,
@@ -9,10 +9,17 @@ import {
 } from "@gantry/shared";
 import { publicClient } from "../chain";
 import { config } from "../config";
-import { getIntentRow, setIntentStatus } from "../db";
-import { failure, isDefiniteFailure, reasonAndMessage, tryCancelIntent } from "./bridge";
+import { getIntentRow, insertDenial, setIntentStatus } from "../db";
+import {
+  failure,
+  isDefiniteFailure,
+  reasonAndMessage,
+  tryCancelIntent,
+  tryCancelIntentWithTx,
+} from "./bridge";
+import { parseOrderPins } from "./facilitator-core";
 import { verifyPbm } from "./facilitator";
-import { GantryPbmPayloadSchema } from "./pbm-core";
+import { GantryPbmPayloadSchema, policyDenialOf } from "./pbm-core";
 import { settlePbm } from "./settlement";
 
 /**
@@ -91,7 +98,10 @@ async function resolveFailedPbmSettle(
   const { reason, message } = reasonAndMessage(err);
 
   if (isDefiniteFailure(err)) {
-    await tryCancelIntent(intentId);
+    // The cancel is the only tx a denial leaves behind, so take its hash on the
+    // way past — the payer's receipt has nothing else to link to.
+    const cancel = await tryCancelIntentWithTx(intentId);
+    recordPbmDenial(err, intentId, pbmWallet, requirements, cancel.txHash);
     return failure(reason, message, pbmWallet);
   }
 
@@ -107,6 +117,59 @@ async function resolveFailedPbmSettle(
   // the wallet's funds never left it unless the settle mined (in which case
   // the indexer sweep will surface the row).
   return failure(reason, `${message} (settle outcome unresolved — no funds are custodied)`, pbmWallet);
+}
+
+/**
+ * A refused purchase is the one payment outcome that leaves NOTHING on-chain:
+ * the wallet's policy revert is caught by simulate-before-send and never
+ * broadcast, so no event exists and no log can be swept. This row is the only
+ * trace it happened, and the payer's activity renders it as "Declined
+ * on-chain" — which is why `policyDenialOf` returns null for anything that is
+ * not a decoded wallet policy error. Writing a row for a transport blip or a
+ * core-level revert would put a fabricated claim about the chain on a screen.
+ * The caller's isDefiniteFailure gate is the other half of that: an outcome
+ * that might still mine is not a denial either.
+ *
+ * Order facts come from the server-pinned requirements.extra, never a client
+ * echo (the bridge's trust rule) — and verification already proved they match
+ * the intent, so no read is needed to restate them.
+ */
+function recordPbmDenial(
+  err: unknown,
+  intentId: Hex,
+  pbmWallet: Address,
+  requirements: X402PaymentRequirements,
+  cancelTx: Hex | null,
+): void {
+  const denial = policyDenialOf(err);
+  if (!denial) return;
+
+  const pins = parseOrderPins(requirements.extra);
+  if (!pins) {
+    console.error(`pbm: denial of intent ${intentId} not recorded — requirements pin no order facts`);
+    return;
+  }
+
+  try {
+    insertDenial({
+      intent_id: intentId,
+      handle: pins.handle,
+      merchant_id: keccak256(toBytes(pins.handle)),
+      wallet: pbmWallet,
+      token_in: requirements.asset,
+      amount_in: requirements.amount,
+      xsgd_amount: pins.xsgdAmount.toString(),
+      error_name: denial.errorName,
+      error_args: denial.errorArgs ? JSON.stringify(denial.errorArgs) : null,
+      cancel_tx: cancelTx,
+      created_at: Math.floor(Date.now() / 1000),
+    });
+  } catch (dbErr) {
+    // The payment outcome is authoritative and already decided; this row is a
+    // convenience. A cache write must never turn a handled x402 failure into a
+    // thrown one, nor change the response the agent gets.
+    console.error(`pbm: recording the denial of intent ${intentId} failed`, dbErr);
+  }
 }
 
 function pbmSettleLandedAfterAll(
