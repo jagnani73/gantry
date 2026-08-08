@@ -7,6 +7,7 @@ import {
   BASE_SEPOLIA_CHAIN_ID,
   BASE_SEPOLIA_DEPLOY_BLOCK,
 } from "@gantry/shared";
+import { faucetCeilings } from "./services/faucet-core";
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envFile = resolve(backendRoot, ".env");
@@ -104,6 +105,11 @@ function classifyHost(nodeEnv: string | undefined): HostClass {
 
 const hostClass = classifyHost(env.NODE_ENV);
 const isDemoHost = hostClass === "demo";
+/** Both faucet ceilings, decided in services/faucet-core.ts — the module that
+ * also owns the grant sizes they are five of, and the only place either ceiling
+ * is wired to a leg. Restating the numbers here would be two sources for one
+ * arithmetic story, and the one a unit test can reach is that one. */
+const faucetLimits = faucetCeilings(isDemoHost);
 
 const rpcUrls = requireRpcUrls();
 const rpcUrl = rpcUrls[0]!;
@@ -127,7 +133,8 @@ export const config = {
   hostClass,
   /**
    * Rolling-24h ceiling on payer funding across ALL addresses, or null for
-   * unmetered.
+   * unmetered. Reported at boot; the faucet itself reads it through
+   * `createFaucetLegs`.
    *
    * The faucet transfers REAL Circle USDC out of the relayer and its cooldown is
    * per-address, so fresh addresses make the grant loop unbounded. A ceiling
@@ -141,12 +148,12 @@ export const config = {
    * Unmetered on a demo host: a rehearsal pass alone spends two grants
    * (`e2e:pay` + `x402:buy`), so ten of them would blow any sane ceiling.
    */
-  faucetDailyBudget: isDemoHost ? null : 20_000_000n,
+  faucetDailyBudget: faucetLimits.usdc,
   /**
-   * Rolling-24h ceiling, in WEI, on the faucet's ETH leg — or null for
-   * unmetered. Deliberately a SECOND ceiling rather than a shared counter with
-   * the USDC one: they guard different assets against different failures, and
-   * one must never be able to exhaust the other.
+   * Rolling-24h ceiling, in WEI, on the faucet's gas leg — or null for
+   * unmetered. A SECOND ceiling rather than a shared counter with the USDC one,
+   * and since the two legs also hold separate cooldowns and separate entry
+   * points, neither can exhaust the other NOR make it unreachable.
    *
    * Agent wallets are owned by the payer, so `createWallet`, `setPolicy` and
    * `revoke` are the payer's own transactions and a fresh key cannot send them
@@ -162,7 +169,7 @@ export const config = {
    * Unmetered on a demo host, like the USDC leg — a rehearsal pass funds
    * several addresses and ten of them would blow any sane ceiling.
    */
-  faucetEthDailyBudget: isDemoHost ? null : 10_000_000_000_000_000n,
+  faucetEthDailyBudget: faucetLimits.gas,
   /**
    * Whether strangers may register merchants. Same key, different resource:
    * onboarding spends relayer ETH per call and permanently claims a handle,

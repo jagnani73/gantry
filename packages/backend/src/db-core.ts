@@ -74,7 +74,11 @@ export interface DenialRow {
   created_at: number;
 }
 
-/** Filters shared by the settlement list and its total-count sibling. */
+/**
+ * Filters shared by the settlement list and its total-count sibling. Omit a key
+ * to match every row on that dimension; a key that is present but names nobody
+ * is REFUSED (see `settlementWhere`), because widening it is invisible.
+ */
 export interface SettlementFilter {
   handle?: string;
   /** Lowercased addresses; a row matches if `payer` OR `agent_payer` is in the
@@ -250,16 +254,31 @@ export function createDatabase(path: string) {
     return stmt;
   }
 
-  /** WHERE fragment + bound params shared by the list and count queries, so the
-   * two can never disagree about what "matching" means. */
+  /**
+   * WHERE fragment + bound params shared by the list and count queries, so the
+   * two can never disagree about what "matching" means.
+   *
+   * A key PRESENT but naming nobody (`{ handle: "" }`, `{ payers: [] }`) is
+   * refused, never widened. A truthiness test here turns either into "every row
+   * on the rail" — strangers' takings under one merchant's name, strangers'
+   * payments in someone's activity feed — which is the exact failure
+   * `parsePayerFilter` exists to prevent one layer up. The route validates too,
+   * but this is the store's public surface and `SettlementReader` invites other
+   * callers. Throwing is right rather than harsh: only a caller bug gets here,
+   * and a 500 is visible where a widened feed is not.
+   */
   function settlementWhere(filter: SettlementFilter): { sql: string; params: unknown[] } {
     const clauses: string[] = [];
     const params: unknown[] = [];
-    if (filter.handle) {
+    if (filter.handle !== undefined) {
+      if (filter.handle === "") throw new Error("settlement filter: handle is present but empty");
       clauses.push("handle = ?");
       params.push(filter.handle.toLowerCase());
     }
-    if (filter.payers?.length) {
+    if (filter.payers !== undefined) {
+      if (filter.payers.length === 0) {
+        throw new Error("settlement filter: payers is present but lists no addresses");
+      }
       const holes = filter.payers.map(() => "?").join(", ");
       const lowered = filter.payers.map((a) => a.toLowerCase());
       clauses.push(`(payer IN (${holes}) OR agent_payer IN (${holes}))`);

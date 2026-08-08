@@ -4,6 +4,7 @@ import type {
   ApiErrorBody,
   CreateIntentRequest,
   DenialListResponse,
+  FaucetGasResponse,
   FaucetResponse,
   IntentResponse,
   MerchantResponse,
@@ -104,6 +105,19 @@ export const api = {
     call<IntentResponse>(`/api/intents/${intentId}/requote`, { method: "POST", body: "{}" }),
   faucet: (address: string) =>
     call<FaucetResponse>("/api/faucet", { method: "POST", body: JSON.stringify({ address }) }),
+
+  /**
+   * Gas only. Use this — never `faucet()` — when the caller needs to SEND a
+   * transaction rather than pay one: it never touches the scarce USDC ceiling
+   * or its cooldown, and it refuses in gas vocabulary. Calling `faucet()` for
+   * gas is how a payer who paid 30 seconds ago gets a 429 about USDC when they
+   * tap Revoke.
+   */
+  faucetGas: (address: string) =>
+    call<FaucetGasResponse>("/api/faucet/gas", {
+      method: "POST",
+      body: JSON.stringify({ address }),
+    }),
 
   updateMerchantProfile: (handle: string, req: UpdateMerchantProfileRequest) =>
     call<MerchantResponse>(`/api/merchants/${handle}`, {

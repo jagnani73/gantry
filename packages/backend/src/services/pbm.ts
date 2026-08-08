@@ -133,6 +133,13 @@ async function resolveFailedPbmSettle(
  * Order facts come from the server-pinned requirements.extra, never a client
  * echo (the bridge's trust rule) — and verification already proved they match
  * the intent, so no read is needed to restate them.
+ *
+ * The guard wraps the WHOLE body, decode and all. Its caller has already
+ * computed the reason it is about to return, and the only catch above it is
+ * settlePbmScheme's, which discards that and answers `settlement_failed` — so a
+ * throw anywhere in here (a malformed revert the decoder chokes on, a pin that
+ * is not a string) would collapse `CategoryNotAllowed` into noise and take the
+ * sharpest beat in the demo with it. Nothing here may fail loudly.
  */
 function recordPbmDenial(
   err: unknown,
@@ -141,16 +148,16 @@ function recordPbmDenial(
   requirements: X402PaymentRequirements,
   cancelTx: Hex | null,
 ): void {
-  const denial = policyDenialOf(err);
-  if (!denial) return;
-
-  const pins = parseOrderPins(requirements.extra);
-  if (!pins) {
-    console.error(`pbm: denial of intent ${intentId} not recorded — requirements pin no order facts`);
-    return;
-  }
-
   try {
+    const denial = policyDenialOf(err);
+    if (!denial) return;
+
+    const pins = parseOrderPins(requirements.extra);
+    if (!pins) {
+      console.error(`pbm: denial of intent ${intentId} not recorded — requirements pin no order facts`);
+      return;
+    }
+
     insertDenial({
       intent_id: intentId,
       handle: pins.handle,
@@ -164,11 +171,12 @@ function recordPbmDenial(
       cancel_tx: cancelTx,
       created_at: Math.floor(Date.now() / 1000),
     });
-  } catch (dbErr) {
+  } catch (recordErr) {
     // The payment outcome is authoritative and already decided; this row is a
-    // convenience. A cache write must never turn a handled x402 failure into a
-    // thrown one, nor change the response the agent gets.
-    console.error(`pbm: recording the denial of intent ${intentId} failed`, dbErr);
+    // convenience. Nothing on this path — decoding the revert, reading the pins
+    // or the cache write itself — may turn a handled x402 failure into a thrown
+    // one, nor change the response the agent gets.
+    console.error(`pbm: recording the denial of intent ${intentId} failed`, recordErr);
   }
 }
 

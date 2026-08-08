@@ -158,6 +158,29 @@ test("payer filter matches the on-chain payer OR the bridged agent payer", () =>
   assert.equal(store.countSettlements({ handle: "ah-hock-chicken-rice" }), 3);
 });
 
+test("a filter that names nobody is refused, never widened to every row", () => {
+  // The invisible failure: `{ handle: "" }` and `{ payers: [] }` under a
+  // truthiness check drop their WHERE clause and return the whole rail —
+  // strangers' takings under one merchant's name, strangers' payments in
+  // someone's activity feed. The route validates too, but this is the store's
+  // public surface, so it has to refuse on its own.
+  for (const filter of [{ handle: "" }, { payers: [] }, { handle: "", payers: ["0xagent"] }]) {
+    assert.throws(
+      () => store.listSettlements(filter, null, 10),
+      `list must refuse ${JSON.stringify(filter)}`,
+    );
+    assert.throws(
+      () => store.countSettlements(filter),
+      `count must refuse ${JSON.stringify(filter)}`,
+    );
+  }
+
+  // Absent still means "every row" — that is the dashboard's unscoped feed, and
+  // refusing it would be the opposite mistake.
+  assert.equal(store.listSettlements({}, null, 10).rows.length > 0, true);
+  assert.equal(store.countSettlements({}), 5);
+});
+
 test("merchant profiles upsert in place and survive a cache clear", () => {
   store.upsertMerchantProfile({
     handle: "Ah-Hock-Chicken-Rice",

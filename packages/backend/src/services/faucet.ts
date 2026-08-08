@@ -1,12 +1,19 @@
-import { erc20Abi, formatEther, type Address } from "viem";
+import { erc20Abi, formatEther, type Address, type Hex } from "viem";
 import type { FaucetResponse } from "@gantry/shared";
 import { publicClient, relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
 import { sendRelayerEth, sendRelayerTx } from "../relayer";
 import { isDefiniteFailure } from "./bridge";
-import { emptyBudget, msUntilReset, release, reserve } from "./faucet-budget";
-import { funderCanSend, gasTopUpAmount } from "./faucet-core";
+import {
+  ETH_TARGET,
+  FUNDER_ETH_RESERVE,
+  GRANT,
+  createFaucetLegs,
+  funderCanSend,
+  gasTopUpAmount,
+  type LegRefusal,
+} from "./faucet-core";
 
 /**
  * Demo-only funder: the relayer TRANSFERS real Circle USDC so a burner payer
@@ -19,92 +26,89 @@ import { funderCanSend, gasTopUpAmount } from "./faucet-core";
  * open mint never had — so it is reported as itself rather than as a bare
  * revert.
  *
- * Two legs, in priority order. USDC is what a payer needs to PAY, and its
- * failure is the caller's problem. A small ETH top-up follows so the payer can
- * send the transactions they now own — agent wallets are theirs, so `setPolicy`
- * and `revoke` are signed by their key — and that leg never throws. The two
- * spend different assets against different ceilings, and neither can exhaust
- * the other's.
+ * TWO LEGS, AND THEY ARE INDEPENDENT — in reachability, not merely in
+ * accounting. USDC is what a payer needs to PAY; ETH is what a payer needs to
+ * send the transactions they OWN (agent wallets are theirs, so `setPolicy` and
+ * `revoke` are signed by their key). Each leg has its own rolling ceiling, its
+ * own per-address cooldown and its own in-flight set, and each has an entry
+ * point that fails in its own vocabulary:
+ *
+ *   fundPayer(address)     — "make this payer able to pay"; USDC is fatal, gas
+ *                            is reported.
+ *   fundPayerGas(address)  — "make this payer able to send"; gas is fatal, and
+ *                            the USDC ceiling is never touched.
+ *
+ * They used to be one serial call in the other order, which meant every USDC
+ * refusal — a 60s cooldown from the payment 30 seconds ago, a spent daily
+ * allowance — made the gas leg unreachable. A presenter paying S$1.50 and then
+ * tapping Revoke got a 429 about USDC while the ETH ceiling sat untouched.
  */
-/** Must cover the LARGEST single payment a funded payer makes, because the
- * payer page funds once and then signs: the agent-door order is S$4.50 ≈ 3.36
- * USDC, and the burner amount cap (S$5 ≈ 3.73) is deliberately set just under
- * this so one grant always suffices. */
-const GRANT = 4_000_000n; // 4 USDC
-const COOLDOWN_MS = 60_000;
-const BUDGET_WINDOW_MS = 86_400_000; // 24h, rolling from the first grant
 
-/**
- * Where the payer's ETH balance is topped up to. Enough for the owner
- * transactions an agent needs — one `createWallet` (a contract deployment, the
- * expensive one) plus several `setPolicy`/`revoke` calls at Base Sepolia's fees,
- * with room for the L1 data component to move.
- */
-const ETH_TARGET = 2_000_000_000_000_000n; // 0.002 ETH
-/**
- * ETH the relayer must still hold after a top-up. Matches MIN_ETH_RESERVE in
- * services/funder.ts on purpose: it is the same key and the same question, and
- * two different floors on one balance would be two different wrong answers.
- */
-const FUNDER_ETH_RESERVE = 50_000_000_000_000_000n; // 0.05 ETH
+/** Everything rate-limiting, per leg. Ceilings are wired to legs inside
+ * faucet-core so a test can prove which one each leg got. */
+const legs = createFaucetLegs(config.hostClass === "demo");
 
-const lastFunded = new Map<string, number>();
-/**
- * Bounds CONCURRENT grants per address. The cooldown alone only rate-limits
- * strictly serial requests, because `lastFunded` is written after the transfer
- * confirms — so N parallel requests for one address all pass that check and each
- * sends 4 real USDC. Same reasoning as `registerInFlight` in merchants.ts, and
- * it matters more here: onboarding spends gas, this spends the scarce asset.
- */
-const inFlight = new Set<string>();
-
-let budget = emptyBudget();
-/** The ETH leg's ceiling, counted separately from the USDC one — see
- * config.faucetEthDailyBudget. A shared counter would let a run of gas top-ups
- * close the door on payments, or the reverse. */
-let ethBudget = emptyBudget();
-
-export async function fundPayer(address: Address): Promise<FaucetResponse> {
-  const key = address.toLowerCase();
-  const last = lastFunded.get(key);
-  if (last && Date.now() - last < COOLDOWN_MS) {
-    throw new ApiError(429, "FaucetCooldown", "faucet cooldown active — try again shortly");
-  }
-  if (inFlight.has(key)) {
-    throw new ApiError(429, "FaucetInFlight", "a grant to this address is already in flight");
-  }
-
-  inFlight.add(key);
-  try {
-    // USDC first: it is the payment spine, and it is the leg whose failure must
-    // reach the caller. The gas leg runs after it and never throws.
-    const funded = await grant(address, key);
-    await topUpPayerGas(address);
-    return funded;
-  } finally {
-    inFlight.delete(key);
-  }
+/** The gas leg's outcome, reported rather than thrown on the payment path. */
+export interface GasTopUpResult {
+  /** null when nothing was sent — the payer already held the target, or the
+   * top-up was refused (see `error`). */
+  txHash: Hex | null;
+  /** Wei transferred; "0" when nothing was sent. */
+  funded: string;
+  /** Why nothing was sent, when that was a refusal rather than "not needed".
+   * Named so a screen can say "gas top-up refused" instead of inventing one. */
+  error?: { name: string; message: string };
 }
 
-async function grant(address: Address, key: string): Promise<FaucetResponse> {
-  const now = Date.now();
-  const reservation = reserve(budget, GRANT, config.faucetDailyBudget, now, BUDGET_WINDOW_MS);
-  if (!reservation.ok) {
-    // Deliberately NOT committing `reservation.state` here. On the rolled path it
-    // carries a fresh `windowStart` with nothing spent, so committing it on a
-    // REFUSAL would restart the 24h countdown every time someone is turned away
-    // — `msUntilReset` would advertise a full day, forever, for a condition that
-    // never improves. Only a granted reservation may move the window.
-    const mins = Math.ceil(msUntilReset(reservation.state, now, BUDGET_WINDOW_MS) / 60_000);
-    throw new ApiError(
-      429,
-      "FaucetBudgetExhausted",
-      `the demo faucet's daily allowance is spent (${reservation.remaining} units left, ` +
-        `resets in ~${mins} min) — pay from a wallet that already holds Base Sepolia USDC, ` +
-        "or run a local backend, where funding is unmetered.",
-    );
-  }
-  budget = reservation.state;
+/** Structurally a FaucetResponse (the shared wire type) plus the gas leg's
+ * outcome — an added optional-shaped field, so every existing client keeps
+ * reading the same two. */
+export interface FaucetGrantResponse extends FaucetResponse {
+  gas: GasTopUpResult;
+}
+
+/** A fresh object each time, never one shared instance: this is handed straight
+ * to a response body, and two requests must not be able to alias it. */
+const nothingSent = (): GasTopUpResult => ({ txHash: null, funded: "0" });
+
+/**
+ * The payment entry point: 4 USDC, plus enough ETH for the payer's own
+ * transactions.
+ *
+ * The USDC leg is the fatal one here — a payer who cannot be funded cannot pay
+ * at all, while a payer without gas has one screen they cannot use — so its
+ * refusals still throw exactly as they always did. The gas leg runs FIRST and
+ * never throws on this path, which is what makes it reachable even when the
+ * USDC leg is about to refuse.
+ */
+export async function fundPayer(address: Address): Promise<FaucetGrantResponse> {
+  const gas = await topUpGas(address, false);
+  const funded = await grantUsdc(address);
+  return { ...funded, gas };
+}
+
+/**
+ * The gas-only entry point, for a caller that wants to SEND rather than pay —
+ * the payer app asks for this before an `onlyOwner` write when the key is empty.
+ *
+ * It never reserves, spends or waits on the USDC leg: that asset is scarce
+ * (five grants a day on a public host) and a caller who already holds plenty of
+ * USDC must not burn a grant to get 0.002 ETH. Failures throw, and they throw
+ * in gas vocabulary — the whole point is that the caller hears about gas.
+ *
+ * `txHash: null` with `funded: "0"` is a SUCCESS: the payer already held the
+ * target and nothing needed sending.
+ */
+export function fundPayerGas(address: Address): Promise<GasTopUpResult> {
+  return topUpGas(address, true);
+}
+
+// ------------------------------------------------------------------ USDC leg
+
+async function grantUsdc(address: Address): Promise<FaucetResponse> {
+  const key = address.toLowerCase();
+  const refusal = legs.usdc.claim(key, GRANT, Date.now());
+  if (refusal) throw usdcRefusalError(refusal);
 
   // Everything from the reservation to a confirmed transfer lives in one try, so
   // there is no path that counts a grant against the day's allowance without
@@ -137,13 +141,13 @@ async function grant(address: Address, key: string): Promise<FaucetResponse> {
     });
     // Cooldown only after a successful transfer — a failed one must surface its
     // real error on retry, not a bogus 429.
-    lastFunded.set(key, Date.now());
+    legs.usdc.armCooldown(key, Date.now());
     return { txHash: receipt.transactionHash, funded: GRANT.toString() };
   } catch (err) {
     if (isDefiniteFailure(err)) {
       // Proven that nothing moved: a pre-broadcast ApiError, a decoded revert, or
       // a mined-but-reverted receipt. Safe to hand the allowance back.
-      budget = release(budget, GRANT);
+      legs.usdc.release(GRANT);
       throw err;
     }
     // Ambiguous — a receipt timeout or a transport failure after broadcast. The
@@ -156,18 +160,39 @@ async function grant(address: Address, key: string): Promise<FaucetResponse> {
     // still short, and a SECOND grant goes out against a ceiling that recorded
     // one. viem puts the tx hash in the timeout message, which is what makes the
     // manual check below possible.
-    lastFunded.set(key, Date.now());
+    legs.usdc.armCooldown(key, Date.now());
     console.error(
       `faucet CRITICAL: grant of ${GRANT} to ${address} has an UNRESOLVED outcome — ` +
         `reservation kept and cooldown armed. Check the address on-chain before re-granting.`,
       err,
     );
     throw err;
+  } finally {
+    legs.usdc.finish(key);
   }
 }
 
+function usdcRefusalError(refusal: LegRefusal): ApiError {
+  if (refusal.kind === "cooldown") {
+    return new ApiError(429, "FaucetCooldown", "faucet cooldown active — try again shortly");
+  }
+  if (refusal.kind === "in_flight") {
+    return new ApiError(429, "FaucetInFlight", "a grant to this address is already in flight");
+  }
+  const mins = Math.ceil(refusal.resetInMs / 60_000);
+  return new ApiError(
+    429,
+    "FaucetBudgetExhausted",
+    `the demo faucet's daily allowance is spent (${refusal.remaining} units left, ` +
+      `resets in ~${mins} min) — pay from a wallet that already holds Base Sepolia USDC, ` +
+      "or run a local backend, where funding is unmetered.",
+  );
+}
+
+// ------------------------------------------------------------------- gas leg
+
 /**
- * The second leg: enough ETH for the payer to send their OWN transactions.
+ * Enough ETH for the payer to send their OWN transactions.
  *
  * Agent wallets are owned by the payer, and `createWallet`, `setPolicy` and
  * `revoke` are `onlyOwner` — so those are the payer's transactions, signed with
@@ -176,45 +201,35 @@ async function grant(address: Address, key: string): Promise<FaucetResponse> {
  * signature the relayer submits, and costs the payer nothing. Label it as what
  * it is — an owner funding their own wallet, which is ordinary.
  *
- * Never fatal, deliberately. By the time this runs the USDC grant has already
- * landed, and the two failures are not comparable: a payer who cannot configure
- * an agent has one screen they cannot use, while a payer who cannot be funded
- * cannot pay at all. So every failure here is logged and swallowed.
+ * `fatal` is the caller's motive, not a policy: on `fundPayer` the USDC grant is
+ * the point and a gas failure is a warning, while on `fundPayerGas` gas IS the
+ * request and swallowing its failure would hand back a 200 that fixed nothing.
+ * Either way the leg is entered and the guards below run identically.
  *
- * It also spends the ONE asset whose exhaustion stops everything. The relayer's
+ * This leg spends the ONE asset whose exhaustion stops everything. The relayer's
  * ETH pays for QR settlement, x402 settlement, intent creation and merchant
  * registration; running it down does not degrade the demo, it ends it. Hence
- * three independent bounds, none of which can be traded for another: the
- * per-address cooldown and in-flight set shared with the USDC leg, a rolling
- * 24h ceiling of its own, and a floor on what the funder keeps.
+ * three independent bounds, none of which can be traded for another: a
+ * per-address cooldown and in-flight set of its OWN (never the USDC leg's), a
+ * rolling 24h ceiling of its own, and a floor on what the funder keeps.
  */
-async function topUpPayerGas(address: Address): Promise<void> {
+async function topUpGas(address: Address, fatal: boolean): Promise<GasTopUpResult> {
+  const key = address.toLowerCase();
   let reserved = 0n;
   try {
     const balance = await publicClient.getBalance({ address });
     const send = gasTopUpAmount(balance, ETH_TARGET);
-    if (send === 0n) return;
+    // Already funded. Claimed nothing, so no cooldown is armed and no allowance
+    // moves — which is what makes this callable before every owner write.
+    if (send === 0n) return nothingSent();
 
-    const now = Date.now();
-    const reservation = reserve(ethBudget, send, config.faucetEthDailyBudget, now, BUDGET_WINDOW_MS);
-    if (!reservation.ok) {
-      // Same rule as the USDC leg: a refusal must NOT commit the rolled state,
-      // or `msUntilReset` advertises a fresh day every time someone is turned
-      // away and the countdown never actually runs down.
-      const mins = Math.ceil(msUntilReset(reservation.state, now, BUDGET_WINDOW_MS) / 60_000);
-      console.warn(
-        `faucet: gas top-up for ${address} refused — the 24h ETH allowance is spent ` +
-          `(${formatEther(reservation.remaining)} ETH left, resets in ~${mins} min). ` +
-          `The payer can still pay; they cannot configure an agent until they hold gas.`,
-      );
-      return;
-    }
-    ethBudget = reservation.state;
+    const refusal = legs.gas.claim(key, send, Date.now());
+    if (refusal) throw gasRefusalError(refusal, address, send);
     reserved = send;
 
     const funderEth = await publicClient.getBalance({ address: relayerAccount.address });
     if (!funderCanSend(funderEth, send, FUNDER_ETH_RESERVE)) {
-      // ApiError is a definite failure, so the catch below hands the allowance
+      // ApiError is a definite failure, so the handler below hands the allowance
       // back. Said plainly because this is the sentence an operator needs: the
       // gas key is close to the floor and every door is about to fail with it.
       throw new ApiError(
@@ -226,34 +241,80 @@ async function topUpPayerGas(address: Address): Promise<void> {
       );
     }
 
-    await sendRelayerEth(address, send);
+    const receipt = await sendRelayerEth(address, send);
+    legs.gas.armCooldown(key, Date.now());
+    return { txHash: receipt.transactionHash, funded: send.toString() };
   } catch (err) {
-    if (reserved === 0n) {
-      // A read failed before anything was reserved or sent.
-      console.warn(`faucet: gas top-up for ${address} skipped`, err);
-      return;
-    }
-    if (isDefiniteFailure(err)) {
-      // Proven that nothing moved — a pre-broadcast ApiError or a
-      // mined-but-reverted receipt. Safe to hand the allowance back.
-      ethBudget = release(ethBudget, reserved);
-      console.warn(`faucet: gas top-up of ${formatEther(reserved)} ETH to ${address} failed`, err);
-      return;
-    }
+    return resolveFailedGasTopUp(err, address, reserved, fatal);
+  } finally {
+    legs.gas.finish(key);
+  }
+}
+
+function resolveFailedGasTopUp(
+  err: unknown,
+  address: Address,
+  reserved: bigint,
+  fatal: boolean,
+): GasTopUpResult {
+  if (reserved === 0n) {
+    // Nothing was reserved: a read failed, or the leg refused before spending.
+    console.warn(`faucet: gas top-up for ${address} not sent`, err);
+  } else if (isDefiniteFailure(err)) {
+    // Proven that nothing moved — a pre-broadcast ApiError or a
+    // mined-but-reverted receipt. Safe to hand the allowance back.
+    legs.gas.release(reserved);
+    console.warn(`faucet: gas top-up of ${formatEther(reserved)} ETH to ${address} failed`, err);
+  } else {
     // Ambiguous — a receipt timeout or a transport failure after broadcast. The
     // compensation invariant applies here exactly as it does to the USDC leg:
     // the helper throwing does not prove the transaction did not happen, so the
     // reservation is KEPT (over-counting costs one top-up; under-counting hands
     // out ETH nothing accounted for) and nothing is re-sent.
     //
-    // What makes this leg self-correcting is that it is a top-up rather than a
-    // grant: if the transaction we could not confirm did land, the next call
-    // reads the higher balance and sends nothing. A flat per-call grant would
-    // instead double up on exactly this path.
+    // No cooldown is armed, unlike the USDC leg, and the difference is that this
+    // is a top-up rather than a grant: if the transaction we could not confirm
+    // did land, the next call reads the higher balance and sends nothing, so the
+    // retry is free — and if it did NOT land, blocking that retry for a minute
+    // would strand the payer for no gain.
     console.error(
       `faucet CRITICAL: gas top-up of ${formatEther(reserved)} ETH to ${address} has an ` +
         `UNRESOLVED outcome — reservation kept, nothing re-sent. Check the address on-chain.`,
       err,
     );
   }
+
+  if (fatal) throw err;
+  return {
+    ...nothingSent(),
+    error: {
+      name: err instanceof ApiError ? err.errorName : "GasTopUpFailed",
+      message: err instanceof Error ? err.message : String(err),
+    },
+  };
+}
+
+/** Gas vocabulary throughout — a caller that asked for gas must never be given
+ * advice about USDC, and the names differ from the USDC leg's so a client can
+ * tell which ceiling it hit. */
+function gasRefusalError(refusal: LegRefusal, address: Address, send: bigint): ApiError {
+  if (refusal.kind === "cooldown") {
+    return new ApiError(
+      429,
+      "FaucetGasCooldown",
+      `gas top-up cooldown active for ${address} — try again in ~${Math.ceil(refusal.retryInMs / 1000)}s`,
+    );
+  }
+  if (refusal.kind === "in_flight") {
+    return new ApiError(429, "FaucetGasInFlight", "a gas top-up for this address is already in flight");
+  }
+  const mins = Math.ceil(refusal.resetInMs / 60_000);
+  return new ApiError(
+    429,
+    "FaucetGasBudgetExhausted",
+    `the demo faucet's daily gas allowance is spent (needs ${formatEther(send)} ETH, ` +
+      `${formatEther(refusal.remaining)} left, resets in ~${mins} min) — the payer can still ` +
+      "pay; they cannot configure an agent until they hold gas. Send ETH to the address, or " +
+      "run a local backend, where funding is unmetered.",
+  );
 }

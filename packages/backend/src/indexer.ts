@@ -1,11 +1,5 @@
 import type { Address, Hex } from "viem";
-import {
-  Door,
-  doorToWire,
-  gantryCoreAbi,
-  tokenIdByAddress,
-  type SettlementEvent,
-} from "@gantry/shared";
+import { gantryCoreAbi, tokenIdByAddress, type SettlementEvent } from "@gantry/shared";
 import { publicClient, wsClient } from "./chain";
 import { config } from "./config";
 import {
@@ -17,6 +11,7 @@ import {
   clearCache,
   type SettlementRow,
 } from "./db";
+import { cursorOf, toSettlementEvent } from "./services/settlements";
 import { broadcast } from "./sse";
 
 /**
@@ -98,7 +93,7 @@ async function processLog(log: CoreLog): Promise<void> {
     };
     if (!insertSettlementRow(row)) return; // already seen via the other path
     setIntentStatus(args.intentId, "settled", log.transactionHash);
-    broadcast("settlement", `${row.block_number}:${row.log_index}`, settlementEventOf(row));
+    broadcast("settlement", cursorOf(row), settlementEventOf(row));
     return;
   }
 
@@ -109,24 +104,14 @@ async function processLog(log: CoreLog): Promise<void> {
   }
 }
 
+/**
+ * The row→wire mapping every settlement surface shares, bound to the configured
+ * address table. Only the binding lives here: the mapping itself is
+ * `toSettlementEvent` in services/settlements.ts, config-free so it can be
+ * pinned directly rather than through a stand-in that drifts from it.
+ */
 export function settlementEventOf(row: SettlementRow): SettlementEvent {
-  return {
-    intentId: row.intent_id as Hex,
-    merchantId: row.merchant_id as Hex,
-    handle: row.handle,
-    payer: row.payer as Address,
-    ...(row.agent_payer ? { agentPayer: row.agent_payer as Address } : {}),
-    tokenIn: row.token_in as Address,
-    tokenSymbol: tokenIdByAddress(config.addresses, row.token_in as Address),
-    amountIn: row.amount_in,
-    xsgdOut: row.xsgd_out,
-    feeXsgd: row.fee_xsgd,
-    door: doorToWire(row.door as Door),
-    txHash: row.tx_hash as Hex,
-    blockNumber: row.block_number,
-    logIndex: row.log_index,
-    blockTime: row.block_time,
-  };
+  return toSettlementEvent(row, (token: Address) => tokenIdByAddress(config.addresses, token));
 }
 
 // Sized to the public sepolia.base.org node's 2,000-block getLogs ceiling.

@@ -64,16 +64,28 @@ The funder is the relayer wallet: settlement is in real Circle USDC, which
 cannot be minted, so the grant is a transfer out of a finite balance and can run
 out (`FunderExhausted`).
 
-`POST /api/faucet` has a **second leg**: a small ETH top-up (target 0.002 ETH,
-sent only when the address is below it). Agent PBM wallets are owned by the
-payer, so `createWallet`, `setPolicy` and `revoke` are the payer's own
-transactions and a key that has never held ETH cannot send them. This does not
-weaken the payment story — paying a merchant is still an EIP-3009 signature the
-relayer submits, and costs the payer nothing. The ETH leg **never throws**: by
-the time it runs the USDC grant has landed, and a payer who cannot configure an
-agent has one screen they cannot use, while a payer who cannot be funded cannot
-pay at all. It is also deliberately **not on the wire** — `FaucetResponse`
-reports the USDC grant only, so no screen can grow a gas-balance readout.
+The faucet has a **second leg**: a small ETH top-up (target 0.002 ETH, sent only
+when the address is below it). Agent PBM wallets are owned by the payer, so
+`createWallet`, `setPolicy` and `revoke` are the payer's own transactions and a
+key that has never held ETH cannot send them. This does not weaken the payment
+story — paying a merchant is still an EIP-3009 signature the relayer submits, and
+costs the payer nothing.
+
+The two legs are **independent, including in reachability**. Each has its own
+rolling 24h ceiling, its own per-address cooldown, its own in-flight guard, and
+its own route:
+
+| Route | Motive | What is fatal | What is reported |
+|---|---|---|---|
+| `POST /api/faucet` | "make this payer able to **pay**" | the USDC grant — `FaucetCooldown`, `FaucetBudgetExhausted`, `FunderExhausted` still throw | the gas leg, on a `gas` field of the response: `{ txHash, funded, error? }` |
+| `POST /api/faucet/gas` | "make this payer able to **send**" | the gas top-up — `FaucetGasCooldown`, `FaucetGasBudgetExhausted`, `FunderGasLow` | nothing; `{ txHash: null, funded: "0" }` means the payer already held enough |
+
+`/api/faucet` runs the gas leg **first**, precisely so a USDC refusal cannot make
+it unreachable — they used to be serial in the other order, and a payer who paid
+30 seconds ago got a 429 about a USDC cooldown when they tapped Revoke, while the
+ETH ceiling sat untouched. `/api/faucet/gas` never touches the USDC ceiling at
+all: that asset is five grants a day on a public host, and a caller that wants
+0.002 ETH must not spend one to get it — nor hear about USDC when refused.
 
 Amount cap: **S$5** on the demo account, S$9999 on a connected wallet
 (`pay-flow.tsx`, `BURNER_MAX_SGD` / `WALLET_MAX_SGD`). The demo cap follows from
@@ -94,7 +106,7 @@ that one classification, and each spends the relayer's balances:
 | `NODE_ENV` | Payer faucet | Self-service onboarding | Profile editing |
 |---|---|---|---|
 | unset / anything else (`pnpm dev`) | On, unmetered — 4 USDC + up to 0.002 ETH per grant | On — `POST /api/merchants` registers, `/onboard` renders the form | On — `PATCH /api/merchants/:handle` accepts anyone |
-| `production` | **Capped at 20 USDC and 0.01 ETH per rolling 24h across ALL addresses**, then `FaucetBudgetExhausted` (429) | Off — `OnboardingDisabled` (403); `/onboard` renders a verified-merchant-only card instead | Off — `ProfileEditingDisabled` (403), unless the caller sends a valid `x-admin-token` |
+| `production` | **Capped at 20 USDC and 0.01 ETH per rolling 24h across ALL addresses**, then `FaucetBudgetExhausted` (429) | Off — `OnboardingDisabled` (403); `/onboard` renders a card explaining the gas-key gate instead of the form | Off — `ProfileEditingDisabled` (403), unless the caller sends a valid `x-admin-token` |
 
 `classifyHost` fails **open** by design (anything that is not exactly
 `production` counts as a demo host), so it warns loudly on any value it does not
@@ -218,11 +230,13 @@ that only its owner can write to it.
 4. `NEXT_PUBLIC_APP_URL` is encoded into the printed QR
    (`app/qr/[handle]/page.tsx`) — a standee printed against `localhost` is
    unusable from a phone.
-5. Cooldowns differ in scope: faucet per **address** (60s), merchant registration
-   per **IP** (30s), profile edit per **IP** (10s). All are in-process and
-   survive `pnpm demo:reset` — space back-to-back onboarding takes or restart the
+5. Cooldowns differ in scope: faucet per **address** (60s **per leg** — the USDC
+   grant and the gas top-up hold separate maps), merchant registration per **IP**
+   (30s), profile edit per **IP** (10s). All are in-process and survive
+   `pnpm demo:reset` — space back-to-back onboarding takes or restart the
    backend, or the second will 429.
-6. The payer needs **gas** only to own an agent. If the ETH leg of the faucet was
-   refused (its own 24h ceiling, or the relayer near its 0.05 ETH reserve), the
-   payer can still pay merchants and simply cannot configure an agent. The
-   refusal is a server-side warning, not a client error — check the backend log.
+6. The payer needs **gas** only to own an agent. If the gas leg was refused (its
+   own 24h ceiling, or the relayer near its 0.05 ETH reserve), the payer can
+   still pay merchants and simply cannot configure an agent. Through
+   `/api/faucet` that refusal is reported on the `gas` field and logged as a
+   warning rather than thrown; through `/api/faucet/gas` it is the response.

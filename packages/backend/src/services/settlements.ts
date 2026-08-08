@@ -1,11 +1,16 @@
+import type { Address, Hex } from "viem";
 import {
   decodeCursor,
+  doorToWire,
   encodeCursor,
   isValidHandle,
   parsePayerFilter,
   type CursorPosition,
+  type Door,
+  type SettlementCursor,
   type SettlementEvent,
   type SettlementListResponse,
+  type TokenId,
 } from "@gantry/shared";
 import { ApiError } from "../errors";
 import type { SettlementFilter, SettlementRow } from "../db-core";
@@ -16,13 +21,64 @@ import type { SettlementFilter, SettlementRow } from "../db-core";
  * `${blockNumber}:${logIndex}` grammar, so a client merging a history page into
  * a running feed dedupes on the key the server already treats as primary.
  *
- * The store and the row→event mapper arrive as ARGUMENTS rather than imports:
- * that keeps this module free of `../db` (which opens SQLite on import) and of
- * `../indexer` (which pulls in config and the chain clients, and config exits
- * the process when the environment is missing — CI runs the backend suite with
- * no environment at all). Same reason facilitator-core.ts and pbm-core.ts are
- * split from their wired siblings: the rules below are the part worth testing.
+ * Everything that touches the environment arrives as an ARGUMENT rather than an
+ * import: the store, and the one lookup `toSettlementEvent` cannot do on its own
+ * (naming a token needs the configured address table). That keeps this module
+ * free of `../db` (which opens SQLite on import) and of `../indexer` (which
+ * pulls in config and the chain clients, and config exits the process when the
+ * environment is missing — CI runs the backend suite with no environment at
+ * all). Same reason facilitator-core.ts and pbm-core.ts are split from their
+ * wired siblings: what lives here is the part worth testing, and the mapping is
+ * as much of it as the paging is.
  */
+
+/** Names the token a settlement was paid in. Injected because
+ * `tokenIdByAddress` needs the configured address table; `../indexer` binds it
+ * once and every caller shares that binding. */
+export type TokenSymbolLookup = (token: Address) => TokenId | null;
+
+/**
+ * The ONE row→wire mapping: the live SSE push, the reconnect replay and the
+ * paged read below all go through it, so a row a client received live and the
+ * same row re-fetched from history cannot disagree about a field.
+ *
+ * `logIndex` is on the event for that reason and not as decoration —
+ * `(txHash, logIndex)` is the store's primary key, so it is what a client
+ * merging a history page into a running feed dedupes on. Drop it and the feed
+ * renders every row it holds from both sources twice.
+ */
+export function toSettlementEvent(
+  row: SettlementRow,
+  tokenSymbolOf: TokenSymbolLookup,
+): SettlementEvent {
+  return {
+    intentId: row.intent_id as Hex,
+    merchantId: row.merchant_id as Hex,
+    handle: row.handle,
+    payer: row.payer as Address,
+    ...(row.agent_payer ? { agentPayer: row.agent_payer as Address } : {}),
+    tokenIn: row.token_in as Address,
+    tokenSymbol: tokenSymbolOf(row.token_in as Address),
+    amountIn: row.amount_in,
+    xsgdOut: row.xsgd_out,
+    feeXsgd: row.fee_xsgd,
+    door: doorToWire(row.door as Door),
+    txHash: row.tx_hash as Hex,
+    blockNumber: row.block_number,
+    logIndex: row.log_index,
+    blockTime: row.block_time,
+  };
+}
+
+/**
+ * A row's own position in the feed — the SSE event id AND the paging cursor,
+ * one grammar for both. Minted through `encodeCursor` so a row that cannot name
+ * a position fails here rather than travelling back as `"NaN:0"`, which no
+ * `?before=` and no `Last-Event-ID` could ever match.
+ */
+export function cursorOf(row: SettlementRow): SettlementCursor {
+  return encodeCursor({ blockNumber: row.block_number, logIndex: row.log_index });
+}
 
 /** No caller has ever wanted a different first page, and a page size is a
  * product decision rather than config. */
@@ -60,8 +116,9 @@ export interface SettlementReader {
 
 export interface SettlementHistoryDeps {
   store: SettlementReader;
-  /** `settlementEventOf` from the indexer — the one row→wire mapping, so a
-   * paged row and a streamed row can never disagree about a field. */
+  /** `settlementEventOf` from the indexer — `toSettlementEvent` above, bound to
+   * the configured address table. It is the same binding the SSE broadcast
+   * uses, which is what keeps a paged row and a streamed row identical. */
   toEvent: (row: SettlementRow) => SettlementEvent;
 }
 
@@ -150,10 +207,7 @@ export function listSettlementHistory(
     // client already holds can resume the scroll. `hasMore` cannot be true with
     // an empty page (the store reads limit+1), but derive from the row anyway —
     // a cursor invented from nothing is what paints a dead "Load more".
-    nextCursor:
-      hasMore && last
-        ? encodeCursor({ blockNumber: last.block_number, logIndex: last.log_index })
-        : null,
+    nextCursor: hasMore && last ? cursorOf(last) : null,
     // Deliberately the unpaginated count: it is the sidebar's nav badge, and a
     // page size must never be mistaken for how much a merchant took.
     total: deps.store.countSettlements(filter),

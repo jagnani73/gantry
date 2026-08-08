@@ -4,7 +4,7 @@ import { TOKEN_IDS } from "@gantry/shared";
 import type { Hex } from "viem";
 import { createIntent, getIntentStatusResponse, requoteIntent } from "../services/intents";
 import { settle } from "../services/settlement";
-import { fundPayer } from "../services/faucet";
+import { fundPayer, fundPayerGas } from "../services/faucet";
 
 export const intentsRouter = Router();
 
@@ -61,4 +61,22 @@ intentsRouter.post("/api/intents/:intentId/requote", async (req, res) => {
 intentsRouter.post("/api/faucet", async (req, res) => {
   const body = FaucetSchema.parse(req.body);
   res.json(await fundPayer(body.address as `0x${string}`));
+});
+
+/**
+ * Gas only — for a caller that wants to SEND rather than to pay (the payer app,
+ * before an `onlyOwner` agent write on an empty key).
+ *
+ * A separate path rather than a flag on the one above, because the two differ in
+ * what may refuse them and in what a refusal MEANS. This one never touches the
+ * USDC ceiling or its cooldown, so a payer holding plenty of USDC and no gas can
+ * always reach it, and every error it returns is about gas. Through /api/faucet
+ * that caller would spend a scarce grant to get 0.002 ETH, and hear about USDC
+ * when it was refused.
+ *
+ * `{ txHash: null, funded: "0" }` is a success: the payer already held enough.
+ */
+intentsRouter.post("/api/faucet/gas", async (req, res) => {
+  const body = FaucetSchema.parse(req.body);
+  res.json(await fundPayerGas(body.address as `0x${string}`));
 });

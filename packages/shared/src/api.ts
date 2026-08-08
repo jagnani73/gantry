@@ -1,4 +1,5 @@
 import type { Address, Hex } from "viem";
+import type { GantryErrorName } from "./errors";
 import type { TokenId } from "./tokens";
 import type { WireDoor } from "./door";
 import type { WireTypedData } from "./eip3009";
@@ -256,10 +257,33 @@ export interface FaucetRequest {
   address: Address;
 }
 
+/**
+ * The gas leg's outcome — reported, not silent, because a payer whose gas
+ * top-up quietly failed gets no error at all until an owner transaction dies in
+ * their wallet with a message naming none of this.
+ *
+ * `txHash: null` with `funded: "0"` is a SUCCESS meaning "already held enough":
+ * the leg is a top-up, not a grant, so sending nothing is the normal case.
+ */
+export interface FaucetGasResponse {
+  txHash: Hex | null;
+  /** Wei transferred. "0" means no transfer was needed. */
+  funded: string;
+  /** Present only when the leg refused; the USDC grant still succeeded. */
+  error?: { name: string; message: string };
+}
+
 export interface FaucetResponse {
   txHash: Hex;
   /** 6dp USDC units transferred from the funder. */
   funded: string;
+  /**
+   * The gas leg runs first and its failure never fails this call — a payer who
+   * cannot configure an agent has one unusable screen, where a payer who cannot
+   * be funded cannot pay at all. Callers that only need gas should use
+   * `POST /api/faucet/gas`, which never touches the scarce USDC ceiling.
+   */
+  gas?: FaucetGasResponse;
 }
 
 /** SSE `settlement` event payload (event id = `${blockNumber}:${logIndex}`). */
@@ -338,9 +362,21 @@ export interface DenialEvent {
   tokenIn: Address;
   amountIn: string;
   xsgdAmount: string;
-  /** The Gantry custom error name, VERBATIM: "CategoryNotAllowed",
-   * "DailyCapExceeded", … The UI may explain it alongside; never instead of. */
-  errorName: string;
+  /**
+   * The Gantry custom error name, VERBATIM: "CategoryNotAllowed",
+   * "DailyCapExceeded", … The UI may explain it alongside; never instead of —
+   * it is read aloud on stage, so the contract's own spelling is the payload.
+   *
+   * Widened with the open arm for the same reason `DecodedGantryError.name` is:
+   * every producer reaches this field through a viem decode (`decodeErrorResult`
+   * handles selectors outside our ABI too) or through the denials table's TEXT
+   * column, so a closed union would be a claim the wire cannot keep. The named
+   * arm still carries the ABI's spelling into editors and readers, and the
+   * enforced list is `POLICY_DENIAL_ERRORS` in services/pbm-core.ts — it is
+   * `satisfies readonly GantryErrorName[]`, so a contract-side rename breaks the
+   * build there rather than quietly emptying this feed.
+   */
+  errorName: GantryErrorName | (string & {});
   /**
    * Decoded revert args, e.g. `{ categoryId: 2 }`. Absent when the revert
    * carried none (PolicyExpired, InvalidAgentSignature). Any amount in here is

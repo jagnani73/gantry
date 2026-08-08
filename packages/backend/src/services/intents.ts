@@ -136,7 +136,14 @@ export async function requoteIntent(intentId: Hex): Promise<IntentResponse> {
     throw new ApiError(404, "UnknownIntent", `no cached quote for intent ${intentId}`);
   }
   if (row.status === "settled") {
-    throw new ApiError(409, "IntentAlreadySettled", "intent already settled");
+    // With the hash, exactly as settlement.ts's replay guard does. A requote is
+    // what the payer's "try again" button calls, and its 409 handler renders a
+    // receipt from `args.txHash` — without it, a payment that already landed
+    // comes back to its own payer as a failure while the merchant's dashboard
+    // chimes.
+    throw new ApiError(409, "IntentAlreadySettled", "intent already settled", {
+      txHash: row.settle_tx,
+    });
   }
   if (row.status === "pending") {
     await sendRelayerTx({

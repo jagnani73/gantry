@@ -3,13 +3,18 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Address, Hex } from "viem";
-import { Door, doorToWire, type SettlementEvent } from "@gantry/shared";
+import {
+  BASE_SEPOLIA_ADDRESSES,
+  Door,
+  tokenIdByAddress,
+  type SettlementEvent,
+} from "@gantry/shared";
 import { createDatabase, type SettlementRow } from "../src/db-core";
 import { ApiError } from "../src/errors";
 import {
   listSettlementHistory,
   parseSettlementQuery,
+  toSettlementEvent,
   type SettlementHistoryDeps,
 } from "../src/services/settlements";
 
@@ -17,8 +22,8 @@ import {
  * Service-level tests against a real temp SQLite file (db.test.ts precedent):
  * the paging rules are only true in combination with the SQL, so a fake store
  * would pin the wrong half. What stays out is the wiring — services/settlements
- * takes its store and mapper as arguments precisely so this file needs no
- * config, no chain client and no environment.
+ * takes its store and its token lookup as arguments precisely so this file needs
+ * no config, no chain client and no environment.
  */
 
 const dir = mkdtempSync(join(tmpdir(), "gantry-settlements-test-"));
@@ -30,30 +35,14 @@ after(() => {
 });
 
 /**
- * Stands in for indexer.settlementEventOf, which cannot be imported here (it
- * reads config.addresses to name the token, and config exits the process
- * without an environment). Same shape minus that one lookup: the mapping is the
- * indexer's, what these tests own is WHICH rows come back, in what order.
+ * The REAL mapper the SSE push and the replay use, bound the way
+ * indexer.settlementEventOf binds it. Not a look-alike: a stand-in asserts its
+ * own shape, so a field deleted from production — `logIndex`, which is half the
+ * key clients dedupe live rows against paged ones — would leave every test here
+ * green.
  */
-function toEvent(row: SettlementRow): SettlementEvent {
-  return {
-    intentId: row.intent_id as Hex,
-    merchantId: row.merchant_id as Hex,
-    handle: row.handle,
-    payer: row.payer as Address,
-    ...(row.agent_payer ? { agentPayer: row.agent_payer as Address } : {}),
-    tokenIn: row.token_in as Address,
-    tokenSymbol: null,
-    amountIn: row.amount_in,
-    xsgdOut: row.xsgd_out,
-    feeXsgd: row.fee_xsgd,
-    door: doorToWire(row.door as Door),
-    txHash: row.tx_hash as Hex,
-    blockNumber: row.block_number,
-    logIndex: row.log_index,
-    blockTime: row.block_time,
-  };
-}
+const toEvent = (row: SettlementRow): SettlementEvent =>
+  toSettlementEvent(row, (token) => tokenIdByAddress(BASE_SEPOLIA_ADDRESSES, token));
 
 const deps: SettlementHistoryDeps = { store, toEvent };
 
@@ -67,6 +56,12 @@ const STRANGER = "0x9999999999999999999999999999999999999999";
 const AH_HOCK = "ah-hock-chicken-rice";
 const GADGETHUB = "gadgethub-sg";
 
+/** Every door settles in real Circle USDC, so that is the fixture default. */
+const USDC = BASE_SEPOLIA_ADDRESSES.realUsdc;
+/** A token no address table lists — a row swept from a contract we did not
+ * deploy, or from before an address rotation. */
+const UNLISTED_TOKEN = "0x00000000000000000000000000000000000c0ffee";
+
 function settlement(
   block: number,
   logIndex: number,
@@ -79,7 +74,7 @@ function settlement(
     merchant_id: "0xmerchant",
     handle: AH_HOCK,
     payer: HUMAN,
-    token_in: "0xtoken",
+    token_in: USDC,
     amount_in: "1117652",
     xsgd_out: "1500000",
     fee_xsgd: "7500",
@@ -92,7 +87,7 @@ function settlement(
 }
 
 // Five settlements, newest last: 10:0, 10:2, 11:0, 12:0, 13:1.
-store.insertSettlementRow(settlement(10, 0));
+store.insertSettlementRow(settlement(10, 0, { token_in: UNLISTED_TOKEN }));
 store.insertSettlementRow(settlement(10, 2));
 // A bridged vanilla-x402 payment: on-chain payer is the relayer, the agent that
 // actually paid is recorded beside it.
@@ -298,14 +293,45 @@ test("a repeated query param is refused rather than silently resolved", () => {
   assert.equal(err.errorName, "ValidationError");
 });
 
+test("the cursor naming the oldest row ends the scroll instead of repeating it", () => {
+  // The terminal case the comment in listSettlementHistory is about: a client
+  // that paged all the way down hands back the last row it holds. Exclusivity
+  // means there is nothing after it, and a nextCursor minted from anything other
+  // than a returned row would paint a "Load more" that fetches this same empty
+  // page forever.
+  const end = listSettlementHistory(deps, { before: "10:0" });
+  assert.deepEqual(end.rows, []);
+  assert.equal(end.nextCursor, null);
+  // `total` is the unpaginated count for the filter, so running out of rows must
+  // not make the sidebar badge read zero.
+  assert.equal(end.total, 5);
+});
+
 test("rows carry the fields a client merges the live stream on", () => {
+  // Pins the real mapper, the one the SSE push and the reconnect replay use.
+  // `logIndex` is the load-bearing one: it is half of `(txHash, logIndex)`, the
+  // store's primary key, so without it a client cannot tell a row it already
+  // has live from the same row in a history page, and renders both.
   const [newest] = listSettlementHistory(deps, { limit: "1" }).rows;
   assert.equal(newest?.txHash, "0xtx13-1");
   assert.equal(newest?.logIndex, 1, "the row must be able to mint its own cursor");
   assert.equal(newest?.blockNumber, 13);
+  // The token is NAMED, not just addressed: every amount on a receipt is
+  // meaningless beside a bare 0x…, and the label comes from the address table.
+  assert.equal(newest?.tokenIn, USDC.toLowerCase());
+  assert.equal(newest?.tokenSymbol, "USDC");
 
   const bridged = listSettlementHistory(deps, { before: "12:0", limit: "1" }).rows[0];
   assert.equal(bridged?.payer, RELAYER.toLowerCase());
   assert.equal(bridged?.agentPayer, AGENT_WALLET.toLowerCase());
   assert.equal(bridged?.door, "agent");
+});
+
+test("an unlisted token renders as no symbol, never as a guess", () => {
+  // A row swept for a token the address table does not know still has to render
+  // — with the address and no label. Inventing one (or falling back to "USDC")
+  // would put a wrong currency beside a real amount.
+  const [oldest] = listSettlementHistory(deps, { before: "10:2" }).rows;
+  assert.equal(oldest?.tokenIn, UNLISTED_TOKEN);
+  assert.equal(oldest?.tokenSymbol, null);
 });

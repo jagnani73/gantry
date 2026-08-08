@@ -134,8 +134,17 @@ type BatchResult = { status: "success" | "failure"; result?: unknown };
 
 interface AgentReads {
   agents: AgentSummary[];
-  /** Candidates that did not answer as an AgentPBMWallet. Not an RPC failure —
-   * the aggregate call succeeded and these addresses did not respond to it. */
+  /** Candidates that hold no code at all, so there is nothing there to read.
+   * The only honest "you do not have this agent". */
+  absent: Address[];
+  /**
+   * Candidates that DO hold code and still did not answer. A failed read, never
+   * a fact about the wallet — and the distinction is the whole point: a lagging
+   * replica and an out-of-gas aggregate produce exactly the same per-entry
+   * failure as a non-wallet, and rendering that as "you have no agent" is how a
+   * payer creates a SECOND wallet for the same signer (the state demo-reset
+   * step 6b exists to detect).
+   */
   unreadable: Address[];
 }
 
@@ -148,11 +157,11 @@ interface AgentReads {
  *
  * `allowFailure` keeps two different failures apart — the same distinction
  * verifyPbm draws. A transport error rejects, and the caller gets a 5xx it can
- * retry. A per-entry failure means that address is not an AgentPBMWallet, which
- * is a fact about the address, and never something to render as zeros.
+ * retry. A per-entry failure is NOT self-describing, so each one costs a single
+ * extra `getCode` to say which of the two it was.
  */
 async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
-  if (wallets.length === 0) return { agents: [], unreadable: [] };
+  if (wallets.length === 0) return { agents: [], absent: [], unreadable: [] };
   const token = tokenAddress(config.addresses, SPEND_TOKEN);
 
   const [rate, owners, signers, policies, spent, balances] = await Promise.all([
@@ -190,11 +199,11 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
   ]);
 
   const agents: AgentSummary[] = [];
-  const unreadable: Address[] = [];
+  const failed: Address[] = [];
   const batches: readonly BatchResult[][] = [owners, signers, policies, spent, balances];
   wallets.forEach((wallet, i) => {
     if (batches.some((batch) => batch[i]?.status !== "success")) {
-      unreadable.push(wallet);
+      failed.push(wallet);
       return;
     }
     const raw: RawAgentState = {
@@ -209,7 +218,45 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
     };
     agents.push(toAgentSummary(raw));
   });
-  return { agents, unreadable };
+  return { agents, ...(await classifyFailures(failed)) };
+}
+
+/**
+ * Which of the failed candidates are not contracts, and which are contracts we
+ * could not read.
+ *
+ * `getCode` is the only question that separates them, and it is cheap because it
+ * is asked ONLY about entries that already failed — the happy path pays nothing.
+ * A `getCode` that itself fails counts as unreadable: it proves nothing, and the
+ * conservative answer is the one that does not tell a payer their agent is gone.
+ *
+ * In practice `absent` should stay empty for wallets that came out of the
+ * factory's own `WalletCreated` logs — the factory deployed every one of them —
+ * which is exactly why a failed read must not be treated as "not a wallet". It
+ * is reachable for an address handed to `getAgent` directly, and for a log from
+ * a block that reorganised out.
+ */
+async function classifyFailures(
+  wallets: readonly Address[],
+): Promise<{ absent: Address[]; unreadable: Address[] }> {
+  const absent: Address[] = [];
+  const unreadable: Address[] = [];
+  if (wallets.length === 0) return { absent, unreadable };
+
+  const codes = await Promise.all(
+    wallets.map((address) =>
+      publicClient.getCode({ address }).then(
+        (code) => ({ read: true, code }),
+        () => ({ read: false, code: undefined }),
+      ),
+    ),
+  );
+  wallets.forEach((wallet, i) => {
+    const entry = codes[i];
+    if (entry?.read && (entry.code === undefined || entry.code === "0x")) absent.push(wallet);
+    else unreadable.push(wallet);
+  });
+  return { absent, unreadable };
 }
 
 // ---------------------------------------------------------------- public API
@@ -220,6 +267,24 @@ export interface AgentFilter {
    * an agent that knows only its own key can find the wallets it acts for —
    * which is what lets the CLI stop carrying a hardcoded wallet address. */
   agentSigner?: Address;
+}
+
+/**
+ * The list plus the candidates it could not speak for. Structurally an
+ * `AgentListResponse` with one added optional field, so every existing client
+ * keeps reading `agents` and nothing else changes shape.
+ */
+export interface AgentListBody extends AgentListResponse {
+  /**
+   * Wallets this caller owns (or signs for) whose on-chain state did not read.
+   * Present only when non-empty, and never merged into `agents` — there is
+   * nothing truthful to render for them.
+   *
+   * A screen MUST announce these. "You have no agent" and "one of your agents
+   * could not be read" lead to opposite actions, and the first one leads to
+   * creating a duplicate wallet for the same signer.
+   */
+  unreadable?: Address[];
 }
 
 /**
@@ -236,18 +301,24 @@ export interface AgentFilter {
  * somebody else, so it is never a candidate. Nothing on the chain indexes the
  * current owner.
  */
-export async function listAgents(filter: AgentFilter): Promise<AgentListResponse> {
+export async function listAgents(filter: AgentFilter): Promise<AgentListBody> {
   const created = await factoryWallets();
   const candidates = created
     .filter((c) => !filter.owner || sameAddress(c.owner, filter.owner))
     .filter((c) => !filter.agentSigner || sameAddress(c.agentSigner, filter.agentSigner))
     .map((c) => c.wallet);
 
-  const { agents, unreadable } = await readAgents(candidates);
+  const { agents, absent, unreadable } = await readAgents(candidates);
+  if (absent.length > 0) {
+    // Nothing is deployed there, so there is nothing to report and no action to
+    // offer. Logged because a factory candidate with no code means a reorg.
+    console.warn(`agents: ${absent.join(", ")} holds no code — dropped from the list`);
+  }
   if (unreadable.length > 0) {
-    // Dropped rather than failed: the rest of the list is real, and an address
-    // that stopped answering is one the caller could not act on anyway.
-    console.warn(`agents: ${unreadable.join(", ")} did not answer as AgentPBMWallet — omitted`);
+    // NOT dropped silently. These are already scoped to this caller by the
+    // creation-log filter, so returning them is not leaking somebody else's
+    // wallet — it is the difference between a short list and a wrong one.
+    console.warn(`agents: ${unreadable.join(", ")} holds code but did not read — reported unreadable`);
   }
   return {
     agents: agents.filter(
@@ -255,6 +326,7 @@ export async function listAgents(filter: AgentFilter): Promise<AgentListResponse
         (!filter.owner || sameAddress(a.owner, filter.owner)) &&
         (!filter.agentSigner || sameAddress(a.agentSigner, filter.agentSigner)),
     ),
+    ...(unreadable.length > 0 ? { unreadable } : {}),
   };
 }
 
@@ -267,14 +339,17 @@ export async function listAgents(filter: AgentFilter): Promise<AgentListResponse
 export async function getAgent(wallet: Address): Promise<AgentSummary> {
   const { agents, unreadable } = await readAgents([wallet]);
   const agent = agents[0];
-  if (!agent) {
+  if (agent) return agent;
+  if (unreadable.length > 0) {
+    // A contract IS deployed here and the reads failed anyway, so 404 would be a
+    // claim we cannot make — and the caller's next move on a 404 is to create a
+    // wallet they may already own. 503 says retry, which is the true advice.
     throw new ApiError(
-      404,
-      "UnknownAgentWallet",
-      unreadable.length > 0
-        ? `no AgentPBMWallet at ${wallet} — it did not answer owner()/policy()`
-        : `no AgentPBMWallet at ${wallet}`,
+      503,
+      "AgentReadFailed",
+      `${wallet} holds code but did not answer owner()/policy() — the read failed, ` +
+        "the wallet is not missing. Retry in a moment.",
     );
   }
-  return agent;
+  throw new ApiError(404, "UnknownAgentWallet", `no AgentPBMWallet at ${wallet}`);
 }
