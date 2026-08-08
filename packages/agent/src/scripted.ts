@@ -1,4 +1,4 @@
-import { formatUnits6, type PolicyResponse } from "@gantry/shared";
+import { formatUnits6, type AgentSummary } from "@gantry/shared";
 import * as narrator from "./narrator";
 import { runCheckPolicy, runListMerchants, runPayMerchant } from "./tools";
 import type { MerchantListEntry, PayResult } from "./pay-flow";
@@ -36,8 +36,8 @@ const DEFINITE_NO_FUNDS = new Set([
 /** checkPolicy reports failures in-band for the live model's benefit; the
  * scripted path has no model to narrate them, so surface it as a throw the
  * runScripted catch already handles. */
-function requirePolicy(json: string): PolicyResponse {
-  const parsed = JSON.parse(json) as PolicyResponse | { error: string };
+function requirePolicy(json: string): AgentSummary {
+  const parsed = JSON.parse(json) as AgentSummary | { error: string };
   if ("error" in parsed) throw new Error(parsed.error);
   return parsed;
 }
@@ -51,7 +51,7 @@ function sgdFromPrompt(prompt: string, fallback: string): string {
   return match ? match[1]! : fallback;
 }
 
-function policySummary(policy: PolicyResponse): string {
+function policySummary(policy: AgentSummary): string {
   const rate = BigInt(policy.rate);
   const sgd = (units: string) => formatUnits6((BigInt(units) * rate) / 1_000_000n);
   return (
@@ -118,7 +118,7 @@ export async function runScripted(prompt: string): Promise<void> {
       `${ahHock?.displayName ?? "Ah Hock Chicken Rice"} is live at Maxwell Food Centre. ` +
         `Now checking what my policy allows.\n`,
     );
-    const policy = JSON.parse(await runCheckPolicy()) as PolicyResponse;
+    const policy = JSON.parse(await runCheckPolicy()) as AgentSummary;
     await narrator.type(`${policySummary(policy)} S$${sgd} for three iced teas fits — paying now.\n`);
     const result = JSON.parse(await runPayMerchant({ handle: DRINKS.handle, sgd })) as PayResult;
     await narratePayment(result, ahHock?.displayName ?? "Ah Hock Chicken Rice");

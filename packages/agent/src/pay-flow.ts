@@ -8,11 +8,13 @@ import {
   decodePaymentRequiredHeader,
   decodePaymentResponseHeader,
   encodePaymentSignatureHeader,
+  agentStatus,
   parseSgd,
   reviveSpendAuthorization,
+  type AgentListResponse,
+  type AgentSummary,
   type MerchantResponse,
   type PbmIntentResponse,
-  type PolicyResponse,
   type X402PaymentRequirements,
 } from "@gantry/shared";
 import { env, requireSigningEnv } from "./env";
@@ -77,7 +79,56 @@ export async function listMerchants(): Promise<MerchantListEntry[]> {
   return merchants;
 }
 
-export type PolicyResult = PolicyResponse | { error: string };
+export type PolicyResult = AgentSummary | { error: string };
+
+/**
+ * Which PBM wallet this agent acts for, discovered rather than configured.
+ *
+ * Cached for the process: a wallet's `agentSigner` can be rotated, but not
+ * mid-run, and re-walking `WalletCreated` logs on every tool call would put a
+ * multi-second event scan in front of a payment. Only the ADDRESS is cached —
+ * policy state is re-read every time, since `spentToday` moves with each spend.
+ */
+let cachedWallet: `0x${string}` | null = null;
+
+async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`> {
+  if (cachedWallet) return cachedWallet;
+  const res = await fetch(`${env.gantryApi}/api/agents?agentSigner=${signer}`);
+  if (!res.ok) throw new Error(`agent wallet lookup failed (status ${res.status})`);
+  const { agents } = (await res.json()) as AgentListResponse;
+  // Prefer a wallet that can actually spend. A lapsed or revoked one would fail
+  // every payment with PolicyExpired, and picking it because it happened to be
+  // first would read on stage as "the agent is broken" rather than "that policy
+  // is over".
+  //
+  // Among those, take the NEWEST, not the first. One signer can be listed by
+  // several wallets and always will be here: the factory is permissionless,
+  // nothing can ever delete a wallet, and this demo migrated from a
+  // relayer-owned wallet to a payer-owned one — so both list this key forever.
+  // The API returns them in WalletCreated log order, and the most recently
+  // created is the one whose owner set it up last and the one demo-reset funds
+  // and arms. Taking the first instead pins the agent to the oldest wallet it
+  // has ever had, which is precisely the one nobody maintains: it would spend
+  // from an unfunded wallet whose spentToday never resets, while the payer app
+  // showed a healthy meter on a different wallet that never moves.
+  const now = Math.floor(Date.now() / 1000);
+  const active = agents.filter((a) => agentStatus(a, now) === "active");
+  const usable = active.at(-1) ?? agents.at(-1);
+  if (!usable) {
+    throw new Error(`no PBM wallet lists ${signer} as its agent signer — has one been created?`);
+  }
+  // Say which one, and say it out loud when the choice was not forced. This is
+  // the failure that looks healthy from both ends, so it must be visible on the
+  // terminal that is about to spend money. console.error is outside the LLM's
+  // input path, so it cannot be paraphrased away.
+  if (agents.length > 1) {
+    console.error(
+      `agent: ${agents.length} wallets list this signer; spending from the newest active one, ${usable.wallet}`,
+    );
+  }
+  cachedWallet = usable.wallet;
+  return cachedWallet;
+}
 
 /** Like listMerchants, a failure stays IN the result: a thrown read tool is
  * swallowed by the AI SDK and fed back to the model as narration input, which
@@ -85,15 +136,17 @@ export type PolicyResult = PolicyResponse | { error: string };
  * strictly better than an exception it never sees. */
 export async function checkPolicy(): Promise<PolicyResult> {
   try {
-    const res = await fetch(`${env.gantryApi}/api/policy`);
+    const { signer } = requireSigningEnv();
+    const wallet = await resolveAgentWallet(signer);
+    const res = await fetch(`${env.gantryApi}/api/agents/${wallet}`);
     if (!res.ok) {
-      console.error(`checkPolicy: GET /api/policy failed (${res.status})`);
+      console.error(`checkPolicy: GET /api/agents/${wallet} failed (${res.status})`);
       return { error: `policy lookup failed (status ${res.status})` };
     }
-    return (await res.json()) as PolicyResponse;
+    return (await res.json()) as AgentSummary;
   } catch (err) {
-    console.error("checkPolicy: GET /api/policy threw", err);
-    return { error: "policy lookup failed (network error)" };
+    console.error("checkPolicy: agent lookup threw", err);
+    return { error: err instanceof Error ? err.message : "policy lookup failed (network error)" };
   }
 }
 
@@ -109,14 +162,26 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
   // Inside the never-throws contract, not above it: both of these can throw on
   // a malformed env or an LLM-supplied amount like "S$19.50", and a thrown tool
   // reaches the model as a bare error result it might reasonably retry.
-  let signing: { key: `0x${string}`; wallet: `0x${string}` };
+  let key: `0x${string}`;
+  let signer: `0x${string}`;
   try {
-    signing = requireSigningEnv();
+    ({ key, signer } = requireSigningEnv());
     parseSgd(sgd); // fail fast on garbage before any HTTP
   } catch (err) {
     return fail("invalid_request", err instanceof Error ? err.message : String(err));
   }
-  const { key, wallet } = signing;
+
+  // Resolving the wallet is a network call, so it sits inside the never-throws
+  // contract too. It happens BEFORE any intent is created: discovering here that
+  // no wallet exists is a clean "nothing to pay from", where discovering it
+  // after would strand an intent nobody can settle.
+  let wallet: `0x${string}`;
+  try {
+    wallet = await resolveAgentWallet(signer);
+  } catch (err) {
+    return fail("no_agent_wallet", err instanceof Error ? err.message : String(err));
+  }
+
   const orderUrl = `${env.gantryApi}/api/order/${handle}?sgd=${encodeURIComponent(sgd)}`;
 
   // ------------------------------------------------------------------ pre-payment
