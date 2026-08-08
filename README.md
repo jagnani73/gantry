@@ -94,7 +94,12 @@ process alive.
 | `packages/backend` | Railway or Fly | `packages/backend/Dockerfile`, built with the **repo root** as context: `docker build -f packages/backend/Dockerfile .` |
 
 On the public backend, set `POLICY_ADMIN_ENABLED=0` — an open revoke lets any
-visitor zero the agent's policy and only `ADMIN_TOKEN` can re-arm it. Point the
+visitor zero the agent's policy and only `ADMIN_TOKEN` can re-arm it. The payer
+faucet needs no flag: it is off whenever `NODE_ENV=production`, which the
+Dockerfile sets, because it transfers real USDC out of the only gas key. The
+trade-off is that burner mode cannot fund itself on a deployed host — the
+deployed instance is there to show a live dashboard, not to take payments from
+strangers. Point the
 web app's `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
 `CORS_ORIGIN` to the Vercel origin rather than `*`.
 

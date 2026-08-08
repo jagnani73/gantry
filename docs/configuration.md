@@ -48,6 +48,19 @@ The funder is the relayer wallet: settlement is in real Circle USDC, which
 cannot be minted, so the grant is a transfer out of a finite balance and can run
 out (`FunderExhausted`).
 
+Because that balance sits on the only gas key and the cooldown is per-*address*,
+funding is gated on **`NODE_ENV`** — the standard Node signal rather than a
+Gantry flag, since the question is "is this a demo host", not "who is asking".
+
+| `NODE_ENV` | Faucet | Where |
+|---|---|---|
+| unset / anything else | On — the relayer transfers 4 USDC per grant | `pnpm dev` on the demo laptop |
+| `production` | Off — `FaucetDisabled` (403) | the backend Dockerfile sets this |
+
+Burner mode cannot fund on a production host. The boot log states which mode the
+process is in, and the error names the fix — the one way this bites is a
+rehearsal started with `NODE_ENV=production`.
+
 Amount cap: **S$5** on the burner, S$9999 on a connected wallet (`pay-client.tsx`,
 the `max` prop on `AmountPad`). The burner cap follows from the 4 USDC grant — it
 keeps one grant sufficient for the payment it was requested for.

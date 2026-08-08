@@ -32,8 +32,13 @@ Cut from the bottom if time runs short.
 - [ ] On the public backend set `POLICY_ADMIN_ENABLED=0` — an open revoke lets
       any visitor zero the agent's policy and break the demo, and only the
       ADMIN_TOKEN can re-arm it.
-- [ ] **Rotate the Gemini API key** before the repo gets attention — the current
-      one transited a chat.
+- [ ] **Rotate the Gemini API key, then make the repo public** — in that order.
+      The repo is currently PRIVATE, but a public GitHub repo is one of the five
+      submission artifacts, so screeners would hit a 404. The key transited a
+      chat; rotating after flipping visibility is rotating too late.
+- [ ] Confirm the deployed backend runs with `NODE_ENV=production` — it is what
+      disables the payer faucet, which otherwise hands real USDC out of the only
+      gas key to anyone who asks.
 - [ ] Export the mermaid diagram to PNG and check it reads at thumbnail size.
 - [ ] Print slide 1 and confirm the QR scans off a projected image, not just
       off a screen.
