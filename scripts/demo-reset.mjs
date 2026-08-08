@@ -1,8 +1,7 @@
 // One-command demo reset: clears the backend cache (SQLite + SSE `reset`
 // broadcast, cursor jumped to head), re-arms the agent policy, and prints the
 // demo cheat-sheet. Chain state (merchant, pool, contracts) is reused —
-// Sepolia redeploys are not needed per rehearsal. (Local-Anvil redeploy
-// orchestration is deferred, not planned — see CLAUDE.md, Chain/infra.)
+// Sepolia redeploys are not needed per rehearsal.
 //
 // Usage: pnpm demo:reset
 import { existsSync } from "node:fs";
@@ -91,12 +90,10 @@ if (arm.ok) {
     policyLine = `⚠ policy re-armed but readback failed (${policyRes ? `status ${policyRes.status}` : "network error"}) — verify GET /api/policy manually`;
   }
 } else if (arm.status === 404) {
-  // Distinguish "no wallet configured" from "stale backend without the route".
-  const body = await arm.json().catch(() => null);
+  // The wallet address is a committed constant, so the route cannot 404 for a
+  // missing wallet — a 404 means the running backend predates the route.
   policyLine =
-    body?.error?.name === "PolicyWalletUnconfigured"
-      ? "⚠ PBM wallet not deployed yet — agent beats unavailable"
-      : "⚠ /api/admin/policy/arm missing (stale backend build?) — re-arm did NOT run; spentToday accumulates";
+    "⚠ /api/admin/policy/arm missing (stale backend build?) — re-arm did NOT run; spentToday accumulates";
 } else {
   policyLine = `⚠ policy re-arm failed: ${arm.status} ${await arm.text()}`;
 }
@@ -138,7 +135,6 @@ ${funderLine}
 contracts (Base Sepolia)
   GantryCore     ${BASE_SEPOLIA_ADDRESSES.gantryCore}
   FixedRateSwap  ${BASE_SEPOLIA_ADDRESSES.fixedRateSwap}
-  MockUSDC       ${BASE_SEPOLIA_ADDRESSES.mockUsdc}
   MockXSGD       ${BASE_SEPOLIA_ADDRESSES.mockXsgd}
   Circle USDC    ${BASE_SEPOLIA_ADDRESSES.realUsdc}
   PBM factory    ${BASE_SEPOLIA_ADDRESSES.agentPbmFactory}

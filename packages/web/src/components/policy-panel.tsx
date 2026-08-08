@@ -27,20 +27,17 @@ function toSgd(units: string, rate: string): string {
 
 export function PolicyPanel() {
   const [policy, setPolicy] = useState<PolicyResponse | null>(null);
-  const [unconfigured, setUnconfigured] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       setPolicy(await api.policy());
-      setUnconfigured(false);
     } catch (err) {
-      if (err instanceof ApiClientError && err.errorName === "PolicyWalletUnconfigured") {
-        setUnconfigured(true);
-      }
-      // Other failures keep the last-known state — a flaky poll must not
-      // blank the panel mid-demo. Logged so a dead backend URL is diagnosable.
+      // Failures keep the last-known state — a flaky poll must not blank the
+      // panel mid-demo. Logged so a dead backend URL is diagnosable. The panel
+      // stays hidden until the first successful read (`!policy` below), which
+      // also covers a backend that cannot reach the wallet at all.
       console.warn("policy poll failed", err);
     }
   }, []);
@@ -51,7 +48,7 @@ export function PolicyPanel() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  if (unconfigured || !policy) return null;
+  if (!policy) return null;
 
   const spent = BigInt(policy.spentToday);
   const cap = BigInt(policy.dailyCap);
