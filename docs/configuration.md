@@ -58,7 +58,7 @@ balances — funding payers, and registering merchants:
 | `NODE_ENV` | Payer faucet | Self-service onboarding |
 |---|---|---|
 | unset / anything else (`pnpm dev`) | On — the relayer transfers 4 USDC per grant | On — `POST /api/merchants` registers, `/onboard` renders the form |
-| `production` (set by the backend Dockerfile, and by Vercel for the web build) | Off — `FaucetDisabled` (403) | Off — `OnboardingDisabled` (403); `/onboard` renders a verified-merchant-only card instead |
+| `production` (set by the backend Dockerfile, and by Vercel for the web build) | **Capped at 20 USDC per rolling 24h across ALL addresses** — then `FaucetBudgetExhausted` (429) | Off — `OnboardingDisabled` (403); `/onboard` renders a verified-merchant-only card instead |
 
 Onboarding spends relayer ETH per call and permanently claims a handle, and its
 cooldown is per-**IP**, which bounds one browser rather than one attacker.
@@ -66,9 +66,20 @@ Because `GantryCore` stores a single `onlyRelayer` address, the deployed backend
 and the demo laptop are necessarily the same key — so draining it publicly stops
 every door, not just onboarding.
 
-Burner mode cannot fund on a production host. The boot log states which mode the
-process is in, and both errors name the fix — the one way this bites is a
-rehearsal started with `NODE_ENV=production`.
+The two are gated differently on purpose. Onboarding is switched **off**: it
+spends ETH — the gas key every door depends on — and permanently claims a
+handle, and nobody needs to onboard from their seat. Funding is **capped**
+instead, because burner mode is what lets a judge scan the deck's QR and pay
+with no wallet at all; switching it off would make the deployed payer page
+unusable by the people it exists to convince. 20 USDC is five grants — enough
+for a Q&A, and a loss the ETH→USDC top-up swap absorbs without touching gas.
+
+The cap is in-process, so a restart resets it and two instances get one cap
+each. That bounds casual abuse, which is the real threat to a faucet whose asset
+has no market value; it is not a security boundary.
+
+The boot log states which mode the process is in, and every refusal names the
+fix — the one way this bites is a rehearsal started with `NODE_ENV=production`.
 
 Amount cap: **S$5** on the burner, S$9999 on a connected wallet (`pay-client.tsx`,
 the `max` prop on `AmountPad`). The burner cap follows from the 4 USDC grant — it

@@ -97,14 +97,21 @@ export const config = {
   adminToken: env.ADMIN_TOKEN,
   policyAdminEnabled: env.POLICY_ADMIN_ENABLED === "1",
   /**
-   * Whether this process hands out money. The payer faucet transfers REAL
-   * Circle USDC out of the relayer — which is also the only gas key — and its
-   * cooldown is per-address, so an unauthenticated public instance can be
-   * drained 4 USDC at a time from fresh addresses. There is no user identity to
-   * authenticate here: burner funding is a stage affordance, not a feature, so
-   * the honest gate is "is this a demo host", which NODE_ENV already answers.
+   * Rolling-24h ceiling on payer funding across ALL addresses, or null for
+   * unmetered.
+   *
+   * The faucet transfers REAL Circle USDC out of the relayer and its cooldown is
+   * per-address, so fresh addresses make the grant loop unbounded. A ceiling
+   * rather than an off switch, because burner mode is what lets a judge scan the
+   * deck's QR and pay with no wallet at all — switching it off on the public
+   * host would make the deployed payer page unusable by exactly the people it
+   * needs to impress. 20 USDC is five grants: enough for a Q&A, and a loss the
+   * existing ETH→USDC top-up swap absorbs without touching the gas key.
+   *
+   * Unmetered on a demo host: a rehearsal pass alone spends two grants
+   * (`e2e:pay` + `x402:buy`), so ten of them would blow any sane ceiling.
    */
-  demoFundingEnabled: isDemoHost,
+  faucetDailyBudget: isDemoHost ? null : 20_000_000n,
   /**
    * Whether strangers may register merchants. Same key, different resource:
    * onboarding spends relayer ETH per call and permanently claims a handle,

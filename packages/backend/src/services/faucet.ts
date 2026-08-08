@@ -4,6 +4,7 @@ import { publicClient, relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
 import { sendRelayerTx } from "../relayer";
+import { emptyBudget, msUntilReset, release, reserve } from "./faucet-budget";
 
 /**
  * Demo-only funder: the relayer TRANSFERS real Circle USDC so a burner payer
@@ -25,23 +26,30 @@ const COOLDOWN_MS = 60_000;
 
 const lastFunded = new Map<string, number>();
 
-export async function fundPayer(address: Address): Promise<FaucetResponse> {
-  if (!config.demoFundingEnabled) {
-    // Named and explained rather than a bare 403: the one way this bites is a
-    // rehearsal started with NODE_ENV=production, where burner mode would
-    // otherwise fail with no clue why. This message IS the diagnosis.
-    throw new ApiError(
-      403,
-      "FaucetDisabled",
-      "payer funding is off because NODE_ENV=production — burner mode only works on a demo host. " +
-        "Unset NODE_ENV (or set it to development) and restart, or fund the payer address directly.",
-    );
-  }
+const BUDGET_WINDOW_MS = 86_400_000; // 24h, rolling from the first grant
+let budget = emptyBudget();
 
+export async function fundPayer(address: Address): Promise<FaucetResponse> {
   const key = address.toLowerCase();
   const last = lastFunded.get(key);
   if (last && Date.now() - last < COOLDOWN_MS) {
     throw new ApiError(429, "FaucetCooldown", "faucet cooldown active — try again shortly");
+  }
+
+  // Reserved before the transfer, so two concurrent callers cannot both pass the
+  // check and overshoot. Released below on any failure.
+  const now = Date.now();
+  const reservation = reserve(budget, GRANT, config.faucetDailyBudget, now, BUDGET_WINDOW_MS);
+  budget = reservation.state;
+  if (!reservation.ok) {
+    const mins = Math.ceil(msUntilReset(budget, now, BUDGET_WINDOW_MS) / 60_000);
+    throw new ApiError(
+      429,
+      "FaucetBudgetExhausted",
+      `the demo faucet's daily allowance is spent (${reservation.remaining} units left, ` +
+        `resets in ~${mins} min) — pay from a wallet that already holds Base Sepolia USDC, ` +
+        "or run a local backend, where funding is unmetered.",
+    );
   }
 
   const usdc = config.addresses.realUsdc;
@@ -53,6 +61,7 @@ export async function fundPayer(address: Address): Promise<FaucetResponse> {
   });
   if (funderBalance < GRANT) {
     // Say what actually happened: a bare transfer revert reads like a bug.
+    budget = release(budget, GRANT);
     throw new ApiError(
       503,
       "FunderExhausted",
@@ -60,12 +69,22 @@ export async function fundPayer(address: Address): Promise<FaucetResponse> {
     );
   }
 
-  const { receipt } = await sendRelayerTx({
-    address: usdc,
-    abi: erc20Abi,
-    functionName: "transfer",
-    args: [address, GRANT],
-  });
+  let receipt;
+  try {
+    ({ receipt } = await sendRelayerTx({
+      address: usdc,
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [address, GRANT],
+    }));
+  } catch (err) {
+    // A transfer that never landed must not eat the day's allowance. The reverse
+    // case — a receipt timeout on a transfer that later mines — deliberately
+    // keeps the reservation: over-counting the budget costs a grant, while
+    // under-counting it hands out USDC nothing accounted for.
+    budget = release(budget, GRANT);
+    throw err;
+  }
   // Cooldown only after a successful transfer — a failed one must surface its
   // real error on retry, not a bogus 429.
   lastFunded.set(key, Date.now());

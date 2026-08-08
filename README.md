@@ -95,19 +95,20 @@ process alive.
 
 On the public backend, set `POLICY_ADMIN_ENABLED=0` — an open revoke lets any
 visitor zero the agent's policy and only `ADMIN_TOKEN` can re-arm it. Two other
-things need no flag at all: the payer faucet and self-service merchant
-onboarding are both off whenever `NODE_ENV=production`, which the Dockerfile
-sets. Both spend the relayer's balances for an unauthenticated caller — the
+things need no flag at all, because `NODE_ENV=production` (which the Dockerfile
+sets) already classifies the host: self-service merchant onboarding switches
+**off**, and the payer faucet is **capped** at 20 USDC per rolling 24h across all
+addresses. Both spend the relayer's balances for an unauthenticated caller — the
 faucet transfers real USDC, onboarding spends ETH and permanently claims a
 handle — and `GantryCore` stores a single `onlyRelayer` address, so a deployed
 host and your demo laptop are necessarily the same key.
 
-The trade-off is that burner mode cannot fund itself on a deployed host, and
-`/onboard` renders a verified-merchant-only card instead of the form. Both are
-deliberate: the deployed instance exists to show a live dashboard and let anyone
-inspect the contracts, not to hand money to strangers or let them squat handles.
-Production merchant acquiring is underwritten anyway — self-registration is the
-demo affordance. Point the
+They differ because the stakes do. Onboarding spends ETH and permanently claims
+a handle, and nobody needs to onboard from their seat — so it is off, and
+`/onboard` renders a verified-merchant-only card instead of the form. Funding is
+capped rather than off, because burner mode is what lets a visitor pay with no
+wallet at all: five grants a day is enough to try it, and small enough that the
+ETH→USDC top-up swap absorbs the worst case. Point the
 web app's `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
 `CORS_ORIGIN` to the Vercel origin rather than `*`.
 
