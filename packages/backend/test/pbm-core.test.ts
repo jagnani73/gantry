@@ -24,9 +24,11 @@ const sessionAccount = privateKeyToAccount(SESSION_KEY);
 
 const wallet = "0xDD4bbed78B64715288bf10fabB2b62c659299D3E" as const;
 const core = "0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0" as const;
+// Opaque fixtures — these matchers compare strings and never resolve an address
+// or a price, so neither value needs to track the live token set or the demo.
 const token = "0x5F7F058F2B1572524d1E3E740656CfAd1Ab011F9" as const;
 const intentId = `0x${"11".repeat(32)}` as const;
-const amount = "14529469"; // the S$19.50 team lunch
+const amount = "14529469";
 const network = "eip155:84532" as const;
 
 function requirements(overrides: Partial<X402PaymentRequirements> = {}): X402PaymentRequirements {

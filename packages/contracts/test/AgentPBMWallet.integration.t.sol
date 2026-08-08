@@ -22,7 +22,11 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
 
     // Demo policy: "S$50/day" at the pinned 1.3421 rate = ceil(50e6 * 1e6 / RATE) µUSDC.
     uint128 internal constant DEMO_CAP_USDC = 37_255_049;
-    // S$19.50 team lunch and S$29 powerbank, same ceil-quote math the relayer applies.
+    // Arithmetic fixtures, NOT the demo script's prices — the demo reprices to iced
+    // tea (S$1.50), three iced teas (S$4.50) and a S$4 cable. These larger amounts are
+    // kept deliberately: two of them fit under DEMO_CAP_USDC and the third does not,
+    // which is what makes the daily-cap boundary test below exercise the boundary.
+    // Same ceil-quote math the relayer applies.
     uint128 internal constant TEAM_LUNCH_XSGD = 19_500_000;
     uint128 internal constant TEAM_LUNCH_USDC = 14_529_469;
     uint128 internal constant POWERBANK_XSGD = 29_000_000;
@@ -133,9 +137,11 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
         bytes32 intentId = _createAgentIntent(gadgetMerchantId, POWERBANK_XSGD, POWERBANK_USDC);
         bytes memory sig = _pbmSig(intentId, address(usdc), POWERBANK_USDC);
 
-        // THE money-shot beat: a S$29 powerbank at an electronics merchant dies as an
-        // on-chain revert carrying the category — decodable by the facilitator, never a
-        // backend if-statement.
+        // THE money-shot beat: a purchase at an electronics merchant dies as an on-chain
+        // revert carrying the category — decodable by the facilitator, never a backend
+        // if-statement. The demo runs this at S$4 (cheap on purpose: inside every cap,
+        // so only the category can refuse it); the amount here is a fixture and the
+        // assertion is category-only, so the two stay independent.
         vm.expectRevert(abi.encodeWithSelector(AgentPBMWallet.CategoryNotAllowed.selector, uint16(2)));
         core.settleFromPBM(intentId, address(wallet), sig);
 
@@ -148,8 +154,8 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
         _settleLunch();
         assertEq(wallet.spentToday(), uint256(TEAM_LUNCH_USDC) * 2);
 
-        // Third S$19.50 lunch: 43_588_407 attempted vs the 37_255_049 cap — the exact
-        // failure ten rehearsals would hit without the setPolicy re-arm.
+        // Third charge at the fixture amount: 43_588_407 attempted vs the 37_255_049
+        // cap — the exact failure ten rehearsals would hit without the setPolicy re-arm.
         bytes32 intentId = _createAgentIntent(merchantId, TEAM_LUNCH_XSGD, TEAM_LUNCH_USDC);
         bytes memory sig = _pbmSig(intentId, address(usdc), TEAM_LUNCH_USDC);
         vm.expectRevert(

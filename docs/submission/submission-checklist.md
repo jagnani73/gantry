@@ -22,14 +22,24 @@ Cut from the bottom if time runs short.
 - [ ] **Request the NTU enrolment certificate.** Longest lead time of anything
       on this list and entirely outside our control. Do this first.
 - [ ] Deploy web to Vercel and backend to Railway/Fly (backend needs long-lived
-      SSE, so serverless is out).
+      SSE, so serverless is out). **Config is written and committed** —
+      `vercel.json` at the repo root and `packages/backend/Dockerfile` (build
+      with the repo root as context). Neither has been run against a real host
+      yet; the Dockerfile in particular is unbuilt, so budget time for a first
+      build to fail on something small.
+- [ ] Point `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
+      `CORS_ORIGIN` to the Vercel origin instead of `*`.
 - [ ] On the public backend set `POLICY_ADMIN_ENABLED=0` — an open revoke lets
       any visitor zero the agent's policy and break the demo, and only the
       ADMIN_TOKEN can re-arm it.
+- [ ] **Rotate the Gemini API key** before the repo gets attention — the current
+      one transited a chat.
 - [ ] Export the mermaid diagram to PNG and check it reads at thumbnail size.
 - [ ] Print slide 1 and confirm the QR scans off a projected image, not just
       off a screen.
-- [ ] Add a CI badge (`forge test`) to the README.
+- [x] CI badge in the README, backed by `.github/workflows/ci.yml` (lint,
+      typecheck, shared + backend tests, `forge test`). Confirm it goes green on
+      the first push — it has never run on a runner.
 - [ ] Tag `stage1-submission` when the package is final.
 - [ ] Record per-beat backup clips and one full-run backup video (11–12 Aug).
 
@@ -70,6 +80,17 @@ Cut from the bottom if time runs short.
 Cross-check every artifact against this before submitting. Each of these has
 been wrong in a draft at least once.
 
+- **Payments settle in real Circle USDC** (`0x036CbD…`), not a mock. The payer
+  signs an EIP-3009 authorization against Circle's own contract, and burner
+  wallets are funded by the relayer *transferring* real USDC — not minting.
+  `MockXSGD` is the only mocked token, because XSGD exists on no testnet.
+- **The demo prices are hawker-drink scale:** iced tea **S$1.50** (1.117652
+  USDC), three iced teas **S$4.50** (3.352955 USDC), the rejected phone cable
+  **S$4**. The old S$19.50 lunch / S$29 powerbank figures survive only as
+  arithmetic fixtures in the test suites — never quote them.
+- The fee story runs on the demo day's **S$6.00**: Gantry S$0.03, cards S$0.168.
+  The dashboard strip renders net **S$5.97** and saved **S$0.13** — the S$0.13
+  is the *saving*, not our cut. Never say "we took thirteen cents".
 - Agent runs **Gemini** `gemini-flash-latest` via the Vercel AI SDK, not Claude.
 - Live demo runs on **Base Sepolia over a hotspot**. Local Anvil was deferred
   and never built — don't describe it as a fallback we have.

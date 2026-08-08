@@ -1,5 +1,7 @@
 # Gantry
 
+[![CI](https://github.com/jagnani73/gantry/actions/workflows/ci.yml/badge.svg)](https://github.com/jagnani73/gantry/actions/workflows/ci.yml)
+
 **One rail, every payer: QR for humans, x402 for AI agents.**
 
 Every payment system ever built assumes the payer is a human. Gantry is a payment rail on stablecoins where a merchant integrates once and gets paid by anyone — a person scanning a printed QR code, or an AI agent paying over the [x402 protocol](https://github.com/x402-foundation/x402). Both are encodings of the same on-chain `PaymentIntent`, both settle through the same contract, and the merchant always receives XSGD (Singapore-dollar stablecoin) — whatever token the payer sent.
@@ -70,7 +72,7 @@ pnpm dev                                                 # backend :4000 + web :
 
 The relayer address needs Base Sepolia ETH — it is the only gas key in the system, so with an empty balance every settlement, registration and payer top-up fails. It doubles as the **funder**: payer burners and the demo policy wallet are topped up by transferring real USDC out of its balance, so it needs USDC too. `pnpm demo:reset` reports both and swaps ETH for USDC on Uniswap v3 when the USDC runs low. Nothing else needs deploying: the contracts are live and their addresses are pinned in `@gantry/shared`.
 
-Every environment variable, what it changes and how the options interact is documented in **[docs/configuration.md](docs/configuration.md)** — payer key sources, token selection, feature gates, RPC fallback and the flows each combination produces.
+The variables that change **what the app does** — payer key source, agent autonomy, the revoke gate — are documented in **[docs/configuration.md](docs/configuration.md)**, along with the flows each combination produces. Plumbing (RPC URLs, ports, keys) is documented inline in the three `.env.example` files.
 
 - **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. Set `NEXT_PUBLIC_BURNER=1` for an in-browser demo wallet — auto-funded by the backend (a 4 USDC transfer from the relayer, which is why burner amounts cap at S$5), zero wallet setup — or to a `0x` private key to pin it to one pre-funded account.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
@@ -80,9 +82,29 @@ Every environment variable, what it changes and how the options interact is docu
 - **Agent CLI:** `AGENT_SESSION_KEY` cannot be a freshly generated key — its address must match the `agentSigner` stored on the demo `AgentPBMWallet`, or every `gantry-pbm` payment fails with `InvalidAgentSignature`. Rotate on-chain via `setAgentSigner` if you need a different one.
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
 
+## Deploying
+
+The two halves go to different hosts, and the split is forced: the dashboard
+feed is a long-lived SSE stream, so the backend needs a host that keeps a
+process alive.
+
+| Half | Host | Config |
+|---|---|---|
+| `packages/web` | Vercel | `vercel.json` at the repo root — deploy from the root, leave Vercel's "Root Directory" unset |
+| `packages/backend` | Railway or Fly | `packages/backend/Dockerfile`, built with the **repo root** as context: `docker build -f packages/backend/Dockerfile .` |
+
+On the public backend, set `POLICY_ADMIN_ENABLED=0` — an open revoke lets any
+visitor zero the agent's policy and only `ADMIN_TOKEN` can re-arm it. Point the
+web app's `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
+`CORS_ORIGIN` to the Vercel origin rather than `*`.
+
+The SQLite file inside the container is a disposable cache — the chain is the
+source of truth — so it is intentionally not a mounted volume; a redeploy starts
+the feed empty until the indexer sweep repopulates it.
+
 ## Docs
 
-- [Configuration reference](docs/configuration.md) — every env var, the flows each produces, and how they interact
+- [Configuration reference](docs/configuration.md) — the behaviour-changing env vars and the flows each produces
 - [Architecture](docs/submission/architecture.md) — the two doors, the `IGantrySwap` seam, deployed addresses
 - [Demo script](docs/submission/demo-script.md) · [Deck outline](docs/submission/deck-outline.md) · [Submission checklist](docs/submission/submission-checklist.md)
 

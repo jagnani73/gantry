@@ -8,8 +8,9 @@ ports, database path, CORS, and the keys themselves are documented inline in the
 three `.env.example` files. Nothing below is needed to *run* the app — only to
 change how it behaves.
 
-Claims are traced from the code, with `file:line` references so they can be
-re-checked as the code moves.
+Claims are traced from the code. References name a **file and a symbol** rather
+than a line number: the line numbers this file used to carry were all stale
+within one working session, which made them worse than no reference at all.
 
 ---
 
@@ -29,13 +30,14 @@ env and URL can never disagree about which account signs.
 | `0x` + 64 hex | Burner, pinned to that account on every device and session. Fund it once ahead of time. |
 | anything else | Connected wallet, plus a one-time `console.warn` naming the bad value — a typo must never silently change the payer. |
 
-Read once at first render (`pay-client.tsx:54`), so there is no flicker between
-modes and nothing to read from the URL.
+Read once at first render (`pay-client.tsx`, `useState(burnerEnvEnabled)`), so
+there is no flicker between modes and nothing to read from the URL. The values
+are resolved by `burnerConfig()` in `web/src/lib/env.ts`.
 
 ### Funding and cap
 
-Burner only (`pay-client.tsx:145-165`). The connected wallet is never funded and
-must already hold the token.
+Burner only (`pay-client.tsx`, the `readBalance` poll inside the `burner`
+branch). The connected wallet is never funded and must already hold the token.
 
 | Balance vs `amountIn` | Result |
 |---|---|
@@ -46,9 +48,9 @@ The funder is the relayer wallet: settlement is in real Circle USDC, which
 cannot be minted, so the grant is a transfer out of a finite balance and can run
 out (`FunderExhausted`).
 
-Amount cap: **S$5** on the burner, S$9999 on a connected wallet
-(`pay-client.tsx:239`). The burner cap follows from the 4 USDC grant — it keeps
-one grant sufficient for the payment it was requested for.
+Amount cap: **S$5** on the burner, S$9999 on a connected wallet (`pay-client.tsx`,
+the `max` prop on `AmountPad`). The burner cap follows from the 4 USDC grant — it
+keeps one grant sufficient for the payment it was requested for.
 
 ---
 
@@ -58,7 +60,7 @@ one grant sufficient for the payment it was requested for.
 
 | Value | Behaviour |
 |---|---|
-| unset | Scripted narration immediately, no LLM call (`index.ts:126`). |
+| unset | Scripted narration immediately, no LLM call (`agent/src/index.ts`, the `!env.googleApiKey` guard in `main()`). |
 | set | Live model, with a scripted fallback if nothing streams in time. |
 
 Both modes execute **identical wire traffic** — same tools, same HTTP, same
@@ -124,9 +126,11 @@ not a spending one.
 
 1. `NEXT_PUBLIC_*` values are read at build time — restart after editing.
 2. Switching payer modes needs an env edit and a restart — there is no per-request override.
-6. `AGENT_SESSION_KEY` must match the wallet's on-chain `agentSigner`.
-7. `NEXT_PUBLIC_APP_URL` is encoded into the printed QR
-   (`app/qr/[handle]/page.tsx:10`) — a standee printed against `localhost` is
-   unusable from a phone.
-8. Cooldowns differ in scope: faucet per **address**, merchant registration per
-   **IP**, revoke per **instance**.
+3. `AGENT_SESSION_KEY` must match the wallet's on-chain `agentSigner`.
+4. `NEXT_PUBLIC_APP_URL` is encoded into the printed QR
+   (`app/qr/[handle]/page.tsx`, `payUrl`) — a standee printed against
+   `localhost` is unusable from a phone.
+5. Cooldowns differ in scope: faucet per **address**, merchant registration per
+   **IP**, revoke per **instance**. The merchant-registration one is in-process
+   and survives `pnpm demo:reset` — restart the backend between back-to-back
+   onboarding takes or the second will 429.

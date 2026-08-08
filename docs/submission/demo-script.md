@@ -11,9 +11,10 @@ without a second orchestration path to maintain.
 
 **Before every run:** `pnpm demo:reset` (~5–10s — it clears the dashboard cache,
 re-arms the agent policy with a real on-chain `setPolicy`, tops the agent wallet
-up via the faucet if it's low, checks `gadgethub-sg` is still registered, and
-prints the relayer's ETH balance). Check that balance. Every register and every
-settle spends it.
+back up to 10 USDC if it's low, checks `gadgethub-sg` is still registered, and
+prints the funder's ETH **and** USDC balances, swapping ETH→USDC if the USDC has
+run below 15). Check both numbers. Every register and every settle spends ETH;
+every payer grant and wallet top-up spends USDC, which cannot be minted.
 
 **The onboarding cooldown survives `demo:reset`** — it's a 30s in-process
 per-IP guard, so two registration takes inside 30s will 429. Space them, or
