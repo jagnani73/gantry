@@ -51,6 +51,13 @@ async function main() {
   app.listen(config.port, "0.0.0.0", () => {
     console.log(`gantry backend on :${config.port} (chain ${config.chainId})`);
     console.log(`relayer: ${relayerAccount.address}`);
+    // Announce it: burner mode dies without the faucet, and "demo host or not"
+    // is otherwise invisible until a payer is already waiting on the funding step.
+    console.log(
+      config.demoFundingEnabled
+        ? "demo host: payer faucet ON (relayer transfers real USDC)"
+        : "public host: payer faucet OFF (NODE_ENV=production) — burner mode will not fund",
+    );
     for (const ip of lanAddresses()) console.log(`  LAN: http://${ip}:${config.port}`);
   });
   await startIndexer();

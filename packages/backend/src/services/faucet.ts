@@ -26,6 +26,18 @@ const COOLDOWN_MS = 60_000;
 const lastFunded = new Map<string, number>();
 
 export async function fundPayer(address: Address): Promise<FaucetResponse> {
+  if (!config.demoFundingEnabled) {
+    // Named and explained rather than a bare 403: the one way this bites is a
+    // rehearsal started with NODE_ENV=production, where burner mode would
+    // otherwise fail with no clue why. This message IS the diagnosis.
+    throw new ApiError(
+      403,
+      "FaucetDisabled",
+      "payer funding is off because NODE_ENV=production — burner mode only works on a demo host. " +
+        "Unset NODE_ENV (or set it to development) and restart, or fund the payer address directly.",
+    );
+  }
+
   const key = address.toLowerCase();
   const last = lastFunded.get(key);
   if (last && Date.now() - last < COOLDOWN_MS) {

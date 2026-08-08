@@ -25,6 +25,10 @@ const EnvSchema = z.object({
    * spend one: an open revoke lets anyone zero the agent's policy, and only the
    * admin token can re-arm it. */
   POLICY_ADMIN_ENABLED: z.enum(["0", "1"]).default("1"),
+  /** Not a Gantry setting — the standard Node signal, read here so the demo
+   * affordances have one thing to key off. The backend Dockerfile sets it to
+   * `production`, so a deployed host disables them without remembering a flag. */
+  NODE_ENV: z.string().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -84,6 +88,15 @@ export const config = {
   corsOrigin: env.CORS_ORIGIN,
   adminToken: env.ADMIN_TOKEN,
   policyAdminEnabled: env.POLICY_ADMIN_ENABLED === "1",
+  /**
+   * Whether this process hands out money. The payer faucet transfers REAL
+   * Circle USDC out of the relayer — which is also the only gas key — and its
+   * cooldown is per-address, so an unauthenticated public instance can be
+   * drained 4 USDC at a time from fresh addresses. There is no user identity to
+   * authenticate here: burner funding is a stage affordance, not a feature, so
+   * the honest gate is "is this a demo host", which NODE_ENV already answers.
+   */
+  demoFundingEnabled: env.NODE_ENV !== "production",
   /** The demo AgentPBMWallet the policy routes read/manage. Pinned in shared
    * like every other contract address — one committed source all three
    * runtimes read, rather than per-process env copies that must agree. */
