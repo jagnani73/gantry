@@ -69,6 +69,32 @@ test("zero-width space is refused because it pads a name invisibly", () => {
   assert.ok(isDeceptive(`Ah${ZWSP}Hock`));
 });
 
+test("a name made only of joiners is refused — it renders as nothing", () => {
+  // ZWJ is legal INSIDE a name and must stay legal, but a name that is entirely
+  // joiners trims to nothing visible and would become an invisible shop on every
+  // receipt, hanging off a permanently claimed handle.
+  for (const field of ["displayName", "location", "blurb"] as const) {
+    const result = normalizeProfile({ ...ok, [field]: ZWJ.repeat(20) });
+    assert.equal(result.ok, false, `${field} accepted an all-joiner value`);
+    assert.equal(result.ok === false && result.field, field);
+  }
+  assert.equal(normalizeProfile({ ...ok, displayName: `${ZWJ} ${ZWNJ}` }).ok, false);
+});
+
+test("every field's ceiling is enforced, not just the first", () => {
+  // The limits differ per field and the loop applies them by key; a copy-paste
+  // that checked displayName's ceiling three times would pass a displayName-only
+  // test.
+  for (const field of ["displayName", "location", "blurb"] as const) {
+    const atLimit = "a".repeat(PROFILE_LIMITS[field]);
+    assert.equal(normalizeProfile({ ...ok, [field]: atLimit }).ok, true, `${field} rejected at limit`);
+    const over = "a".repeat(PROFILE_LIMITS[field] + 1);
+    const result = normalizeProfile({ ...ok, [field]: over });
+    assert.equal(result.ok, false, `${field} accepted one over its limit`);
+    assert.equal(result.ok === false && result.field, field);
+  }
+});
+
 test("profileFieldLength agrees with the limit on astral input", () => {
   assert.equal(profileFieldLength("  ab  "), 2);
   assert.equal(profileFieldLength(BOWL.repeat(2)), 2);

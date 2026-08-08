@@ -82,6 +82,32 @@ export function isDeceptive(text: string): boolean {
   return false;
 }
 
+/** The joiners we deliberately allow — legal INSIDE a name, but not a name. */
+const ZERO_WIDTH_JOINERS = new Set([0x200c, 0x200d]);
+
+/**
+ * Does this render as anything at all?
+ *
+ * The blocklist above intentionally permits ZWJ and ZWNJ because they are
+ * load-bearing inside emoji sequences and Persian text, and neither can
+ * disguise one shop as another. They CAN disguise a shop as blank: a name of
+ * fifty joiners trims to nothing visible, passes every length and deception
+ * check, and becomes an invisible shop name on every receipt and merchant page
+ * — hanging off a handle that is claimed on-chain and permanent. That is the
+ * same failure the zero-width SPACE is rejected for, so it needs the same
+ * answer, expressed as a requirement rather than a longer blocklist.
+ */
+function hasVisibleContent(text: string): boolean {
+  for (const character of text) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) continue;
+    if (ZERO_WIDTH_JOINERS.has(codePoint)) continue;
+    if (/\s/u.test(character)) continue;
+    return true;
+  }
+  return false;
+}
+
 /**
  * Trim, then reject rather than repair. These fields are a shop's public
  * identity on every receipt and merchant page, and the handle they hang off is
@@ -110,6 +136,9 @@ export function normalizeProfile(input: MerchantProfile): ProfileResult {
         field,
         message: `${field} must be a single line of plain text — no line breaks, invisible or direction-override characters`,
       };
+    }
+    if (!hasVisibleContent(trimmed)) {
+      return { ok: false, field, message: `${field} must contain visible characters` };
     }
     value[field] = trimmed;
   }
