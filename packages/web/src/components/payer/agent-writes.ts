@@ -26,9 +26,12 @@ import { usePayerIdentity } from "./identity";
  * `setPolicy` and `revoke` are `onlyOwner` and the owner is the payer, so there
  * is no endpoint that can write a policy — that is the point of the screen. It
  * also means these are the only transactions in Gantry the payer pays gas for,
- * which is why the faucet grants a little ETH alongside its USDC: configuring an
- * agent is an owner action, and owners funding their own wallet is normal.
- * Paying a merchant still costs the payer nothing.
+ * which is why `POST /api/faucet/gas` exists: configuring an agent is an owner
+ * action, and owners funding their own wallet is normal. Paying a merchant
+ * still costs the payer nothing.
+ *
+ * That route, and never `POST /api/faucet` — the USDC grant is the scarce one
+ * and refuses on a ceiling and a cooldown that say nothing about gas.
  */
 
 export interface WalletPolicy {
@@ -49,6 +52,23 @@ export interface WalletPolicy {
  * empty key, not to keep topping one up that is fine.
  */
 const GAS_FLOOR = 300_000_000_000_000n; // 0.0003 ETH
+
+/**
+ * viem RESOLVES a receipt whose `status` is "reverted" — it does not throw.
+ *
+ * Every write here simulates first, so a revert is rare; but a policy that
+ * changed between the simulation and the block, or a gas-limit failure, mines
+ * as a reverted transaction and this is the only thing standing between that
+ * and the screen reporting success. Revoke is the one that matters: its own
+ * copy promises "every payment after it reverts — no server can override it",
+ * and a revoke reported as done when it was not is that promise inverted.
+ * `relayer.ts` does exactly this check for the same reason.
+ */
+function assertMined(what: string, receipt: { status: "success" | "reverted" }, txHash: Hex): void {
+  if (receipt.status !== "success") {
+    throw new Error(`${what} reverted on-chain: ${txHash}`);
+  }
+}
 
 export interface AgentWrites {
   /** Creates the wallet through the permissionless factory and returns the
@@ -72,9 +92,23 @@ export function useAgentWrites(): AgentWrites {
     if (demo) {
       const account = getDemoAccount();
       if ((await publicClient.getBalance({ address: account.address })) < GAS_FLOOR) {
-        // The faucet's gas leg never throws and tops up only when low, so this
-        // is safe to call again; what it must not do is run on every write.
-        await api.faucet(account.address);
+        // `/api/faucet/gas`, never `/api/faucet`. This caller needs to SEND a
+        // transaction, not to pay one, and the USDC route refuses on a ceiling
+        // and a cooldown that have nothing to do with gas — a payer who paid
+        // thirty seconds ago would have their Revoke aborted by a 429 about
+        // USDC. The gas route refuses only in gas vocabulary.
+        try {
+          await api.faucetGas(account.address);
+        } catch (err) {
+          // Still wrapped: this route can refuse too (FaucetGasCooldown,
+          // FaucetGasInFlight, FaucetGasBudgetExhausted, FunderGasLow). A
+          // refusal is not proof the payer cannot pay for this transaction —
+          // the floor above is deliberately well under the faucet's target —
+          // so the write proceeds and the wallet decides. Re-reading the
+          // balance here to make that judgement would be the same stale-read
+          // trap: gas can land while a refusal propagates.
+          console.warn("gantry: gas top-up refused — sending with the balance on hand", err);
+        }
       }
       return {
         client: createWalletClient({ account, chain: baseSepolia, transport: http() }),
@@ -118,6 +152,7 @@ export function useAgentWrites(): AgentWrites {
         chain: baseSepolia,
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      assertMined("createWallet", receipt, txHash);
       // The address comes from the log, not from the simulation: the factory
       // deploys with CREATE, so the simulated address is only correct while the
       // factory's nonce has not moved — and it moves whenever anyone else
@@ -161,7 +196,7 @@ export function useAgentWrites(): AgentWrites {
         account,
         chain: baseSepolia,
       });
-      await publicClient.waitForTransactionReceipt({ hash: txHash });
+      assertMined("setPolicy", await publicClient.waitForTransactionReceipt({ hash: txHash }), txHash);
       return txHash;
     },
     [publicClient, signer],
@@ -184,7 +219,7 @@ export function useAgentWrites(): AgentWrites {
         account,
         chain: baseSepolia,
       });
-      await publicClient.waitForTransactionReceipt({ hash: txHash });
+      assertMined("revoke", await publicClient.waitForTransactionReceipt({ hash: txHash }), txHash);
       return txHash;
     },
     [publicClient, signer],

@@ -6,7 +6,7 @@ import { useAccount, usePublicClient, useSignTypedData, useSwitchChain } from "w
 import { baseSepolia } from "wagmi/chains";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
-  GANTRY_FEE_BPS,
+  basescanTx,
   formatUnits6,
   parseSgd,
   quoteAmountIn,
@@ -34,6 +34,14 @@ import { usePayer } from "./payer-context";
  * and the `IntentAlreadySettled` branch exists because rendering a settled
  * payment as a failure while the merchant's dashboard chimes is the worst split
  * this product can produce.
+ *
+ * There are THREE terminal states, not two, and the third is the load-bearing
+ * one. The relayer caps `waitForTransactionReceipt` at 20s and rethrows; that
+ * shape is deliberately not retried, so a settle whose transaction has been
+ * BROADCAST comes back to this page as a 500. Calling that "failed" would print
+ * a mined transaction's hash under the sentence "Nothing left your wallet"
+ * while the merchant's dashboard chimes — the same compensation invariant the
+ * bridge and the onboarding path already obey, applied to the QR spine.
  */
 
 type Step =
@@ -44,8 +52,27 @@ type Step =
   | { name: "funding"; intent: IntentResponse }
   | { name: "signing"; intent: IntentResponse }
   | { name: "settling"; intent: IntentResponse }
-  | { name: "settled"; row: SettlementEvent; settleMs: number | null }
-  | { name: "failed"; intent: IntentResponse | null; errorName: string; message: string };
+  | {
+      name: "settled";
+      row: SettlementEvent;
+      settleMs: number | null;
+      /** The row was rebuilt from a 409 rather than observed, so its figures are
+       * the quote, not the settlement. Nothing derived may be shown as fact. */
+      reconstructed?: boolean;
+    }
+  /** Proven: nothing moved. This is the only state allowed to say so. */
+  | { name: "failed"; intent: IntentResponse | null; errorName: string; message: string }
+  /** Not proven either way. Never claims the funds are safe, never offers a
+   * blind retry. `settled: true` narrows it to "it went through, we just cannot
+   * name the transaction". */
+  | {
+      name: "unknown";
+      intent: IntentResponse | null;
+      errorName: string;
+      message: string;
+      txHash: Hex | null;
+      settled: boolean;
+    };
 
 /** One faucet grant is 4 real USDC ≈ S$5.37 and the page funds once before
  * signing, so the demo cap must sit under a single grant. */
@@ -64,11 +91,60 @@ function useCountdown(expiry: number | undefined): number {
   return expiry ? Math.max(0, expiry - now) : 0;
 }
 
+/**
+ * True only when the error PROVES the payer's authorization was never used.
+ *
+ * Mirrors the backend's own `isDefiniteFailure`. Its error middleware gives a
+ * NAME to exactly two classes: an `ApiError` raised before anything was
+ * broadcast, and a decoded contract or token revert (the transaction executed
+ * and reverted, so no state changed). Everything else falls through to a 500
+ * `InternalError` — and the one that matters is the relayer's receipt cap,
+ * which rethrows for a transaction that is already in the mempool. A transport
+ * failure is the same ambiguity from the other side: the request may well have
+ * arrived and settled, and only the reply was lost.
+ */
+function provesNothingMoved(err: unknown): boolean {
+  if (!(err instanceof ApiClientError)) return false;
+  // status 0 = fetch itself threw (drop, CORS, timeout). No reply is not an answer.
+  if (err.status === 0) return false;
+  // A 200 that was not JSON — a captive portal answered, not the backend.
+  if (err.errorName === "BadResponse") return false;
+  // The relayer words a mined-and-reverted transaction exactly this way, and it
+  // is the one InternalError that is definite: the state was rolled back.
+  if (err.errorName === "InternalError") return /reverted on-chain/.test(err.message);
+  // The token says this authorization was already consumed, while our own
+  // intent is still pending — so it was not consumed by this settle. Either an
+  // earlier attempt of ours landed and the disposable cache lost the row, or the
+  // raw signature was front-run straight to the token (the documented vector
+  // that strands the funds in the core). Both moved the payer's USDC, so this is
+  // the one contract revert that proves the opposite of what a revert usually
+  // does.
+  if (err.errorName === "AuthorizationAlreadyUsed") return false;
+  if (err.errorName === "StringRevert" && /used or canceled/i.test(err.message)) return false;
+  return true;
+}
+
+/**
+ * viem's receipt-timeout message names the transaction it gave up on:
+ * `Timed out while waiting for transaction with hash "0x…" to be confirmed.`
+ *
+ * That hash is the most useful thing we can hand a payer whose outcome we
+ * cannot resolve, so it is lifted out — narrowly, from that exact shape, so an
+ * intent id (also 32 bytes) in some other message can never be rendered as a
+ * payment they can look up.
+ */
+function pendingTxHash(message: string): Hex | null {
+  const match = /transaction with hash "(0x[0-9a-fA-F]{64})"/.exec(message);
+  return match ? (match[1] as Hex) : null;
+}
+
 export function PayFlow({ handle }: { handle: string }) {
   const {
     identity,
     merchant,
     ensureMerchant,
+    merchantError,
+    retryMerchant,
     rate,
     chainNow,
     refreshHistory,
@@ -94,26 +170,84 @@ export function PayFlow({ handle }: { handle: string }) {
 
   const record = merchant(handle);
   const title = record?.displayName ?? handle;
+  // Set only when the LOOKUP failed. `record === null` is the registry saying
+  // no such shop; this is us never having asked it successfully.
+  const lookupFailed = merchantError(handle);
+
+  /**
+   * Whoever signed the authorization this flow is settling.
+   *
+   * Held in a ref because the RECOVERY path needs it: "Try again" calls
+   * `requote`, and a requote of an intent that actually settled comes back as
+   * 409 `IntentAlreadySettled`. Without a payer that branch cannot render a
+   * receipt, so the screen fell through to "Nothing left your wallet" while
+   * holding the string that proves the opposite. Deriving it from `identity`
+   * instead would name the CURRENT account, which a connected wallet can change
+   * between the failure and the retry.
+   */
+  const signedBy = useRef<Address | null>(null);
 
   const fail = useCallback(
-    (intent: IntentResponse | null, payer: Address | null, err: unknown) => {
+    (
+      intent: IntentResponse | null,
+      payer: Address | null,
+      err: unknown,
+      /** The settle request left this browser. Only then can the outcome be
+       * ambiguous — everything before it (quote, funding, signature) fails with
+       * nothing signed or nothing submitted. */
+      submitted = false,
+    ) => {
+      const errorName = err instanceof ApiClientError ? err.errorName : "Error";
+      const message = err instanceof Error ? err.message : String(err);
+
       // A settle that raced a retry (or a dropped response plus a retry) comes
-      // back as 409 IntentAlreadySettled WITH the tx hash. That is a success.
-      if (intent && payer && err instanceof ApiClientError && err.errorName === "IntentAlreadySettled") {
-        const txHash = (err.args as { txHash?: Hex } | undefined)?.txHash;
-        if (txHash) {
-          setStep({ name: "settled", row: replayedRow(intent, payer, txHash), settleMs: null });
-          return;
+      // back as 409 IntentAlreadySettled. That is a success, not a failure.
+      if (intent && errorName === "IntentAlreadySettled") {
+        const txHash = (err instanceof ApiClientError ? err.args : undefined) as
+          | { txHash?: Hex }
+          | undefined;
+        if (txHash?.txHash && payer) {
+          setStep({
+            name: "settled",
+            row: replayedRow(intent, payer, txHash.txHash),
+            settleMs: null,
+            reconstructed: true,
+          });
+        } else {
+          // Settled, but we cannot name the transaction or the signer. Still
+          // not a failure: the failure screen would swear nothing was charged.
+          setStep({
+            name: "unknown",
+            intent,
+            errorName,
+            message,
+            txHash: txHash?.txHash ?? null,
+            settled: true,
+          });
         }
+        refreshHistory();
+        refreshBalance();
+        return;
       }
-      setStep({
-        name: "failed",
-        intent,
-        errorName: err instanceof ApiClientError ? err.errorName : "Error",
-        message: err instanceof Error ? err.message : String(err),
-      });
+
+      if (submitted && !provesNothingMoved(err)) {
+        setStep({
+          name: "unknown",
+          intent,
+          errorName,
+          message,
+          txHash: pendingTxHash(message),
+          settled: false,
+        });
+        // The feed is the only place that can resolve this, so start it moving.
+        refreshHistory();
+        refreshBalance();
+        return;
+      }
+
+      setStep({ name: "failed", intent, errorName, message });
     },
-    [],
+    [refreshBalance, refreshHistory],
   );
 
   const quote = useCallback(async () => {
@@ -136,7 +270,9 @@ export function PayFlow({ handle }: { handle: string }) {
       try {
         setStep({ name: "review", intent: await api.requote(old.intentId) });
       } catch (err) {
-        fail(old, null, err);
+        // The payer is the one who signed the OLD intent — a requote signs
+        // nothing, so the only outcome this can resolve is that one's.
+        fail(old, signedBy.current, err);
       }
     },
     [fail],
@@ -152,6 +288,9 @@ export function PayFlow({ handle }: { handle: string }) {
       // Hoisted so the IntentAlreadySettled branch can still name the payer —
       // that branch renders a receipt, and a receipt without a payer is a lie.
       let payer: Address | null = null;
+      // Flips the instant the settle request leaves this browser. Everything
+      // before it is provably un-charged; everything after it may have landed.
+      let submitted = false;
       setStep({ name: "preparing", intent });
       try {
         let signature: Hex;
@@ -159,6 +298,7 @@ export function PayFlow({ handle }: { handle: string }) {
         if (demo) {
           const account = getDemoAccount();
           payer = account.address;
+          signedBy.current = payer;
           if (publicClient) {
             const readBalance = () =>
               publicClient.readContract({
@@ -182,6 +322,7 @@ export function PayFlow({ handle }: { handle: string }) {
           signature = await account.signTypedData(reviveTypedData(intent.typedData, payer));
         } else {
           payer = walletAddress!;
+          signedBy.current = payer;
           if (chainId !== baseSepolia.id) {
             await switchChainAsync({ chainId: baseSepolia.id });
           }
@@ -193,6 +334,7 @@ export function PayFlow({ handle }: { handle: string }) {
         // Timed from here, not from the tap: the faucet top-up and the balance
         // poll before it are the demo funding the payer, not the rail settling.
         const startedAt = Date.now();
+        submitted = true;
         const settled = await api.settle(intent.intentId, {
           payer,
           signature,
@@ -212,7 +354,7 @@ export function PayFlow({ handle }: { handle: string }) {
         refreshHistory();
         refreshBalance();
       } catch (err) {
-        fail(intent, payer, err);
+        fail(intent, payer, err, submitted);
       } finally {
         confirmInFlight.current = false;
       }
@@ -253,7 +395,7 @@ export function PayFlow({ handle }: { handle: string }) {
 
   /* ── Success ─────────────────────────────────────────────────────────── */
   if (step.name === "settled") {
-    const { row, settleMs } = step;
+    const { row, settleMs, reconstructed } = step;
     return (
       <OverlayScreen tone="accent">
         <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
@@ -261,26 +403,105 @@ export function PayFlow({ handle }: { handle: string }) {
             ✓
           </div>
           <Figure units={row.xsgdOut} size="paid" tone="on-accent" className="mt-6 justify-center" />
-          <p className="mt-4 text-body-lg text-on-accent-body">Paid to {title}</p>
+          <p className="mt-4 text-body-lg text-on-accent-body">
+            {reconstructed ? "Already paid to" : "Paid to"} {title}
+          </p>
           <Mono size="xs" className="mt-1.5 text-on-accent-muted">
             {settleMs === null ? "" : `settled in ${(settleMs / 1000).toFixed(1)}s · `}
             {shortAddress(row.txHash)}
           </Mono>
+          {/* This row was rebuilt from a 409, so the amount above is the QUOTE,
+              not the settlement, and the fee, block and rate are not known at
+              all. The receipt would render every one of them as fact, so it is
+              not offered — the indexed row lands in Activity in a second or two
+              and that one is real. */}
+          {reconstructed ? (
+            <p className="mt-5 max-w-[32ch] text-fine text-on-accent-muted">
+              This payment had already settled when we asked again, so these are the figures you
+              were quoted. The settled receipt appears in your activity once it is indexed.
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-col gap-2.5 px-5 pb-11">
-          <button
-            type="button"
-            onClick={() => replaceOverlay({ kind: "receipt", row: receiptRow(row) })}
-            className="focus-ring-inverse h-13 rounded-control-m bg-on-accent text-btn-sm text-ink transition-colors hover:bg-paper"
-          >
-            View receipt
-          </button>
+          {reconstructed ? (
+            <a
+              href={basescanTx(row.txHash)}
+              target="_blank"
+              rel="noreferrer"
+              className="focus-ring-inverse flex h-13 items-center justify-center rounded-control-m bg-on-accent text-btn-sm text-ink transition-colors hover:bg-paper"
+            >
+              View on Basescan
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={() => replaceOverlay({ kind: "receipt", row: receiptRow(row) })}
+              className="focus-ring-inverse h-13 rounded-control-m bg-on-accent text-btn-sm text-ink transition-colors hover:bg-paper"
+            >
+              View receipt
+            </button>
+          )}
           <button
             type="button"
             onClick={closeOverlays}
             className="focus-ring-inverse h-13 rounded-control-m bg-on-accent/12 text-btn-sm text-on-accent transition-colors hover:bg-on-accent/20"
           >
             Done
+          </button>
+        </div>
+      </OverlayScreen>
+    );
+  }
+
+  /* ── Unresolved ──────────────────────────────────────────────────────────
+     The state that exists so the failure screen can keep its promise. Reached
+     when the settle request left this browser and the answer did not come back
+     in a shape that proves anything: a relayer receipt timeout (the transaction
+     is broadcast and may still mine), a dropped connection, a captive portal.
+     It must not say the funds are safe, and it must not offer a retry — a
+     second signature on a fresh quote would pay the shop twice. */
+  if (step.name === "unknown") {
+    const { intent, errorName, message, txHash, settled } = step;
+    return (
+      <OverlayScreen>
+        <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+          {/* Neither the accent tick nor the danger cross: the whole point of
+              this screen is that we do not know which one it is. */}
+          <div className="flex size-16 items-center justify-center rounded-full bg-fill-subtle text-title-lg text-warning">
+            ?
+          </div>
+          <h2 className="mt-5.5 text-title">
+            {settled ? "This payment already went through" : "We couldn't confirm this payment"}
+          </h2>
+          <p className="mt-3 text-body text-muted">
+            {settled
+              ? "The rail says it settled, but it didn't hand back the transaction. Don't pay again — check your activity in a moment."
+              : "Your authorization was submitted and we lost the answer, so it may or may not have settled. Don't pay again: check your activity in a moment, or ask the shop."}
+          </p>
+          {/* The error name travels verbatim, same as on the failure screen. */}
+          <Mono size="xs" tone="faintest" className="mt-3.5">
+            {errorName}
+            {intent ? ` · ${shortAddress(intent.intentId)}` : ""}
+          </Mono>
+          <p className="mt-2 max-w-[34ch] text-fine text-faint">{message}</p>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2.5 px-5 pb-11">
+          {txHash ? (
+            <a
+              href={basescanTx(txHash)}
+              target="_blank"
+              rel="noreferrer"
+              className="focus-ring flex h-13 items-center justify-center rounded-control-m bg-ink text-btn-sm text-paper transition-colors hover:bg-ink-hover"
+            >
+              Check {shortAddress(txHash)} on Basescan
+            </a>
+          ) : null}
+          <button
+            type="button"
+            onClick={closeOverlays}
+            className="focus-ring h-13 rounded-control-m bg-surface text-btn-sm text-ink transition-colors hover:bg-fill-hover-card"
+          >
+            Back to wallet
           </button>
         </div>
       </OverlayScreen>
@@ -456,6 +677,12 @@ export function PayFlow({ handle }: { handle: string }) {
       />
 
       <div className="flex flex-1 flex-col items-center justify-center gap-1.5">
+        {/* `null` is a chain fact — the registry has no such handle. A lookup
+            that FAILED leaves `record` undefined and shows the pad anyway: the
+            merchant id is resolved server-side when the intent is created, so a
+            display lookup we could not reach is no reason to refuse a payment
+            (and refusing it permanently, which is what caching the failure as
+            "no such shop" used to do, is worse). */}
         {record === null ? (
           <p className="px-8 text-center text-body text-muted">
             No shop is registered at <Mono>{handle}</Mono> on Base Sepolia.
@@ -472,6 +699,18 @@ export function PayFlow({ handle }: { handle: string }) {
                     ? "Rate locks when you continue"
                     : "Enter an amount"}
             </p>
+            {lookupFailed ? (
+              <p className="mt-3 max-w-[34ch] px-8 text-center text-fine text-faint">
+                We couldn&apos;t look this shop up ({lookupFailed}).{" "}
+                <button
+                  type="button"
+                  onClick={() => retryMerchant(handle)}
+                  className="focus-ring rounded-badge text-accent underline-offset-2 hover:underline"
+                >
+                  Try again
+                </button>
+              </p>
+            ) : null}
           </>
         )}
       </div>
@@ -507,6 +746,11 @@ function BreakdownRow({ label, children }: { label: string; children: ReactNode 
  * until the log is indexed, and it only feeds a row key that `txHash` already
  * makes unique — and `blockTime`, which is the chain's clock as this client last
  * read it.
+ *
+ * The caller MUST overwrite `xsgdOut`, `feeXsgd` and `blockNumber` from the
+ * settle response. The placeholders below are not the settlement, and the one
+ * caller that cannot supply them (`replayedRow`) marks its row `reconstructed`
+ * so no screen renders them as fact.
  */
 function settledRow(
   intent: IntentResponse,
@@ -535,19 +779,16 @@ function settledRow(
 /**
  * The same row for a settle we did not observe — the 409 that carries a tx hash.
  *
- * The gross output and the fee did not come back with that error, so they are
- * reconstructed from what the contract is known to do: it swaps to at least the
- * quoted XSGD and skims `GANTRY_FEE_BPS`. Both are the floor of the truth rather
- * than a guess — a swap can overshoot the quote — and the alternative was
- * showing the shop receiving the gross, which is wrong by a definite amount
- * instead of an indefinite one.
+ * Nothing here is derived, deliberately. The gross output, the fee and the block
+ * did not come back with that error, and the previous version reconstructed them
+ * from what the contract is known to do — which reads as settled fact on a
+ * receipt while being the quote plus arithmetic. The caller marks this row
+ * `reconstructed` and shows only `xsgdAmount` (what the payer agreed to) and the
+ * transaction hash (which the error stated); the real figures arrive with the
+ * indexed row a second or two later.
  */
 function replayedRow(intent: IntentResponse, payer: Address, txHash: Hex): SettlementEvent {
-  const xsgdOut = BigInt(intent.xsgdAmount);
-  return {
-    ...settledRow(intent, payer, txHash, Math.floor(Date.now() / 1000)),
-    feeXsgd: ((xsgdOut * BigInt(GANTRY_FEE_BPS)) / 10_000n).toString(),
-  };
+  return settledRow(intent, payer, txHash, Math.floor(Date.now() / 1000));
 }
 
 function receiptRow(row: SettlementEvent): ActivityRow {

@@ -23,7 +23,9 @@ export function WalletScreen() {
   const {
     identity,
     balance,
+    balanceError,
     rate,
+    rateError,
     settlements,
     rows,
     merchant,
@@ -85,12 +87,17 @@ export function WalletScreen() {
           />
         )}
         <div className="mt-3 flex items-center justify-between gap-3">
+          {/* Four answers: read, no payer to read for, the read FAILED, and not
+              yet. Collapsing the last two left "reading balance…" on screen for
+              as long as the app stayed open. */}
           <Mono size="sm" className="text-on-accent-muted">
             {balance !== null
               ? `${formatUnits6(balance, 6)} USDC`
               : noWallet
                 ? "no wallet"
-                : "reading balance…"}
+                : balanceError
+                  ? "balance unavailable"
+                  : "reading balance…"}
           </Mono>
           {identity.demo ? (
             <button
@@ -109,12 +116,28 @@ export function WalletScreen() {
           <p className="mt-2.5 text-fine text-on-accent-muted">
             at the demo rate · 1 USDC = {formatRate(rate)} XSGD, set by the swap&apos;s owner
           </p>
+        ) : rateError ? (
+          // Without the rate every S$ figure in the app silently becomes USDC.
+          // Say which one is on screen rather than letting the units change
+          // underneath the same layout.
+          <p className="mt-2.5 text-fine text-on-accent-muted">
+            showing USDC — the swap&apos;s rate could not be read, so no S$ conversion is shown
+          </p>
         ) : null}
       </Card>
 
       {topUpError ? (
         <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
           <p className="text-meta-sm break-words">{topUpError}</p>
+        </Card>
+      ) : null}
+
+      {balanceError || rateError ? (
+        <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+          <p className="text-meta-sm break-words">
+            {balanceError ?? rateError}
+            {" — reading Base Sepolia failed. Your funds are untouched; this is the reading."}
+          </p>
         </Card>
       ) : null}
 

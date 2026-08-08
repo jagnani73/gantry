@@ -61,7 +61,8 @@ export function handleFromScan(value: string): string | null {
 type CameraState = "starting" | "live" | "unavailable";
 
 export function Scan() {
-  const { merchant, ensureMerchant, closeOverlays, replaceOverlay } = usePayer();
+  const { merchant, ensureMerchant, merchantError, retryMerchant, closeOverlays, replaceOverlay } =
+    usePayer();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [camera, setCamera] = useState<CameraState>("starting");
   const [cameraNote, setCameraNote] = useState<string | null>(null);
@@ -147,6 +148,11 @@ export function Scan() {
 
   const manualHandle = handleFromScan(manual);
   const record = detected ? merchant(detected) : undefined;
+  // `record === null` is the registry answering "no such handle"; this is the
+  // lookup never having got an answer at all. The scanner must not collapse the
+  // two — a hotspot dropping one request would otherwise tell the payer the
+  // standee in front of them belongs to no shop.
+  const lookupFailed = detected ? merchantError(detected) : null;
 
   return (
     <OverlayScreen tone="ink">
@@ -200,11 +206,28 @@ export function Scan() {
               <span className="text-body font-medium text-accent">Pay →</span>
             </button>
             <div className="mt-3 flex items-center justify-center gap-2 text-fine text-paper/42">
-              {/* Never claim a registration we have not read back. */}
+              {/* Never claim a registration we have not read back — which means
+                  four answers, not two: read and present, read and absent, not
+                  read yet, and could not be read. */}
               <span>
-                {record === null ? "No shop at this handle" : "Code detected · registered on-chain"}
+                {record === null
+                  ? "No shop at this handle"
+                  : record
+                    ? "Code detected · registered on-chain"
+                    : lookupFailed
+                      ? "Code detected · couldn't reach the registry"
+                      : "Code detected · checking the registry…"}
               </span>
               <span aria-hidden>·</span>
+              {lookupFailed ? (
+                <button
+                  type="button"
+                  onClick={() => retryMerchant(detected)}
+                  className="focus-ring-inverse rounded-badge text-accent-soft underline-offset-2 hover:underline"
+                >
+                  Retry
+                </button>
+              ) : null}
               {/* A wrong code is otherwise a dead end: the only other control on
                   this screen closes the scanner entirely. */}
               <button

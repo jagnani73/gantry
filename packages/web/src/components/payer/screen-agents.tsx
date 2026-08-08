@@ -13,9 +13,14 @@ import { usePayer } from "./payer-context";
  * renders skeletons rather than "no agents yet" — a payer with three agents
  * being told they have none, for two seconds, on stage, is the failure mode this
  * screen exists to avoid.
+ *
+ * The error branch is checked FIRST for the same reason and with higher stakes:
+ * a failed enumeration also arrives as an empty list, and "You don't have an
+ * agent yet" beside a Create button is an invitation to deploy a SECOND wallet
+ * for the same signer — the exact state `demo-reset` exists to detect.
  */
 export function AgentsScreen() {
-  const { agents, agentsError, chainNow, agentName, identity, pushOverlay } = usePayer();
+  const { agents, agentsError, chainNow, agentName, identity, refresh, pushOverlay } = usePayer();
   // Without an address there is no owner to enumerate wallets for, so the
   // skeletons would never resolve into anything.
   const noWallet = identity.ready && !identity.address;
@@ -38,12 +43,6 @@ export function AgentsScreen() {
         raise them.
       </p>
 
-      {agentsError ? (
-        <Card tone="danger" radius="control-m" pad="none" className="mt-4 px-4 py-3.5">
-          <p className="text-meta-sm break-words">{agentsError}</p>
-        </Card>
-      ) : null}
-
       <div className="mt-4.5 flex flex-col gap-2.5">
         {noWallet ? (
           <Card radius="card-m" pad="m">
@@ -51,6 +50,22 @@ export function AgentsScreen() {
               Connect a wallet in Settings — an agent is a wallet you own on-chain, so there has to
               be an owner first.
             </p>
+          </Card>
+        ) : agentsError ? (
+          <Card tone="danger" radius="card-m" pad="m">
+            <p className="text-body-sm">
+              We couldn&apos;t list your agents. Any wallet you own is still on-chain with its
+              policy intact — this is the reading, not the rules. Don&apos;t create a new one until
+              this loads, or you&apos;ll end up with two.
+            </p>
+            <p className="mt-2.5 text-meta-sm break-words">{agentsError}</p>
+            <button
+              type="button"
+              onClick={refresh}
+              className="focus-ring mt-4 h-12 w-full rounded-control-m bg-ink text-btn-sm text-paper transition-colors hover:bg-ink-hover"
+            >
+              Try again
+            </button>
           </Card>
         ) : agents === null ? (
           <>
@@ -83,6 +98,14 @@ export function AgentsScreen() {
           ))
         )}
       </div>
+      {/* The caps below are stored in USDC; the S$ figures are a conversion at
+          a rate one address sets on FixedRateSwap. Every screen that shows them
+          back has to say so — this is the only place this screen can. */}
+      {agents && agents.length > 0 ? (
+        <p className="mt-3 px-1 text-fine text-faint">
+          Caps are stored in USDC — S$ figures convert at the swap&apos;s owner-set rate.
+        </p>
+      ) : null}
       <div className="h-3" />
     </>
   );

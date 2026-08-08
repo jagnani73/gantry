@@ -20,7 +20,7 @@ import {
   type MerchantResponse,
   type SettlementEvent,
 } from "@gantry/shared";
-import { api } from "@/lib/api";
+import { api, ApiClientError } from "@/lib/api";
 import { toActivityRows, type ActivityRow } from "./activity";
 import { usePayerIdentity, type PayerIdentity } from "./identity";
 
@@ -52,25 +52,46 @@ export interface PayerStore {
   settlements: SettlementEvent[] | null;
   settlementsError: string | null;
   denials: DenialEvent[];
+  /** The refusal pages failed to load. Declined rows are additive, so a working
+   * history still renders — but the ONLY record a refused agent payment leaves
+   * is that row, so its absence can never be silent. */
+  denialsError: string | null;
   /** Settlements and refusals merged, newest first. */
   rows: ActivityRow[];
 
   /** Payer's USDC balance in 6dp units; null until the read lands. */
   balance: bigint | null;
+  /** Non-null when the balance READ failed, which is not the same as "not yet"
+   * — a screen showing "reading balance…" off `balance === null` alone spins
+   * forever on a dead RPC. */
+  balanceError: string | null;
   /** OWNER-SET XSGD-per-USDC rate from FixedRateSwap; null if the read failed —
    * in which case no S$ conversion may be rendered at all. */
   rate: bigint | null;
+  /** Non-null when the rate READ failed. Every S$ figure in the app is this
+   * conversion, so a silent failure quietly restates the whole product in USDC. */
+  rateError: string | null;
 
   /** Unix seconds on CHAIN time, not the laptop's. */
   chainNow(): number;
 
   /**
-   * Three answers, not two: `undefined` is "still looking", `null` is "the
-   * chain has no such handle". A screen that collapses them shows "shop not
-   * found" for the half second before the lookup lands.
+   * Three answers, not two: `undefined` is "still looking OR the lookup failed",
+   * `null` is "the chain has no such handle". A screen that collapses them shows
+   * "shop not found" for the half second before the lookup lands — and, worse,
+   * shows it forever for a merchant whose lookup timed out. `null` is a CHAIN
+   * FACT and nothing else may produce it; ask `merchantError` to tell the two
+   * halves of `undefined` apart.
    */
   merchant(handle: string): MerchantResponse | null | undefined;
   ensureMerchant(handle: string): void;
+  /** The lookup for this handle failed (network, timeout, 5xx). Never set for a
+   * 404 — that is an answer, not a failure. */
+  merchantError(handle: string): string | null;
+  /** Drops the dedupe entry and looks the handle up again. The failed lookup
+   * releases the handle, so this is the only thing standing between one flaky
+   * request and a shop that can never be paid for the life of the page. */
+  retryMerchant(handle: string): void;
 
   agentName(wallet: Address): string | null;
   setAgentName(wallet: Address, name: string): void;
@@ -127,9 +148,13 @@ export function PayerProvider({
   const [settlements, setSettlements] = useState<SettlementEvent[] | null>(null);
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [denials, setDenials] = useState<DenialEvent[]>([]);
+  const [denialsError, setDenialsError] = useState<string | null>(null);
   const [balance, setBalance] = useState<bigint | null>(null);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
   const [rate, setRate] = useState<bigint | null>(null);
+  const [rateError, setRateError] = useState<string | null>(null);
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
+  const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
   const [clockOffset, setClockOffset] = useState(0);
   const [nonce, setNonce] = useState(0);
@@ -234,20 +259,36 @@ export function PayerProvider({
 
   /* Refusals are stored per wallet, so this is one call per agent. A payer has
      a handful of agents at most; a combined filter would be a nicer API but not
-     a different screen. A failure here is silent on purpose — the declined rows
-     are additive, and losing them must not blank a working history. */
+     a different screen.
+
+     A failure here does not blank a working history — the declined rows are
+     additive — but it can never be silent either: a refused agent payment
+     produces no event and no log to sweep, so this row is the ONLY trace it
+     happened. Dropping it on the floor is how the rejection beat would simply
+     not appear on stage, with nothing on screen saying why. */
   const agentWalletsKey = (agents ?? []).map((agent) => agent.wallet).join(",");
   useEffect(() => {
     if (!agentWalletsKey) {
       setDenials([]);
+      setDenialsError(null);
       return;
     }
     let cancelled = false;
     const wallets = agentWalletsKey.split(",") as Address[];
-    Promise.all(
-      wallets.map((wallet) => api.denials(wallet).then((res) => res.rows).catch(() => [])),
+    void Promise.all(
+      wallets.map((wallet) =>
+        api
+          .denials(wallet)
+          .then((res) => ({ rows: res.rows, error: null as string | null }))
+          .catch((err: unknown) => {
+            console.warn(`gantry: denials lookup failed for ${wallet}`, err);
+            return { rows: [] as DenialEvent[], error: messageOf(err) };
+          }),
+      ),
     ).then((pages) => {
-      if (!cancelled) setDenials(pages.flat());
+      if (cancelled) return;
+      setDenials(pages.flatMap((page) => page.rows));
+      setDenialsError(pages.find((page) => page.error)?.error ?? null);
     });
     return () => {
       cancelled = true;
@@ -259,7 +300,14 @@ export function PayerProvider({
      owner-set on FixedRateSwap and one transaction can change it, so a hardcoded
      1.3421 would quietly start lying. The block timestamp is read for the same
      reason `agentStatus` asks for chain time — a laptop minutes ahead would
-     render a live policy as lapsed. */
+     render a live policy as lapsed.
+
+     All three are settled independently and each failure is BOTH logged and
+     surfaced: a dropped balance leaves the wallet screen reading "reading
+     balance…" for as long as the app is open, and a dropped rate silently
+     restates every S$ figure in the product as USDC. Only the block read
+     degrades gracefully — the offset stays 0 and the laptop's clock is used —
+     so it is logged and not shown. */
   useEffect(() => {
     if (!address || !publicClient) return;
     let cancelled = false;
@@ -280,10 +328,24 @@ export function PayerProvider({
         publicClient.getBlock(),
       ]);
       if (cancelled) return;
-      if (balanceResult.status === "fulfilled") setBalance(balanceResult.value);
-      if (rateResult.status === "fulfilled") setRate(rateResult.value);
+      if (balanceResult.status === "fulfilled") {
+        setBalance(balanceResult.value);
+        setBalanceError(null);
+      } else {
+        console.warn("gantry: USDC balance read failed", balanceResult.reason);
+        setBalanceError(messageOf(balanceResult.reason));
+      }
+      if (rateResult.status === "fulfilled") {
+        setRate(rateResult.value);
+        setRateError(null);
+      } else {
+        console.warn("gantry: FixedRateSwap rate read failed", rateResult.reason);
+        setRateError(messageOf(rateResult.reason));
+      }
       if (blockResult.status === "fulfilled") {
         setClockOffset(Number(blockResult.value.timestamp) - Math.floor(Date.now() / 1000));
+      } else {
+        console.warn("gantry: block read failed — falling back to this device's clock", blockResult.reason);
       }
     })();
     return () => {
@@ -305,15 +367,53 @@ export function PayerProvider({
   const ensureMerchant = useCallback((handle: string) => {
     if (!handle || requested.current.has(handle)) return;
     requested.current.add(handle);
+    setMerchantErrors((prev) => {
+      // `hasOwnProperty`, not `in`: "constructor" is a legal handle and `in`
+      // would find it on Object.prototype, returning a new object every call.
+      if (!Object.prototype.hasOwnProperty.call(prev, handle)) return prev;
+      const next = { ...prev };
+      delete next[handle];
+      return next;
+    });
     api
       .merchant(handle)
       .then((merchant) => setMerchants((prev) => ({ ...prev, [handle]: merchant })))
-      .catch(() => {
-        // A handle with no record still renders — as itself. Caching the miss
-        // stops a broken shop retrying on every scroll.
-        setMerchants((prev) => ({ ...prev, [handle]: null }));
+      .catch((err: unknown) => {
+        // ONLY a 404 is "the chain has no such handle". A 12s timeout, a CORS
+        // refusal, a captive portal or a cold backend are all failures to ASK,
+        // and caching one of those as `null` would tell a payer standing in
+        // front of a real shop that it does not exist. Worse, the dedupe ref
+        // would hold the handle for the life of the page, so one flaky lookup
+        // would brick paying that merchant until a reload.
+        if (err instanceof ApiClientError && err.status === 404) {
+          setMerchants((prev) => ({ ...prev, [handle]: null }));
+          return;
+        }
+        console.warn(`gantry: merchant lookup failed for ${handle}`, err);
+        requested.current.delete(handle);
+        setMerchantErrors((prev) => ({ ...prev, [handle]: messageOf(err) }));
       });
   }, []);
+
+  // `hasOwnProperty` for the same reason `merchant` below uses it: "constructor"
+  // is a legal handle, and a plain index would answer it from Object.prototype.
+  const merchantError = useCallback(
+    (handle: string): string | null =>
+      Object.prototype.hasOwnProperty.call(merchantErrors, handle)
+        ? (merchantErrors[handle] ?? null)
+        : null,
+    [merchantErrors],
+  );
+
+  const retryMerchant = useCallback(
+    (handle: string) => {
+      // `requested` is a ref, so the delete lands before ensureMerchant reads
+      // it — a state guard would let a double tap fire two lookups.
+      requested.current.delete(handle);
+      ensureMerchant(handle);
+    },
+    [ensureMerchant],
+  );
 
   const rows = useMemo(
     () => toActivityRows(settlements ?? [], denials),
@@ -375,12 +475,17 @@ export function PayerProvider({
       settlements,
       settlementsError,
       denials,
+      denialsError,
       rows,
       balance,
+      balanceError,
       rate,
+      rateError,
       chainNow,
       merchant,
       ensureMerchant,
+      merchantError,
+      retryMerchant,
       agentName,
       setAgentName,
       refresh,
@@ -399,12 +504,17 @@ export function PayerProvider({
       settlements,
       settlementsError,
       denials,
+      denialsError,
       rows,
       balance,
+      balanceError,
       rate,
+      rateError,
       chainNow,
       merchant,
       ensureMerchant,
+      merchantError,
+      retryMerchant,
       agentName,
       setAgentName,
       refresh,

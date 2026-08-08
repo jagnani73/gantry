@@ -45,24 +45,33 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   // Re-read the wallet directly: `spentToday` moves with every payment, and the
   // list behind this screen may be a minute old by the time it is opened.
   const [fresh, setFresh] = useState<AgentSummary | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setReadError(null);
     api
       .agent(wallet)
       .then((summary) => {
         if (!cancelled) setFresh(summary);
       })
-      .catch(() => {
-        // The list entry is still a real chain read, just an older one.
+      .catch((err: unknown) => {
+        // When the list has an entry this only costs freshness — but right
+        // after creating a wallet the list has NOT caught up, and swallowing
+        // this left the screen reading "Reading this agent's policy…" forever
+        // with nothing on it saying why.
+        if (cancelled) return;
+        console.warn(`gantry: agent read failed for ${wallet}`, err);
+        setReadError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       cancelled = true;
     };
-  }, [wallet]);
+  }, [wallet, reloadNonce]);
 
   const agent = fresh ?? listed;
   const name = agentName(wallet) ?? shortAddress(wallet);
@@ -76,8 +85,25 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     return (
       <OverlayScreen>
         <OverlayHeader onBack={popOverlay} backLabel="Back" title={name} />
-        <div className="flex flex-1 items-center justify-center px-8">
-          <p className="text-body text-muted">Reading this agent&apos;s policy from the chain…</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          {readError === null ? (
+            <p className="text-body text-muted">Reading this agent&apos;s policy from the chain…</p>
+          ) : (
+            <>
+              <p className="text-body text-muted">
+                We couldn&apos;t read this agent&apos;s policy. Its limits are on-chain and
+                unchanged — this is the reading, not the rules.
+              </p>
+              <p className="max-w-[34ch] text-fine text-faint break-words">{readError}</p>
+              <button
+                type="button"
+                onClick={() => setReloadNonce((n) => n + 1)}
+                className="focus-ring h-12 rounded-control-m bg-ink px-6 text-btn-sm text-paper transition-colors hover:bg-ink-hover"
+              >
+                Try again
+              </button>
+            </>
+          )}
         </div>
       </OverlayScreen>
     );
@@ -85,7 +111,6 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
 
   const rate = BigInt(agent.rate);
   const status = agentStatus(agent, chainNow());
-  const live = status === "active";
 
   const onRevoke = async () => {
     setError(null);
@@ -154,10 +179,16 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
             <KeyValue label="Allowed at" mono={false}>
               {categoryLabels(agent.categories)}
             </KeyValue>
+            {/* Through `agentStatus`, exactly like the chip above it. Read
+                straight off `expiry === 0` this line disagreed with the chip on
+                two branches — a failed read rendered "expired Invalid Date"
+                beside a chip saying "Revoked", and a revoked policy with a
+                future expiry rendered a live date with no prefix. One card
+                cannot hold two verdicts about the same question. */}
             <KeyValue label="Expires">
-              {agent.expiry === 0
+              {status === "revoked"
                 ? "revoked"
-                : `${live ? "" : "expired "}${calendarDate(agent.expiry)}`}
+                : `${status === "lapsed" ? "expired " : ""}${calendarDate(agent.expiry)}`}
             </KeyValue>
             <KeyValue label="Signer" divider={false}>
               {shortAddress(agent.agentSigner)}

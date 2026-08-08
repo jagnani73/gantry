@@ -22,7 +22,7 @@ const FILTERS: readonly { id: ActivityFilter; label: string }[] = [
  * counting it would make the total disagree with the wallet balance above it.
  */
 export function ActivityScreen() {
-  const { identity, rows, settlements, settlementsError, chainNow } = usePayer();
+  const { identity, rows, settlements, settlementsError, denialsError, chainNow } = usePayer();
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
   const shown = filterActivity(rows, identity.address, filter);
@@ -56,6 +56,18 @@ export function ActivityScreen() {
       {settlementsError ? (
         <Card tone="danger" radius="control-m" pad="none" className="mt-4 px-4 py-3.5">
           <p className="text-meta-sm break-words">{settlementsError}</p>
+        </Card>
+      ) : null}
+
+      {/* A refused agent payment produces no event and no log to sweep, so the
+          denials row is the ONLY trace it happened. If that page failed to load,
+          the list below is quietly missing declines rather than showing none. */}
+      {denialsError ? (
+        <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+          <p className="text-meta-sm break-words">
+            Declined agent payments couldn&apos;t be loaded, so any refusal is missing from this
+            list. {denialsError}
+          </p>
         </Card>
       ) : null}
 
