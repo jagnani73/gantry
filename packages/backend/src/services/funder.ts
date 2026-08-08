@@ -283,12 +283,16 @@ export async function topUpFunder(): Promise<FunderStatus> {
 }
 
 /**
- * Tops the demo PBM wallet up so the agent beats can run. Admin-gated and
+ * Tops an agent PBM wallet up so the agent beats can run. Admin-gated and
  * cooldown-free, unlike the public payer faucet — the wallet needs enough for
  * one drinks order (S$4.50 ≈ 3.36) AND enough left over for the rejection
  * attempt's balance pre-check, which the facilitator runs before the on-chain
  * policy check. Underfund it and the rejection beat fails as insufficient_funds
  * instead of CategoryNotAllowed, which is the wrong story entirely.
+ *
+ * The wallet is a parameter, not a constant: wallets are created by their
+ * payer-owner, so the address that matters is whichever one the caller just
+ * provisioned. See routes/admin.ts for why there is no fallback.
  */
 const WALLET_FLOOR = 8_000_000n; // 8 USDC
 const WALLET_TARGET = 10_000_000n; // 10 USDC
@@ -306,8 +310,9 @@ function readWalletBalance(wallet: Address): Promise<bigint> {
   });
 }
 
-export async function topUpPbmWallet(): Promise<{ wallet: Address; usdc: string; sent: string }> {
-  const wallet = config.demoPbmWallet;
+export async function topUpPbmWallet(
+  wallet: Address,
+): Promise<{ wallet: Address; usdc: string; sent: string }> {
   const balance = await readWalletBalance(wallet);
   if (balance >= WALLET_FLOOR) {
     return { wallet, usdc: formatUnits(balance, 6), sent: "0" };

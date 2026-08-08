@@ -38,6 +38,67 @@ function isNonceRace(err: unknown): boolean {
   return /nonce|underpriced|replacement|already known/i.test(message);
 }
 
+/**
+ * Broadcast on the queue-owned nonce, resyncing once on a nonce race, then wait
+ * one confirmation. Every relayer write goes through here so the nonce is
+ * claimed in exactly one place.
+ */
+async function broadcast(send: (nonce: number) => Promise<`0x${string}`>): Promise<TransactionReceipt> {
+  let hash: `0x${string}`;
+  try {
+    hash = await send(await claimNonce());
+  } catch (err) {
+    if (!isNonceRace(err)) {
+      nextNonce = null;
+      throw err;
+    }
+    nextNonce = null; // resync once and retry
+    hash = await send(await claimNonce());
+  }
+  nextNonce = (nextNonce ?? 0) + 1;
+
+  let receipt: TransactionReceipt;
+  try {
+    // Base blocks every ~2s — a 20s cap bounds head-of-line blocking; the
+    // default 180s would wedge the whole queue behind one stuck tx.
+    receipt = await publicClient.waitForTransactionReceipt({
+      hash,
+      confirmations: 1,
+      timeout: 20_000,
+    });
+  } catch (err) {
+    // The tx may or may not still mine — resync the nonce before the next
+    // job instead of building on a possibly-missing nonce forever.
+    nextNonce = null;
+    throw err;
+  }
+  if (receipt.status !== "success") {
+    throw new Error(`relayer tx reverted on-chain: ${hash}`);
+  }
+  return receipt;
+}
+
+/**
+ * A plain ETH transfer, for the payer faucet's gas leg.
+ *
+ * It shares this queue because there is no safe way not to. An out-of-band send
+ * picks its nonce from a `pending` count, and this repo has already been bitten
+ * by replicas that lag: a stale count hands out a nonce the relayer has ALREADY
+ * broadcast, and the transaction that loses the resulting replacement race is a
+ * settlement. Serialising here costs a few hundred milliseconds and removes that
+ * entirely.
+ *
+ * No simulation, because there is nothing to simulate — the balance check that
+ * would matter lives in the caller, and a recipient that rejects ETH shows up as
+ * a mined-and-reverted receipt, which `broadcast` reports in the shape
+ * `isDefiniteFailure` already recognises.
+ */
+export function sendRelayerEth(to: Address, value: bigint): Promise<TransactionReceipt> {
+  return enqueue(() =>
+    broadcast((nonce) => walletClient.sendTransaction({ to, value, nonce })),
+  );
+}
+
 /** simulate → write → wait 1 conf, serialized. Simulation reverts surface as decodable viem errors. */
 export function sendRelayerTx<
   const TAbi extends Abi,
@@ -60,37 +121,7 @@ export function sendRelayerTx<
       ...(params.value === undefined ? {} : { value: params.value }),
     } as Parameters<typeof publicClient.simulateContract>[0]);
 
-    let hash: `0x${string}`;
-    try {
-      hash = await walletClient.writeContract({ ...request, nonce: await claimNonce() });
-    } catch (err) {
-      if (!isNonceRace(err)) {
-        nextNonce = null;
-        throw err;
-      }
-      nextNonce = null; // resync once and retry
-      hash = await walletClient.writeContract({ ...request, nonce: await claimNonce() });
-    }
-    nextNonce = (nextNonce ?? 0) + 1;
-
-    let receipt: TransactionReceipt;
-    try {
-      // Base blocks every ~2s — a 20s cap bounds head-of-line blocking; the
-      // default 180s would wedge the whole queue behind one stuck tx.
-      receipt = await publicClient.waitForTransactionReceipt({
-        hash,
-        confirmations: 1,
-        timeout: 20_000,
-      });
-    } catch (err) {
-      // The tx may or may not still mine — resync the nonce before the next
-      // job instead of building on a possibly-missing nonce forever.
-      nextNonce = null;
-      throw err;
-    }
-    if (receipt.status !== "success") {
-      throw new Error(`relayer tx reverted on-chain: ${hash}`);
-    }
+    const receipt = await broadcast((nonce) => walletClient.writeContract({ ...request, nonce }));
     return { receipt, result };
   });
 }
