@@ -49,6 +49,12 @@ They are drawn separately on purpose.
 | Custody | one hop: agent → relayer → core | none |
 | Client | any unmodified x402 client | Gantry session-key signer |
 | Spend policy | none | on-chain caps, categories, expiry |
+| Who sets the policy | — | the wallet's **owner**, who is the payer |
+
+The wallet is created by the payer through a permissionless factory, and
+`setPolicy`/`revoke` are `onlyOwner` — so the caps are signed by the human's own
+key and no Gantry service can raise, lower or revoke them. The session key the
+agent holds is a capability, never an identity: the policy is the perimeter.
 
 Why the hop exists: spec-compliant x402 clients generate their own random EIP-3009 nonce, while `GantryCore` requires `nonce == intentId` to bind a signature to one intent. Rather than fork the client, the facilitator collects the agent's authorization and re-signs an intent-bound one. That buys real standards interop — an unmodified `@x402/fetch` pays Gantry today — at the cost of a PSP-style custodial moment, which is disclosed rather than hidden.
 
@@ -57,8 +63,8 @@ Why the hop exists: spec-compliant x402 clients generate their own random EIP-30
 | Layer | Stack | Notes |
 |---|---|---|
 | Contracts | Solidity ^0.8.24, Foundry | `GantryCore`, `AgentPBMWallet` + factory, `FixedRateSwap`, mocks. 162 tests incl. fuzz + real-USDC fork tests |
-| Backend | Node 22, Express 5, viem | merchant API, relayer (sole gas key), x402 facilitator (`/verify` + `/settle`), SSE indexer |
-| Web | Next.js 15, Tailwind, wagmi | onboarding, payer page, printable QR, merchant dashboard |
+| Backend | Node 22, Express 5, viem | merchant API, relayer (sole gas key), x402 facilitator (`/verify` + `/settle`), SSE indexer, paged settlement/denial/agent reads |
+| Web | Next.js 15, Tailwind v4, wagmi | two surfaces on one token-based design system: merchant back-office (`/merchant/[handle]/…`) and payer app (`/app/…`), plus the landing page, onboarding, payer page and printable QR |
 | Agent | Vercel AI SDK + Gemini `gemini-flash-latest` | terminal CLI; tools do all HTTP and signing, the model only decides and narrates |
 | Chain | Base Sepolia `eip155:84532` | contracts verified on Basescan |
 
@@ -68,8 +74,10 @@ Why the hop exists: spec-compliant x402 clients generate their own random EIP-30
 |---|---|
 | `GantryCore` | `0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0` |
 | `AgentPBMWalletFactory` | `0x172905F26F09b41636854338360315971240c1cf` |
-| `AgentPBMWallet` (demo) | `0xDD4bbed78B64715288bf10fabB2b62c659299D3E` |
+| `AgentPBMWallet` (first demo wallet) | `0xDD4bbed78B64715288bf10fabB2b62c659299D3E` |
 | `FixedRateSwap` | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
 | `MockXSGD` | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
 
-The pay token is Circle's **real** testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — payers sign EIP-3009 authorizations against Circle's own contract, and the relayer funds burner wallets by transferring real USDC rather than minting a mock. `MockXSGD` is the only mocked token, because XSGD exists on no testnet.
+The factory is permissionless and agent wallets are created by the payer, so their addresses are not constants — the one listed is the original, created by the deploy script with the relayer as owner and kept for reference.
+
+The pay token is Circle's **real** testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — payers sign EIP-3009 authorizations against Circle's own contract, and the relayer funds demo payer accounts by transferring real USDC rather than minting a mock. `MockXSGD` is the only mocked token, because XSGD exists on no testnet.

@@ -66,12 +66,15 @@ The raw `402` challenge, the policy JSON, and the revert, in that order:
 
 - `PAYMENT-REQUIRED` header offering both schemes (screenshot of the decoded
   challenge, not a redrawing of it).
-- `Policy { dailyCap: S$50, categories: [food_beverage], expiry: 30d }`.
+- `Policy { dailyCap: S$50, categories: [food_beverage], expiry: 30d }`, set by
+  the wallet's **owner** — the human, from their own key.
 - `CategoryNotAllowed(2)` — an actual on-chain revert when the agent tries a
   S$4 phone cable, surfaced verbatim as the x402 `errorReason`.
 
 The point to land: **the denial is a contract revert, not a backend
-`if` statement.** MAS Project Orchid's Purpose-Bound Money, applied to AI agents.
+`if` statement** — and the caps are not ours to move either, because
+`setPolicy`/`revoke` are `onlyOwner` and Gantry holds no key that can call them.
+MAS Project Orchid's Purpose-Bound Money, applied to AI agents.
 
 ### 7. What's real vs what's mocked
 A two-column table, verbatim from the repo's honest-notes section. This slide
@@ -85,16 +88,19 @@ real phone, real printed QR.
 
 Mocked: `MockXSGD` — the only mocked token, and unavoidable (XSGD exists on no testnet) · owner-set FX rate, not a market ·
 one trusted relayer/facilitator key, which briefly custodies funds on the
-standard `exact` path · self-attested merchant categories, no KYC — self-service
-onboarding is a demo affordance, the deployed host is verified-merchant-only ·
-merchants supply their own payout address rather than being issued a wallet · no
-fiat off-ramp.
+standard `exact` path · self-attested merchant categories and self-attested shop
+profiles, no KYC — the badge reads "Registered on-chain", and self-service
+onboarding is a demo affordance while the deployed host is verified-merchant-only
+· no login on the merchant back-office, so anyone with the URL can read a shop's
+takings · the deployed demo payer is one shared account, so its history is not
+private · merchants supply their own payout address rather than being issued a
+wallet · no fiat off-ramp.
 
 ### 8. Built so far — feasibility evidence
-Basescan links for all five contracts · the live dashboard URL · 162 Foundry
-tests (fuzz + real-USDC fork) plus 91 TypeScript tests · the commit graph with
-`m1`/`m2`/`m3`/`m4` tags. Screening risk this counters: "solo builder, will
-never ship."
+Basescan links for all five contracts · the live merchant back-office URL · 162
+Foundry tests (fuzz + real-USDC fork) plus 202 TypeScript tests (97 shared, 105
+backend) · the commit graph with `m1`/`m2`/`m3`/`m4` tags. Screening risk this
+counters: "solo builder, will never ship."
 
 ### 9. Regulation posture
 Deliberately modest, three steps: MAS has a framework (Payment Services Act;
@@ -155,4 +161,6 @@ These have all drifted at least once. Check them before export.
 | Agent demo amount | 3 iced teas S$4.50 → 3.352955 USDC |
 | Rejection | GadgetHub SG, S$4 phone cable, `CategoryNotAllowed(2)` |
 | Fee comparison | 0.5% vs ~2.8% — quote the monthly figures (S$10 vs S$56), not the S$6 day |
-| Dashboard strip | shows net S$5.97 and saved S$0.13 — the S$0.13 is the SAVING now, not Gantry's cut |
+| Settlements tiles | net S$5.97 ("Collected today") and S$0.13 ("Saved vs cards") — the S$0.13 is the SAVING, not Gantry's cut |
+| Agent wallet owner | the **payer**, on-chain. `setPolicy`/`revoke` are `onlyOwner`; revoke is in the payer app at `/app/agents`, not on the merchant screens |
+| Surfaces | merchant back-office `/merchant/[handle]/…` and payer app `/app/…`. There is no `/dashboard` screen any more — the path redirects |

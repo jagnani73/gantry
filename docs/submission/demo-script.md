@@ -3,18 +3,23 @@
 Three things here: the 3-minute finals script, the 60–90s Stage 1 clip, and the
 Q&A prep. Rehearse against the finals script; record against the clip script.
 
-**Stage setup.** The dashboard never leaves the projector. The phone (via scrcpy)
-and the agent terminal swap into a side panel. Everything runs against **Base
-Sepolia over the laptop's own hotspot** — never venue wifi. Local Anvil was
-considered and deliberately not built; the hotspot covers the same failure mode
-without a second orchestration path to maintain.
+**Stage setup.** The merchant back-office
+(`/merchant/ah-hock-chicken-rice/settlements`) never leaves the projector. The
+phone (via scrcpy) and the agent terminal swap into a side panel; the payer app's
+agents screen (`/app/agents`) is a third tab, because that is where revoke now
+lives. Everything runs against **Base Sepolia over the laptop's own hotspot** —
+never venue wifi. Local Anvil was considered and deliberately not built; the
+hotspot covers the same failure mode without a second orchestration path to
+maintain.
 
-**Before every run:** `pnpm demo:reset` (~5–10s — it clears the dashboard cache,
-re-arms the agent policy with a real on-chain `setPolicy`, tops the agent wallet
-back up to 10 USDC if it's low, checks `gadgethub-sg` is still registered, and
-prints the funder's ETH **and** USDC balances, swapping ETH→USDC if the USDC has
-run below 15). Check both numbers. Every register and every settle spends ETH;
-every payer grant and wallet top-up spends USDC, which cannot be minted.
+**Before every run:** `pnpm demo:reset` — it clears the transaction cache,
+provisions/tops up and re-arms the demo agent wallet, re-seeds the demo merchant
+profiles, checks `gadgethub-sg` is still registered, and prints the funder's ETH
+**and** USDC balances, swapping ETH→USDC if the USDC has run low. Check both
+numbers. Every register and every settle spends ETH; every payer grant and wallet
+top-up spends USDC, which cannot be minted. The re-arm is signed by the **demo
+payer's** key, not the relayer's — `setPolicy` is `onlyOwner` and the payer owns
+the wallet — so that key needs a little ETH, which the faucet's gas leg supplies.
 
 **The onboarding cooldown survives `demo:reset`** — it's a 30s in-process
 per-IP guard, so two registration takes inside 30s will 429. Space them, or
@@ -38,8 +43,8 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 | 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$4.50." |
 | 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same contract. Same feed. Ah Hock does not know or care that one of these customers is software." |
 | 1:48–2:12 | **WOW 2** | Terminal: phone cable → red row on dashboard | "Now watch it get told no. I ask it for a S$4 phone cable from an electronics shop — well inside its budget. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
-| 2:12–2:26 | **Revoke** | Dashboard policy panel: cap meter, click Revoke | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a daily cap, an allowlist, an expiry, and a kill switch the human owner holds. One click, on-chain, done." |
-| 2:26–2:44 | **Fee strip** | Dashboard summary strip | "Two payments. Ah Hock keeps five ninety-seven of six dollars — that tile is what we saved him. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
+| 2:12–2:26 | **Revoke** | Payer app `/app/agents`: cap meter, tap Revoke, confirm | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a daily cap, an allowlist, an expiry, and a kill switch the human owner holds. And *holds* is literal: this wallet is owned by me on-chain, so that's my signature, not a Gantry API call. One tap, done." |
+| 2:26–2:44 | **Fee tiles** | Back to the merchant Settlements screen | "Two payments. Ah Hock keeps five ninety-seven of six dollars — the third tile is what we saved him. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
 | 2:44–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike. Every contract is verified on Base Sepolia — the address is on the slide." |
 
 ### Optional opening beat — live onboarding (~25s, decide against the clock)
@@ -47,9 +52,10 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 Insert between 0:12 and 0:22, pushing everything back by ~25s (so trim the
 revoke beat to ~8s, or skip narrating the row's FX detail, to absorb it).
 
-> Open `/onboard`, type a shop name — availability turns green as I type, and
-> it's green because we're reading the chain. Paste a payout address, pick
-> "Food & Beverage", hit register. That's a real on-chain transaction, ~5s.
+> Open `/onboard`, type a handle — availability turns green as I type, and it's
+> green because we're reading the chain. Shop name, stall location, one line
+> about it, paste a payout address, pick "Food & Beverage", hit register. That's
+> a real on-chain transaction, ~5s.
 > Success card: Basescan link, and a button that prints the QR code. **"This
 > shop did not exist ninety seconds ago."** Then pay it.
 
@@ -75,6 +81,8 @@ add it. If not, it lives in the clip and the deck only.
 | Agent LLM stalls | It self-fallbacks to scripted narration at 8s with identical wire traffic. Say nothing — the payment is real either way |
 | RPC dies entirely | Full-run backup video, narrate over it, and be honest that we're on the recording |
 | Register says it failed | Open `/pay/<handle>` BEFORE retrying. If it loads, the tx mined past the 20s receipt cap and you're already registered — the form now detects this and shows the success card, but check before burning a second handle |
+| Revoke button errors | The revoke is the *payer's* transaction, so the demo account needs gas. `pnpm demo:reset` funds it; if it still fails, the relayer's ETH is near its reserve — check the reset output's ETH line, because that also means every settlement is about to fail |
+| Agents screen is empty | The list comes from `WalletCreated` logs filtered by owner, so an empty list means the demo account owns no wallet yet. `pnpm demo:reset` provisions one |
 
 ---
 
@@ -118,10 +126,13 @@ prototype is not a payments licence and this deck doesn't pretend it is.
 
 **3. What if the agent's session key is stolen?**
 Then the attacker gets exactly what the policy allows — up to S$50 a day, at
-food merchants, until the expiry, and only until the owner clicks revoke. That's
-the whole design: **the policy is the perimeter, not the key.** Compare a stolen
-card number, where the limit is the credit line. The key is a capability, not an
-identity.
+food merchants, until the expiry, and only until the owner revokes. That's the
+whole design: **the policy is the perimeter, not the key.** Compare a stolen card
+number, where the limit is the credit line. The key is a capability, not an
+identity. And the perimeter isn't ours to move: the wallet is owned on-chain by
+the human, `setPolicy` and `revoke` are `onlyOwner`, and Gantry holds no key that
+can raise a cap or lift a category — so compromising Gantry doesn't widen the
+agent's allowance either.
 
 **4. Why does this need a blockchain at all?**
 Honestly: the QR half doesn't, strictly. A bank could build it. The agent half
