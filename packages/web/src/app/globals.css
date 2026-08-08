@@ -1,77 +1,426 @@
 @import "tailwindcss";
 
-:root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
-  --primary: 142 72% 29%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 142 72% 29%;
-  --radius: 0.625rem;
+/* Gantry design system — the ONLY file in packages/web allowed to contain a hex.
+   Two surfaces (merchant desktop, payer phone) only read as one product if they
+   draw from one table, and a token that exists in three places drifts in two. */
+
+/* ── COLOUR ───────────────────────────────────────────────────────────────────
+   Light only, deliberately. Hierarchy comes from fill — white on paper, green on
+   white — not from shadow and not from a dark/light split. Green is the single
+   chromatic colour; danger appears only on failure. Values are verbatim from the
+   design handoff's token table.
+   Translucent variants are NOT tokens: use Tailwind's opacity modifier against
+   the base colour (bg-ink/28 for the drawer scrim, bg-on-accent/15 for a fill on
+   green, bg-paper/94 for the phone's tab bar). */
+@theme {
+  --color-paper: #f4f2ed; /* app background, both surfaces */
+  --color-surface: #ffffff; /* cards, panels, row containers */
+  --color-surface-sunken: #efede7; /* inset panels: profile preview, demo-account notice */
+
+  --color-fill-subtle: #f0eee8; /* chips, inputs, secondary buttons, neutral door chip */
+  --color-fill-hover: #f7f5f1; /* row hover */
+  --color-fill-hover-card: #fbfaf7; /* card / white-button hover */
+
+  --color-hairline: #edeae3; /* dividers inside white cards */
+  --color-hairline-strong: #e7e4dc; /* sidebar edge, section rules on paper */
+  --color-nav-active: #e4e1d8; /* active nav pill, disabled button fill */
+
+  /* Text ladder, darkest to lightest. `quiet` is the handoff's `text-secondary`;
+     it is renamed because --color-text-secondary would generate `text-text-secondary`. */
+  --color-ink: #14150f; /* primary text, dark buttons */
+  --color-ink-hover: #2a2b22; /* dark button hover */
+  --color-quiet: #54534a; /* body copy on paper */
+  --color-muted: #7c7a6e; /* supporting copy */
+  --color-faint: #95938a; /* labels, meta */
+  --color-faintest: #a5a398; /* table column headers, hashes, struck-through amounts */
+
+  --color-accent: #1b4d3e; /* deep green — primary accent, hero panel, links */
+  --color-accent-tint: #e2ece6; /* agent chip, category chip, badges */
+  --color-on-accent: #f1f4f0; /* text on green */
+  --color-on-accent-muted: rgb(241 244 240 / 0.62); /* labels on green */
+  --color-on-accent-body: rgb(241 244 240 / 0.72); /* body on green */
+
+  --color-danger: #9a4632; /* declined, revoke, disconnected */
+  --color-danger-tint: #f5e7e2; /* declined chip, revoke button, error panel */
+  --color-danger-deep: #7e3626; /* text inside a danger panel */
+  --color-warning: #9a7b2f; /* "Waiting" feed status */
+
+  /* Beyond the handoff's table: values the prototypes use for hover and idle
+     states. They are tokens for the same reason the rest are — a pressed keypad
+     key and a hovered nav item must not diverge across two screens. */
+  --color-fill-hover-strong: #e8e5de; /* fill-subtle button hover */
+  --color-nav-hover: #eae7e0; /* idle sidebar nav hover */
+  --color-danger-tint-hover: #efdbd4; /* revoke button hover */
+  --color-accent-hover: #0f3227; /* link hover */
+  --color-accent-soft: #8fc4a9; /* accent link ON ink — green is unreadable there */
+  --color-hint: #c6c3b9; /* row chevrons and other non-content glyphs */
+  --color-tab-idle: #cfccc2; /* inactive tab glyph */
 }
 
-.dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 8% 7%;
-  --card-foreground: 0 0% 98%;
-  --primary: 142 70% 45%;
-  --primary-foreground: 240 10% 3.9%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 50.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 142 70% 45%;
+/* ── TYPOGRAPHY ───────────────────────────────────────────────────────────────
+   Named by ROLE, not by size, because the whole point is that text-[13.5px]
+   never reaches a feature component. Sizes are px (not rem) so they stay verbatim
+   against a design drawn at 1440 and 402.
+   Weight is baked in only where it is intrinsic to the role (headings, figures,
+   amounts); the neutral roles inherit 400 so `font-medium` stays composable.
+   Rule the whole system rests on: a quantity, an identifier or a timestamp is
+   mono + tabular-nums. Prose is Instrument Sans. The primitives enforce it. */
+@theme {
+  /* Display — landing and section headings */
+  --text-hero: 76px;
+  --text-hero--line-height: 1.02;
+  --text-hero--letter-spacing: -0.035em;
+  --text-hero--font-weight: 600;
+  --text-section: 32px;
+  --text-section--line-height: 1.12;
+  --text-section--letter-spacing: -0.025em;
+  --text-section--font-weight: 600;
+  --text-display: 28px; /* landing entry cards */
+  --text-display--line-height: 1.15;
+  --text-display--letter-spacing: -0.025em;
+  --text-display--font-weight: 600;
+
+  /* Titles */
+  --text-page-title: 26px; /* desktop screen heading */
+  --text-page-title--line-height: 1.2;
+  --text-page-title--letter-spacing: -0.02em;
+  --text-page-title--font-weight: 600;
+  --text-screen-title: 26px; /* phone screen heading — tighter tracking */
+  --text-screen-title--line-height: 1.2;
+  --text-screen-title--letter-spacing: -0.025em;
+  --text-screen-title--font-weight: 600;
+  --text-title-lg: 24px;
+  --text-title-lg--line-height: 1.25;
+  --text-title-lg--letter-spacing: -0.02em;
+  --text-title-lg--font-weight: 600;
+  --text-title: 22px; /* failure headline */
+  --text-title--line-height: 1.25;
+  --text-title--letter-spacing: -0.02em;
+  --text-title--font-weight: 600;
+  --text-title-sm: 19px; /* standee shop name */
+  --text-title-sm--line-height: 1.3;
+  --text-title-sm--letter-spacing: -0.015em;
+  --text-title-sm--font-weight: 600;
+
+  /* Card titles */
+  --text-card-title-m: 17px; /* phone merchant card */
+  --text-card-title-m--line-height: 1.3;
+  --text-card-title-m--letter-spacing: -0.015em;
+  --text-card-title-m--font-weight: 600;
+  --text-card-title: 16px;
+  --text-card-title--line-height: 21px;
+  --text-card-title--letter-spacing: -0.015em;
+  --text-card-title--font-weight: 600;
+  --text-card-title-sm: 15px;
+  --text-card-title-sm--line-height: 1.35;
+  --text-card-title-sm--letter-spacing: -0.01em;
+  --text-card-title-sm--font-weight: 600;
+  --text-card-title-xs: 14px;
+  --text-card-title-xs--line-height: 1.4;
+  --text-card-title-xs--letter-spacing: -0.01em;
+  --text-card-title-xs--font-weight: 600;
+
+  /* Figures — always paired with a currency prefix a step or two down.
+     <Figure> owns the pairing so the two never drift apart. */
+  --text-entry: 64px; /* phone amount pad */
+  --text-entry--line-height: 1;
+  --text-entry--letter-spacing: -0.035em;
+  --text-entry--font-weight: 600;
+  --text-figure-kpi: 56px;
+  --text-figure-kpi--line-height: 1;
+  --text-figure-kpi--letter-spacing: -0.03em;
+  --text-figure-kpi--font-weight: 600;
+  --text-figure-lg: 52px; /* payouts to date */
+  --text-figure-lg--line-height: 1;
+  --text-figure-lg--letter-spacing: -0.03em;
+  --text-figure-lg--font-weight: 600;
+  --text-figure-balance: 50px; /* phone wallet balance */
+  --text-figure-balance--line-height: 1;
+  --text-figure-balance--letter-spacing: -0.03em;
+  --text-figure-balance--font-weight: 600;
+  --text-figure: 44px; /* drawer, receipt, agent detail */
+  --text-figure--line-height: 1;
+  --text-figure--letter-spacing: -0.03em;
+  --text-figure--font-weight: 600;
+  --text-figure-sm: 40px; /* secondary KPI */
+  --text-figure-sm--line-height: 1;
+  --text-figure-sm--letter-spacing: -0.03em;
+  --text-figure-sm--font-weight: 600;
+  --text-currency-xl: 28px; /* the "S$" beside each figure size */
+  --text-currency-xl--line-height: 1;
+  --text-currency-lg: 24px;
+  --text-currency-lg--line-height: 1;
+  --text-currency: 22px;
+  --text-currency--line-height: 1;
+  --text-currency-sm: 20px;
+  --text-currency-sm--line-height: 1;
+
+  /* Amounts in rows — sans + tabular-nums, NOT mono: they read as figures,
+     not as identifiers. <Money variant="amount"> is the one that renders these. */
+  --text-amount-lg: 17px; /* merchant live feed */
+  --text-amount-lg--line-height: 1.2;
+  --text-amount-lg--letter-spacing: -0.02em;
+  --text-amount-lg--font-weight: 600;
+  --text-amount: 15.5px; /* merchant transactions table */
+  --text-amount--line-height: 1.2;
+  --text-amount--letter-spacing: -0.02em;
+  --text-amount--font-weight: 600;
+  --text-amount-sm: 15px; /* phone rows, payouts net */
+  --text-amount-sm--line-height: 1.2;
+  --text-amount-sm--letter-spacing: -0.01em;
+  --text-amount-sm--font-weight: 600;
+  --text-stat: 19px; /* mono stat under "You've paid here" */
+  --text-stat--line-height: 1.2;
+
+  /* Row and list titles */
+  --text-list-title: 14px;
+  --text-list-title--line-height: 1.4;
+  --text-list-title--font-weight: 500;
+  --text-row-title: 13.5px;
+  --text-row-title--line-height: 1.4;
+  --text-row-title--font-weight: 500;
+
+  /* Prose */
+  --text-standfirst: 19px;
+  --text-standfirst--line-height: 30px;
+  --text-body-lg: 14.5px;
+  --text-body-lg--line-height: 23px;
+  --text-body: 13.5px;
+  --text-body--line-height: 21px;
+  --text-body-sm: 13px; /* phone body */
+  --text-body-sm--line-height: 20px;
+  --text-meta: 12.5px;
+  --text-meta--line-height: 19px;
+  --text-meta-sm: 12px;
+  --text-meta-sm--line-height: 18px;
+  --text-fine: 11.5px;
+  --text-fine--line-height: 18px;
+  --text-key: 13px; /* key/value label */
+  --text-key--line-height: 1.4;
+  --text-input: 14px;
+  --text-input--line-height: 1.4;
+
+  /* Micro-labels — all uppercase. col-header and eyebrow are mono. */
+  --text-label-lg: 12.5px;
+  --text-label-lg--line-height: 1.4;
+  --text-label-lg--letter-spacing: 0.06em;
+  --text-label: 12px;
+  --text-label--line-height: 1.4;
+  --text-label--letter-spacing: 0.06em;
+  --text-label-wide: 11.5px; /* "SCAN TO PAY" on the standee */
+  --text-label-wide--line-height: 1.4;
+  --text-label-wide--letter-spacing: 0.18em;
+  --text-eyebrow: 10.5px;
+  --text-eyebrow--line-height: 1.4;
+  --text-eyebrow--letter-spacing: 0.14em;
+  --text-eyebrow-sm: 9.5px; /* the MERCHANT / DEMO tags */
+  --text-eyebrow-sm--line-height: 1.4;
+  --text-eyebrow-sm--letter-spacing: 0.14em;
+  --text-col-header: 10px;
+  --text-col-header--line-height: 1.4;
+  --text-col-header--letter-spacing: 0.12em;
+
+  /* Mono — identifiers, hashes, timestamps, token amounts */
+  --text-mono: 12.5px;
+  --text-mono--line-height: 1.5;
+  --text-mono-sm: 12px;
+  --text-mono-sm--line-height: 1.5;
+  --text-mono-xs: 11.5px;
+  --text-mono-xs--line-height: 1.5;
+  --text-mono-2xs: 11px;
+  --text-mono-2xs--line-height: 1.4;
+  --text-mono-3xs: 10.5px;
+  --text-mono-3xs--line-height: 1.3;
+  --text-mono-4xs: 10px;
+  --text-mono-4xs--line-height: 1.3;
+
+  /* Controls */
+  --text-btn: 16px; /* phone full-width primary */
+  --text-btn--line-height: 1;
+  --text-btn--font-weight: 600;
+  --text-btn-sm: 15px;
+  --text-btn-sm--line-height: 1;
+  --text-btn-sm--font-weight: 600;
+  --text-keypad: 23px;
+  --text-keypad--line-height: 1;
+  --text-keypad--font-weight: 500;
+  --text-tab: 10.5px;
+  --text-tab--line-height: 1;
+  --text-tab--font-weight: 500;
+  --text-chip: 11.5px;
+  --text-chip--line-height: 1;
+  --text-chip--font-weight: 500;
+  --text-chip-sm: 11px;
+  --text-chip-sm--line-height: 1;
+  --text-chip-sm--font-weight: 500;
 }
 
+/* ── RADIUS, SPACING, ELEVATION ───────────────────────────────────────────────
+   The radius ladder is load-bearing: a card at 16 and a row at 11 inside it is
+   what makes the fill-only hierarchy legible without borders.
+   Spacing is semantic only — the numeric ladder (4 6 8 10 12 …) is already
+   Tailwind's dynamic scale (p-1, p-1.5, p-2, …), so re-declaring it as tokens
+   would give every value two names. */
+@theme {
+  --radius-hero: 24px; /* hero panels */
+  --radius-panel: 20px; /* large cards */
+  --radius-card-m: 18px; /* phone cards */
+  --radius-card: 16px; /* cards */
+  --radius-control-m: 14px; /* phone buttons, small cards */
+  --radius-tile: 12px; /* icon tiles */
+  --radius-row: 11px; /* list rows */
+  --radius-nav: 10px; /* nav items, icon buttons */
+  --radius-control: 9px; /* buttons, inputs, chips */
+  --radius-chip: 8px; /* small chips */
+  --radius-chip-sm: 7px; /* micro chips */
+  --radius-badge: 6px; /* badges */
+
+  --spacing-page: 32px; /* merchant main padding */
+  --spacing-card-lg: 28px;
+  --spacing-card: 24px;
+  --spacing-card-m: 20px; /* phone card padding */
+  --spacing-gutter: 20px; /* phone side padding, desktop section gap */
+  --spacing-row-x: 16px;
+  --spacing-row-y: 13px;
+  --spacing-grid: 14px; /* KPI grid gap */
+  --spacing-stack: 10px; /* phone stack gap */
+  --spacing-screen-top: 62px; /* phone content top — clears the status bar */
+  --spacing-screen-bottom: 44px;
+
+  /* The only shadow in the system. Everything else earns depth from fill. */
+  --shadow-drawer: -24px 0 60px rgb(20 21 15 / 0.16);
+}
+
+/* ── MOTION ───────────────────────────────────────────────────────────────────
+   Hover fills are 120ms so a pointer sweeping a table does not smear; overlays
+   are 180–240ms because they replace a whole screen and need to read as a push.
+   Setting the DEFAULT transition here means `transition-colors` alone is already
+   the house 120ms ease — no screen has to remember the number. */
+@theme {
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: ease;
+
+  /* A settlement that just landed. Tint, never a border: a border would resize
+     the row and shove the whole feed down by 2px as each payment arrives. */
+  --animate-accent-tint: accent-tint 1.2s ease-in-out 1;
+  --animate-overlay-in: overlay-in 180ms ease-out; /* scrims, fades */
+  --animate-drawer-in: drawer-in 180ms ease-out; /* merchant transaction drawer */
+  --animate-overlay-push: overlay-push 240ms ease-out; /* phone full-screen overlay */
+
+  @keyframes accent-tint {
+    from {
+      background-color: var(--color-accent-tint);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes drawer-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes overlay-push {
+    from {
+      transform: translateX(100%);
+      opacity: 0.6;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+}
+
+/* ── FONTS ────────────────────────────────────────────────────────────────────
+   The variables are declared by next/font in layout.tsx; `inline` so the emitted
+   utilities point straight at them instead of through a second hop. */
 @theme inline {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-instrument-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
 }
 
-body {
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
+@layer base {
+  /* Tailwind v4's preflight leaves border-color at currentColor, so every bare
+     `border` in the tree drew a black outline. The redesign builds cards from
+     fill and rarely outlines anything, but the ones that do must default to the
+     hairline, not to whatever colour the text happens to be. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-hairline);
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  a {
+    color: var(--color-accent);
+  }
+  a:hover {
+    color: var(--color-accent-hover);
+  }
+}
+
+/* Every interactive element gets one of these. The prototypes have no focus
+   states at all; an outline (not a ring) keeps the row height stable, which
+   matters in a table where focus moves down a list. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Same contract on ink or green, where the accent ring would disappear. */
+@utility focus-ring-inverse {
+  &:focus-visible {
+    outline: 2px solid var(--color-on-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* The empty logo / camera slot. One definition so a shop with no logo looks the
+   same on the merchant profile, the payer's receipt and the merchant page. */
+@utility stripe-placeholder {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-fill-subtle) 0 6px,
+    var(--color-hairline-strong) 6px 12px
+  );
 }
 
 @media print {
   .no-print {
     display: none !important;
+  }
+}
+
+/* Motion is decoration here — none of it carries meaning that the layout does
+   not already carry — so it is safe to switch off wholesale. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

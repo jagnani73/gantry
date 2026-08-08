@@ -1,0 +1,106 @@
+"use client";
+
+import { useState } from "react";
+import { Card, Mono } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
+import { useMerchantContext, shopName } from "./merchant-context";
+import type { QrMatrix } from "./qr-matrix";
+import { ScreenHeader } from "./screen-header";
+import { Standee } from "./standee";
+
+type CopyState = "idle" | "copied" | "failed";
+
+export function QrScreen({ payUrl, qr }: { payUrl: string; qr: QrMatrix }) {
+  const { handle, merchant } = useMerchantContext();
+  const [copied, setCopied] = useState<CopyState>("idle");
+  const [downloading, setDownloading] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(payUrl);
+      setCopied("copied");
+    } catch {
+      // Non-secure contexts (a phone hitting the laptop over http on the venue
+      // network) have no clipboard API at all. Say so — the URL is right there
+      // to select by hand.
+      setCopied("failed");
+    }
+  }
+
+  async function downloadPng() {
+    setDownloading(true);
+    try {
+      // Loaded on demand: the QR on screen is server-rendered geometry, so the
+      // library is only needed by the one button that wants a raster file.
+      const { toDataURL } = await import("qrcode");
+      const url = await toDataURL(payUrl, { width: 1024, margin: 2 });
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `gantry-${handle}-qr.png`;
+      anchor.click();
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <>
+      <ScreenHeader title="QR & standee" className="print:hidden">
+        One printed code. Anyone scans it — no app, no account, no gas.
+      </ScreenHeader>
+
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[420px_1fr]">
+        <Card radius="card" pad="lg" className="print:p-0">
+          <Standee
+            name={shopName(merchant, handle)}
+            location={merchant?.location}
+            payUrl={payUrl}
+            qr={qr}
+          />
+        </Card>
+
+        <div className="flex flex-col gap-3.5 print:hidden">
+          <Card radius="card" pad="md">
+            <div className="text-card-title-sm">Print it</div>
+            <p className="mt-2 mb-4 text-body text-muted">
+              The code never expires and never needs replacing — it points at your handle, not at
+              an amount. Printing hides everything on this page except the standee.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => window.print()}>
+                Print standee
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void downloadPng()}
+                disabled={downloading}
+              >
+                {downloading ? "Preparing…" : "Download PNG"}
+              </Button>
+            </div>
+          </Card>
+
+          <Card radius="card" pad="md">
+            <div className="text-card-title-sm">Your pay link</div>
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-control bg-fill-hover px-3.5 py-3">
+              <Mono size="md" tone="quiet" className="min-w-0 break-all">
+                {payUrl}
+              </Mono>
+              <button
+                type="button"
+                onClick={() => void copy()}
+                className="focus-ring shrink-0 rounded-badge text-meta text-accent hover:text-accent-hover"
+              >
+                {copied === "copied" ? "Copied" : copied === "failed" ? "Select it" : "Copy"}
+              </button>
+            </div>
+            <p className="mt-3.5 text-meta text-faint">
+              The same link an AI agent hits over x402. One address, both doors.
+            </p>
+          </Card>
+        </div>
+      </div>
+    </>
+  );
+}

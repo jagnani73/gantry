@@ -9,38 +9,39 @@ export function backendUrl(): string {
 }
 
 /**
- * The burner is configured by exactly one value, with no URL override — env and
- * URL can never disagree about which account signs:
- *   `1`          → on, with a per-device key persisted in localStorage
+ * The demo account is configured by exactly one value, with no URL override —
+ * env and URL can never disagree about which account signs:
  *   `0x…` (32B)  → on, pinned to that account
- *   `0`/unset    → off
+ *   `0`/unset    → off; the payer connects their own wallet
  *   anything else→ off, and say so; a typo must never silently change the payer
+ *
+ * There is no per-device mode. It existed when the demo account was a throwaway
+ * burner, but agents are now owned on-chain by their payer, and a fresh random
+ * address owns nothing and has no history — so every screen built on that
+ * ownership would render permanently empty.
+ *
+ * NOTE: `NEXT_PUBLIC_*` is inlined into the client bundle at build time, so this
+ * key is readable by anyone who opens devtools on a deployed build. That is
+ * acceptable ONLY because it is a demo account holding testnet funds. Never put
+ * a key here that holds anything else, and never reuse the relayer's.
  */
-type BurnerConfig = { on: false } | { on: true; key?: `0x${string}` };
-
 let warned = false;
 
-function burnerConfig(): BurnerConfig {
-  const raw = process.env.NEXT_PUBLIC_BURNER;
-  if (!raw || raw === "0") return { on: false };
-  if (raw === "1") return { on: true };
-  if (/^0x[0-9a-fA-F]{64}$/.test(raw)) return { on: true, key: raw as `0x${string}` };
+export function demoKey(): `0x${string}` | undefined {
+  const raw = process.env.NEXT_PUBLIC_DEMO_KEY;
+  if (!raw || raw === "0") return undefined;
+  if (/^0x[0-9a-fA-F]{64}$/.test(raw)) return raw as `0x${string}`;
   if (!warned) {
     warned = true;
     console.warn(
-      `NEXT_PUBLIC_BURNER="${raw}" is neither 1 nor a 0x-prefixed 32-byte key — the burner stays off.`,
+      `NEXT_PUBLIC_DEMO_KEY="${raw}" is not a 0x-prefixed 32-byte key — the demo account stays off.`,
     );
   }
-  return { on: false };
+  return undefined;
 }
 
-export function burnerEnvEnabled(): boolean {
-  return burnerConfig().on;
-}
-
-export function burnerEnvKey(): `0x${string}` | undefined {
-  const config = burnerConfig();
-  return config.on ? config.key : undefined;
+export function demoAccountEnabled(): boolean {
+  return demoKey() !== undefined;
 }
 
 export function walletConnectProjectId(): string {

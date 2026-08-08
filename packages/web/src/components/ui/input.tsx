@@ -1,12 +1,16 @@
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/primitives";
 
+/**
+ * Inputs are a fill, not an outline — same rule as cards. The border only appears
+ * on invalid state, where an edge is the point.
+ */
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <input
       type={type}
       className={cn(
-        "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "text-input focus-ring bg-fill-hover text-ink placeholder:text-faint rounded-control aria-invalid:border-danger flex h-10 w-full px-3.5 py-2.75 aria-invalid:border disabled:cursor-not-allowed disabled:bg-nav-active disabled:text-faintest",
         className,
       )}
       {...props}

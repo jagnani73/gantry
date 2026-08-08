@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/primitives";
 
 function Separator({
   className,
@@ -10,7 +10,7 @@ function Separator({
     <div
       role="separator"
       className={cn(
-        "shrink-0 bg-border",
+        "bg-hairline shrink-0",
         orientation === "horizontal" ? "h-px w-full" : "h-full w-px",
         className,
       )}

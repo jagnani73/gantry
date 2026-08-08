@@ -1,7 +1,6 @@
 import Link from "next/link";
+import { Card, Label, Mono } from "@/components/primitives";
 import { OnboardClient } from "@/components/onboard-client";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
  * Self-service onboarding is a demo affordance, not a public one — the backend
@@ -19,39 +18,52 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
  */
 const onboardingEnabled = process.env.NODE_ENV !== "production";
 
+/** Where a turned-away visitor is sent. The one merchant that is always live. */
+const DEMO_HANDLE = "ah-hock-chicken-rice";
+
 export default function OnboardPage() {
   if (onboardingEnabled) return <OnboardClient />;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center px-4 py-10">
-      <Card>
-        <CardHeader>
-          <CardTitle>Onboarding is verified-merchant-only here</CardTitle>
-          <CardDescription>
-            Merchants are reviewed before they are added on this deployment, the way merchant
-            acquiring works everywhere else. Self-service registration runs on the demo host.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm text-muted-foreground">
-          <p>
-            Registration itself is permissionless on-chain — <code>registerMerchant</code> on{" "}
-            <code>GantryCore</code> is callable by anyone with gas. What is gated here is Gantry
-            paying that gas for an unauthenticated caller.
-          </p>
-          <p>
-            The merchants already registered are live: their QR codes take payments and their
-            settlements land in the dashboard feed.
-          </p>
-          <div className="flex gap-2 pt-1">
-            <Button asChild>
-              <Link href="/dashboard">Open the dashboard</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/pay/ah-hock-chicken-rice">Pay a live merchant</Link>
-            </Button>
-          </div>
-        </CardContent>
+    <main className="mx-auto max-w-[720px] px-5 py-14 sm:px-10">
+      <Label size="eyebrow">For shops</Label>
+      <h1 className="mt-3 text-page-title">Onboarding is verified-merchant-only here</h1>
+      <p className="mt-2.5 text-body text-quiet">
+        Merchants are reviewed before they are added on this deployment, the way merchant
+        acquiring works everywhere else. Self-service registration runs on the demo host.
+      </p>
+
+      <Card pad="lg" className="mt-8 flex flex-col gap-4">
+        <p className="text-body text-quiet">
+          Registration itself is permissionless on-chain — <Mono tone="ink">registerMerchant</Mono>{" "}
+          on <Mono tone="ink">GantryCore</Mono> is callable by anyone with gas. What is gated here
+          is Gantry paying that gas for an unauthenticated caller.
+        </p>
+        <p className="text-body text-quiet">
+          The merchants already registered are live: their codes take payments and their
+          settlements land in the feed as they happen.
+        </p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          <Link
+            href={`/merchant/${DEMO_HANDLE}/settlements`}
+            className="focus-ring inline-flex items-center justify-center rounded-control bg-ink px-4.5 py-3 text-btn-sm text-paper transition-colors hover:bg-ink-hover"
+          >
+            Open a live shop →
+          </Link>
+          <Link
+            href={`/pay/${DEMO_HANDLE}`}
+            className="focus-ring inline-flex items-center justify-center rounded-control bg-fill-subtle px-4.5 py-3 text-btn-sm font-medium text-quiet transition-colors hover:bg-fill-hover-strong"
+          >
+            Pay a live merchant
+          </Link>
+        </div>
       </Card>
+
+      <footer className="mt-10 text-meta text-faint">
+        <Link className="focus-ring" href="/">
+          ← Overview
+        </Link>
+      </footer>
     </main>
   );
 }

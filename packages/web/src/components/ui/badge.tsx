@@ -1,21 +1,23 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/primitives";
 
-const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
-  {
-    variants: {
-      variant: {
-        default: "border-transparent bg-primary text-primary-foreground",
-        secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-destructive-foreground",
-        outline: "text-foreground",
-      },
+/**
+ * Kept for the feature screens that still import it; new work should reach for
+ * `<Chip>` in primitives, which carries the design's actual chip geometry.
+ * Variant names are unchanged so those screens keep compiling.
+ */
+const badgeVariants = cva("text-chip inline-flex items-center gap-1.5 whitespace-nowrap", {
+  variants: {
+    variant: {
+      default: "bg-accent-tint text-accent rounded-chip-sm px-2.5 py-1.25",
+      secondary: "bg-fill-subtle text-quiet rounded-chip-sm px-2.5 py-1.25",
+      destructive: "bg-danger-tint text-danger rounded-chip-sm px-2.5 py-1.25",
+      outline: "border-hairline-strong text-quiet rounded-chip-sm border px-2.5 py-1",
     },
-    defaultVariants: { variant: "default" },
   },
-);
+  defaultVariants: { variant: "default" },
+});
 
 function Badge({
   className,
