@@ -11,8 +11,12 @@ import {MockUSDC} from "../src/mocks/MockUSDC.sol";
 import {MockXSGD} from "../src/mocks/MockXSGD.sol";
 
 /// @notice v0 deployment: mocks + fixed-rate swap seeded to the demo rate + core with
-///         the deployer as relayer/owner. Real Circle USDC stays the primary pay token;
-///         MockUSDC is the faucet-independent fallback.
+///         the deployer as relayer/owner. Real Circle USDC is the ONLY pay token the app
+///         uses.
+/// @dev    MockUSDC is deployed here for parity with what is already on-chain and because
+///         the Foundry suite uses it as a generic EIP-3009 test double. Nothing in the
+///         backend, web or agent packages resolves it — do not reintroduce it as a pay
+///         token. MockXSGD is the one genuinely-mocked asset (XSGD exists on no testnet).
 contract Deploy is Script {
     address internal constant REAL_USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
     uint256 internal constant DEMO_RATE = 1_342_100; // 1.3421 XSGD per USDC, 6dp

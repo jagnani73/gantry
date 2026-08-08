@@ -6,11 +6,16 @@ import {console2} from "forge-std/console2.sol";
 import {GantryCore} from "../src/GantryCore.sol";
 import {AgentPBMWallet} from "../src/AgentPBMWallet.sol";
 import {AgentPBMWalletFactory} from "../src/AgentPBMWalletFactory.sol";
-import {MockUSDC} from "../src/mocks/MockUSDC.sol";
 
 /// @notice M3 deploy: factory + the demo agent wallet against the EXISTING core (read
-///         from env, never redeployed), armed with the canonical demo policy and funded
-///         with MUSDC, plus the "gadgethub-sg" merchant for the rejection beat.
+///         from env, never redeployed), armed with the canonical demo policy, plus the
+///         "gadgethub-sg" merchant for the rejection beat.
+/// @dev    The wallet ships EMPTY. It used to be minted 1,000 MockUSDC here, but every
+///         door settles in real Circle USDC now and real USDC cannot be minted — funding
+///         is a relayer transfer through `POST /api/admin/wallet/topup`, which `demo:reset`
+///         calls. Minting the mock would leave the wallet holding a token nothing reads,
+///         and the rejection beat would then die as `insufficient_funds` at the
+///         facilitator's balance pre-check instead of reaching `CategoryNotAllowed`.
 /// @dev Safely re-runnable: each run deploys a FRESH factory + wallet (the old one
 ///      strands with owner-reclaimable funds), and the one-shot registerMerchant is
 ///      guarded by a pre-broadcast existence probe. Rehearsal re-arms are NOT this
@@ -28,7 +33,6 @@ contract DeployPBM is Script {
     uint128 internal constant PER_TX_CAP_USDC = 37_255_049; // = dailyCap; category is the demo's per-tx story
     uint256 internal constant CATEGORY_BITMAP = 1 << 1; // food_beverage only
     uint40 internal constant POLICY_TTL = 30 days;
-    uint256 internal constant WALLET_FUNDING = 1_000e6; // MUSDC, open mint
 
     string internal constant GADGETHUB_HANDLE = "gadgethub-sg";
     uint16 internal constant CATEGORY_ELECTRONICS = 2;
@@ -38,7 +42,6 @@ contract DeployPBM is Script {
         address deployer = vm.addr(pk);
 
         GantryCore core = GantryCore(vm.envAddress("GANTRY_CORE_ADDRESS"));
-        MockUSDC usdc = MockUSDC(vm.envAddress("MOCK_USDC_ADDRESS"));
         // Required, no default: a defaulted signer would silently break packages/agent
         // signing — fail fast instead.
         address agentSigner = vm.envAddress("AGENT_SIGNER_ADDRESS");
@@ -69,7 +72,6 @@ contract DeployPBM is Script {
                 categoryBitmap: CATEGORY_BITMAP
             })
         );
-        usdc.mint(address(wallet), WALLET_FUNDING);
         if (needGadget) {
             core.registerMerchant(GADGETHUB_HANDLE, gadgetPayout, CATEGORY_ELECTRONICS);
         }
@@ -82,12 +84,13 @@ contract DeployPBM is Script {
         console2.log("  dailyCap (uUSDC):  ", DAILY_CAP_USDC);
         console2.log("  perTxCap (uUSDC):  ", PER_TX_CAP_USDC);
         console2.log("  categoryBitmap:    ", CATEGORY_BITMAP);
-        console2.log("  funded (MUSDC):    ", WALLET_FUNDING);
+        console2.log("  balance:            0 - fund it with real USDC, see NEXT below");
         if (needGadget) {
             console2.log("gadgethub-sg registered, category", CATEGORY_ELECTRONICS);
             console2.log("merchantId:");
             console2.logBytes32(keccak256(bytes(GADGETHUB_HANDLE)));
         }
-        console2.log("NEXT: pin factory+wallet in packages/shared/src/addresses.ts and run pnpm abis");
+        console2.log("NEXT: pin factory+wallet in packages/shared/src/addresses.ts, run pnpm abis,");
+        console2.log("      then fund the wallet: pnpm demo:reset (POST /api/admin/wallet/topup)");
     }
 }
