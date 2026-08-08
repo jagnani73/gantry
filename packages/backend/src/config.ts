@@ -27,7 +27,13 @@ const EnvSchema = z.object({
   POLICY_ADMIN_ENABLED: z.enum(["0", "1"]).default("1"),
   /** Not a Gantry setting — the standard Node signal, read here so the demo
    * affordances have one thing to key off. The backend Dockerfile sets it to
-   * `production`, so a deployed host disables them without remembering a flag. */
+   * `production`, so a deployed host locks them down without remembering a flag.
+   *
+   * Kept a free string because tooling sets values we do not enumerate (`test`,
+   * `staging`), but ANY value other than `production` means "demo host" — so a
+   * typo like `Production` or a trailing space fails OPEN, unlocking an
+   * unauthenticated USDC spigot on a public box. `hostClass` below warns loudly
+   * rather than silently trusting it. */
   NODE_ENV: z.string().optional(),
 });
 
@@ -70,12 +76,38 @@ function requireRpcUrls(): string[] {
 }
 
 /**
- * One question — "is this a demo host or a public one?" — behind the two
- * affordances that spend the relayer's balances without authenticating anyone.
- * NODE_ENV rather than Gantry-specific flags: there is no identity to check,
- * only a host to classify, and the backend Dockerfile already sets it.
+ * One question — "is this a demo host or a public one?" — behind every affordance
+ * that spends the relayer's balances without authenticating anyone. NODE_ENV
+ * rather than Gantry-specific flags: there is no identity to check, only a host to
+ * classify, and the backend Dockerfile already sets it.
+ *
+ * Exported as a named class, not left implicit in the derived fields. Those fields
+ * carry different payloads (a ceiling and a permission) and nothing would stop
+ * them drifting — the boot banner was already inferring the onboarding state from
+ * the faucet's value, which would have announced "onboarding OFF" while
+ * registration stayed open the moment anyone capped a demo host.
  */
-const isDemoHost = env.NODE_ENV !== "production";
+export type HostClass = "demo" | "public";
+
+const KNOWN_NODE_ENVS = ["production", "development", "test", ""];
+function classifyHost(nodeEnv: string | undefined): HostClass {
+  const raw = nodeEnv ?? "";
+  if (raw === "production") return "public";
+  if (!KNOWN_NODE_ENVS.includes(raw)) {
+    // Fails open by design (anything-but-production = demo), so say so. A silent
+    // `Production` typo would leave a real-USDC faucet and open merchant
+    // registration on a public host.
+    console.warn(
+      `NODE_ENV="${raw}" is not a value we recognise — treating this as a DEMO host, ` +
+        `which leaves the payer faucet unmetered and self-service onboarding ON. ` +
+        `Set NODE_ENV=production if this is a public deployment.`,
+    );
+  }
+  return "demo";
+}
+
+const hostClass = classifyHost(env.NODE_ENV);
+const isDemoHost = hostClass === "demo";
 
 const rpcUrls = requireRpcUrls();
 const rpcUrl = rpcUrls[0]!;
@@ -96,6 +128,8 @@ export const config = {
   corsOrigin: env.CORS_ORIGIN,
   adminToken: env.ADMIN_TOKEN,
   policyAdminEnabled: env.POLICY_ADMIN_ENABLED === "1",
+  /** Ask this, never one affordance's value, to describe what the host will do. */
+  hostClass,
   /**
    * Rolling-24h ceiling on payer funding across ALL addresses, or null for
    * unmetered.
@@ -106,7 +140,8 @@ export const config = {
    * deck's QR and pay with no wallet at all — switching it off on the public
    * host would make the deployed payer page unusable by exactly the people it
    * needs to impress. 20 USDC is five grants: enough for a Q&A, and a loss the
-   * existing ETH→USDC top-up swap absorbs without touching the gas key.
+   * existing ETH→USDC top-up swap can replace. (That swap spends ETH from this
+   * same key, so it is not free — see MAX_ETH_PER_SWAP in services/funder.ts.)
    *
    * Unmetered on a demo host: a rehearsal pass alone spends two grants
    * (`e2e:pay` + `x402:buy`), so ten of them would blow any sane ceiling.

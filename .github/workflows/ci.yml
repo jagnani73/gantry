@@ -11,8 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # forge-std only, and NOT recursive — recursive would drag in the
-          # nested submodules of other libraries for no benefit.
+          # forge-std only. `--recursive` is a no-op today (forge-std has no
+          # submodules of its own and OpenZeppelin left .gitmodules when it moved
+          # to npm), but plain `true` states the actual requirement.
           submodules: true
 
       - uses: pnpm/action-setup@v4
@@ -34,3 +35,10 @@ jobs:
       # Fork tests self-skip without BASE_SEPOLIA_RPC_URL, so this stays green
       # without a secret; the other 157 run.
       - run: pnpm test:contracts
+
+      # The backend image has to build SOMEWHERE before deploy day. Root context
+      # is mandatory — the Dockerfile installs the pnpm workspace, so building
+      # from packages/backend cannot see the lockfile or the sibling manifests.
+      - name: Build the backend image
+        run: docker build -f packages/backend/Dockerfile -t gantry-backend .
+

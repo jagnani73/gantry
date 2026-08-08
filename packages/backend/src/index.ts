@@ -54,10 +54,10 @@ async function main() {
     // Announce it: burner mode dies without the faucet, and "demo host or not"
     // is otherwise invisible until a payer is already waiting on the funding step.
     console.log(
-      config.faucetDailyBudget === null
+      config.hostClass === "demo"
         ? "demo host: payer faucet unmetered, self-service onboarding ON"
-        : `public host (NODE_ENV=production): payer faucet capped at ${config.faucetDailyBudget} units/24h ` +
-            "across all addresses; self-service onboarding OFF — only merchants already on-chain are served",
+        : `public host: payer faucet capped at ${config.faucetDailyBudget} units/24h across all ` +
+            "addresses; self-service onboarding OFF — only merchants already on-chain are served",
     );
     for (const ip of lanAddresses()) console.log(`  LAN: http://${ip}:${config.port}`);
   });
