@@ -88,10 +88,26 @@ The two halves go to different hosts, and the split is forced: the dashboard
 feed is a long-lived SSE stream, so the backend needs a host that keeps a
 process alive.
 
-| Half | Host | Config |
+| Half | Host | How |
 |---|---|---|
-| `packages/web` | Vercel | `vercel.json` at the repo root — deploy from the root, leave Vercel's "Root Directory" unset. If Vercel cannot find the Next output, set Root Directory to `packages/web` and drop `outputDirectory`. |
-| `packages/backend` | Railway or Fly | `packages/backend/Dockerfile`, built with the **repo root** as context: `docker build -f packages/backend/Dockerfile .`. Railway looks for `./Dockerfile` by default and will otherwise fall back to Nixpacks, which cannot install this workspace — point it at the path explicitly. |
+| `packages/web` | Vercel | Import the repo, set Root Directory to `packages/web`. No config file — Vercel detects Next.js. |
+| `packages/backend` | Render (free web service) | Build `pnpm install --frozen-lockfile`, start `pnpm --filter @gantry/backend start`. No container. |
+
+The backend **cannot** be serverless, and not only because of SSE: the relayer's
+nonce counter, the faucet's cooldown/in-flight/daily-ceiling state and the
+merchant registration cooldown all live in the process, and the indexer holds a
+WebSocket subscription plus a 15s sweep. It must run as **exactly one
+long-lived instance** — never autoscaled, or two of them will claim the same
+nonce and every rate limit halves in effectiveness.
+
+A persistent disk is *not* required. SQLite is a disposable cache, and an
+indexer with no stored cursor re-sweeps from the deploy block in 1,999-block
+chunks (~74 `getLogs` calls today, growing ~43k blocks a day).
+
+**The deployed instance is a shop window, not the demo.** The stage run happens
+on the laptop, because burner funding and self-service onboarding only work on a
+demo host. So Render's free-tier spin-down (~50s cold start) costs a browsing
+screener a wait, not you a demo.
 
 **The web build needs these set in the Vercel project before the first build.**
 They are `NEXT_PUBLIC_*`, so they are inlined at build time, not read at runtime
@@ -124,9 +140,8 @@ key to do it, bounded by a per-swap cap). Point the
 web app's `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
 `CORS_ORIGIN` to the Vercel origin rather than `*`.
 
-The SQLite file inside the container is a disposable cache — the chain is the
-source of truth — so it is intentionally not a mounted volume; a redeploy starts
-the feed empty until the indexer sweep repopulates it.
+On Render, also set `NODE_ENV=production` — it is what caps the faucet and
+closes self-service onboarding.
 
 ## Docs
 

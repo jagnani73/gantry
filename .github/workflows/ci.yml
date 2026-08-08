@@ -36,9 +36,3 @@ jobs:
       # without a secret; the other 157 run.
       - run: pnpm test:contracts
 
-      # The backend image has to build SOMEWHERE before deploy day. Root context
-      # is mandatory — the Dockerfile installs the pnpm workspace, so building
-      # from packages/backend cannot see the lockfile or the sibling manifests.
-      - name: Build the backend image
-        run: docker build -f packages/backend/Dockerfile -t gantry-backend .
-
