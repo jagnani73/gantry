@@ -1,0 +1,22 @@
+# Secrets first — an image must never carry a relayer key.
+**/.env
+**/.env.local
+**/.env.*.local
+
+**/node_modules
+.git
+.github
+
+# Disposable SQLite cache; the container builds its own.
+**/*.db
+**/*.db-journal
+
+# Foundry build output and the forge-std submodule (contracts are not in the image).
+packages/contracts/out
+packages/contracts/cache
+packages/contracts/lib
+packages/contracts/broadcast
+
+packages/web/.next
+docs
+scripts
