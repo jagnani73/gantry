@@ -55,8 +55,9 @@ async function main() {
     // is otherwise invisible until a payer is already waiting on the funding step.
     console.log(
       config.demoFundingEnabled
-        ? "demo host: payer faucet ON (relayer transfers real USDC)"
-        : "public host: payer faucet OFF (NODE_ENV=production) — burner mode will not fund",
+        ? "demo host: payer faucet ON (relayer transfers real USDC), self-service onboarding ON"
+        : "public host (NODE_ENV=production): payer faucet OFF — burner mode will not fund; " +
+            "self-service onboarding OFF — only merchants already on-chain are served",
     );
     for (const ip of lanAddresses()) console.log(`  LAN: http://${ip}:${config.port}`);
   });

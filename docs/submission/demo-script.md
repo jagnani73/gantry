@@ -100,7 +100,7 @@ covered by the deck.
 
 ---
 
-## Q&A prep — eight hard answers
+## Q&A prep — nine hard answers
 
 **1. Why not just use PayNow?**
 For a Singaporean paying a Singaporean, you should — it's free and it works.
@@ -163,6 +163,21 @@ strictly better than clawing it back. For the human side, a production
 deployment would put a licensed PSP in the flow who can hold funds in escrow for
 a dispute window. We didn't build that.
 
+**9. How does a hawker who has never held crypto actually receive the money?**
+Today the onboarding form asks for a payout address, and that's the least
+realistic step in the whole flow — I'd rather flag it than defend it. The
+production answer is a **passkey smart account**: the merchant creates a wallet
+with FaceID at signup, no seed phrase and no app to install, and Gantry never
+holds the key. That's a shipping pattern, not a research idea — Coinbase Smart
+Wallet and Privy both do it today.
+
+What we deliberately did *not* do is generate and hold the merchant's key for
+them. That would make Gantry the custodian of hawker revenue and turn a
+non-custodial rail into an unlicensed money service — the exact opposite of the
+regulation posture on slide 9. The payout address is validated as strict EIP-55
+rather than just well-formed hex, because `setMerchantPayout` is gated on the
+current payout: a mistyped-but-valid address would be unrecoverable by anyone.
+
 ### Rapid-fire spares
 
 - *Why XSGD and not USDC to the merchant?* A hawker prices in dollars and pays
@@ -174,4 +189,9 @@ a dispute window. We didn't build that.
 - *Is the LLM making the payment?* No. The model chooses and narrates; the
   signing and the HTTP live in tools it cannot reach. If the model times out, a
   scripted path sends identical wire traffic.
+- *Can anyone register as a merchant?* On the demo host, yes — that's the
+  2-minute onboarding beat. On the deployed instance, no: merchants are verified
+  first, the way acquiring works everywhere else. Registration is permissionless
+  on the contract itself; what's gated is Gantry paying the gas for an anonymous
+  caller.
 - *Solo project?* Yes. Solo student entry, NTU.

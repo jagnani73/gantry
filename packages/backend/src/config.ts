@@ -69,6 +69,14 @@ function requireRpcUrls(): string[] {
   return urls;
 }
 
+/**
+ * One question — "is this a demo host or a public one?" — behind the two
+ * affordances that spend the relayer's balances without authenticating anyone.
+ * NODE_ENV rather than Gantry-specific flags: there is no identity to check,
+ * only a host to classify, and the backend Dockerfile already sets it.
+ */
+const isDemoHost = env.NODE_ENV !== "production";
+
 const rpcUrls = requireRpcUrls();
 const rpcUrl = rpcUrls[0]!;
 // Alchemy-style URLs share the path between https and wss.
@@ -96,7 +104,18 @@ export const config = {
    * authenticate here: burner funding is a stage affordance, not a feature, so
    * the honest gate is "is this a demo host", which NODE_ENV already answers.
    */
-  demoFundingEnabled: env.NODE_ENV !== "production",
+  demoFundingEnabled: isDemoHost,
+  /**
+   * Whether strangers may register merchants. Same key, different resource:
+   * onboarding spends relayer ETH per call and permanently claims a handle,
+   * and its cooldown is per-IP, which bounds one browser rather than one
+   * attacker. Draining the gas key stops every door, not just onboarding.
+   *
+   * Off in production is also the more honest product position: real merchant
+   * acquiring is underwritten, never self-service. Self-registration is the
+   * demo affordance; a deployed host serves the merchants already on-chain.
+   */
+  onboardingEnabled: isDemoHost,
   /** The demo AgentPBMWallet the policy routes read/manage. Pinned in shared
    * like every other contract address — one committed source all three
    * runtimes read, rather than per-process env copies that must agree. */

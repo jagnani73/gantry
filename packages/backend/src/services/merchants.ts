@@ -87,6 +87,14 @@ export async function registerMerchant(
   req: RegisterMerchantRequest,
   ip: string | undefined,
 ): Promise<RegisterMerchantResponse> {
+  if (!config.onboardingEnabled) {
+    throw new ApiError(
+      403,
+      "OnboardingDisabled",
+      "self-service onboarding is off on this deployment — merchants are verified before they are added. " +
+        "Run the backend without NODE_ENV=production to onboard (demo host), or register on-chain directly.",
+    );
+  }
   if (!isValidHandle(req.handle)) {
     throw new ApiError(
       400,

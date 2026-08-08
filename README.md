@@ -94,12 +94,20 @@ process alive.
 | `packages/backend` | Railway or Fly | `packages/backend/Dockerfile`, built with the **repo root** as context: `docker build -f packages/backend/Dockerfile .` |
 
 On the public backend, set `POLICY_ADMIN_ENABLED=0` — an open revoke lets any
-visitor zero the agent's policy and only `ADMIN_TOKEN` can re-arm it. The payer
-faucet needs no flag: it is off whenever `NODE_ENV=production`, which the
-Dockerfile sets, because it transfers real USDC out of the only gas key. The
-trade-off is that burner mode cannot fund itself on a deployed host — the
-deployed instance is there to show a live dashboard, not to take payments from
-strangers. Point the
+visitor zero the agent's policy and only `ADMIN_TOKEN` can re-arm it. Two other
+things need no flag at all: the payer faucet and self-service merchant
+onboarding are both off whenever `NODE_ENV=production`, which the Dockerfile
+sets. Both spend the relayer's balances for an unauthenticated caller — the
+faucet transfers real USDC, onboarding spends ETH and permanently claims a
+handle — and `GantryCore` stores a single `onlyRelayer` address, so a deployed
+host and your demo laptop are necessarily the same key.
+
+The trade-off is that burner mode cannot fund itself on a deployed host, and
+`/onboard` renders a verified-merchant-only card instead of the form. Both are
+deliberate: the deployed instance exists to show a live dashboard and let anyone
+inspect the contracts, not to hand money to strangers or let them squat handles.
+Production merchant acquiring is underwritten anyway — self-registration is the
+demo affordance. Point the
 web app's `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
 `CORS_ORIGIN` to the Vercel origin rather than `*`.
 

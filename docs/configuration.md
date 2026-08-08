@@ -52,13 +52,22 @@ Because that balance sits on the only gas key and the cooldown is per-*address*,
 funding is gated on **`NODE_ENV`** — the standard Node signal rather than a
 Gantry flag, since the question is "is this a demo host", not "who is asking".
 
-| `NODE_ENV` | Faucet | Where |
+`NODE_ENV` gates **two** unauthenticated affordances that spend the relayer's
+balances — funding payers, and registering merchants:
+
+| `NODE_ENV` | Payer faucet | Self-service onboarding |
 |---|---|---|
-| unset / anything else | On — the relayer transfers 4 USDC per grant | `pnpm dev` on the demo laptop |
-| `production` | Off — `FaucetDisabled` (403) | the backend Dockerfile sets this |
+| unset / anything else (`pnpm dev`) | On — the relayer transfers 4 USDC per grant | On — `POST /api/merchants` registers, `/onboard` renders the form |
+| `production` (set by the backend Dockerfile, and by Vercel for the web build) | Off — `FaucetDisabled` (403) | Off — `OnboardingDisabled` (403); `/onboard` renders a verified-merchant-only card instead |
+
+Onboarding spends relayer ETH per call and permanently claims a handle, and its
+cooldown is per-**IP**, which bounds one browser rather than one attacker.
+Because `GantryCore` stores a single `onlyRelayer` address, the deployed backend
+and the demo laptop are necessarily the same key — so draining it publicly stops
+every door, not just onboarding.
 
 Burner mode cannot fund on a production host. The boot log states which mode the
-process is in, and the error names the fix — the one way this bites is a
+process is in, and both errors name the fix — the one way this bites is a
 rehearsal started with `NODE_ENV=production`.
 
 Amount cap: **S$5** on the burner, S$9999 on a connected wallet (`pay-client.tsx`,

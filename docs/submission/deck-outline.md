@@ -85,8 +85,10 @@ real phone, real printed QR.
 
 Mocked: `MockXSGD` — the only mocked token, and unavoidable (XSGD exists on no testnet) · owner-set FX rate, not a market ·
 one trusted relayer/facilitator key, which briefly custodies funds on the
-standard `exact` path · self-attested merchant categories, no KYC · no fiat
-off-ramp.
+standard `exact` path · self-attested merchant categories, no KYC — self-service
+onboarding is a demo affordance, the deployed host is verified-merchant-only ·
+merchants supply their own payout address rather than being issued a wallet · no
+fiat off-ramp.
 
 ### 8. Built so far — feasibility evidence
 Basescan links for all six contracts · the live dashboard URL · 162 Foundry
@@ -109,8 +111,9 @@ too small to land as an absolute:
 | Cards | ~2.8% | S$0.168 | **S$56** |
 | Gantry | 0.5% | S$0.03 | **S$10** |
 
-Roadmap: finals → institutions door (payroll, disbursements) → SGQR+
-interoperability and mainnet XSGD. Ask: Best Student Team, and the finals slot.
+Roadmap: finals → **passkey merchant wallets** (a hawker signs up with FaceID,
+no seed phrase, no app — Gantry never holds the key) → institutions door
+(payroll, disbursements) → SGQR+ interoperability and mainnet XSGD. Ask: Best Student Team, and the finals slot.
 Team: Yashvardhan Jagnani, NTU.
 
 ---
