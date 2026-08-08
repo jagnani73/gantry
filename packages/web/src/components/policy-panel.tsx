@@ -11,8 +11,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  * On-chain agent policy panel: cap meter + Revoke. Reads GET /api/policy on a
  * 10s poll (the wallet's SpendAuthorized/PolicySet state is chain-truth; the
  * poll keeps the meter honest after each agent payment without SSE plumbing).
- * Renders nothing when the backend has no PBM wallet configured — the
- * dashboard must not break pre-deploy.
+ * Renders nothing until the first successful poll. There is no "unconfigured"
+ * case left — the wallet is a committed constant, and the
+ * PolicyWalletUnconfigured branch that used to justify a blank panel is gone —
+ * so a blank panel means only that the backend has not answered yet.
  */
 
 const POLL_MS = 10_000;

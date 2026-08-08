@@ -12,7 +12,7 @@ Cut from the bottom if time runs short.
 |---|---|---|---|
 | 1 | Deck PDF (10 slides — `deck-outline.md`) | outline drafted | 10 Aug PM |
 | 2 | Demo clip, 60–90s, unlisted YouTube (`demo-script.md`) | script drafted | record 10 Aug AM, upload PM |
-| 3 | Public GitHub repo with real commit history | live | continuous |
+| 3 | Public GitHub repo with real commit history | **PRIVATE — must flip** | before submit |
 | 4 | Architecture diagram PNG (`architecture.md`) | mermaid source drafted | 10 Aug PM |
 | 5 | Live dashboard URL (Vercel) + Basescan contract links | **not deployed yet** | 10 Aug |
 | 6 | Team details + NTU proof of student status | **not requested yet** | ASAP |
@@ -36,9 +36,14 @@ Cut from the bottom if time runs short.
       The repo is currently PRIVATE, but a public GitHub repo is one of the five
       submission artifacts, so screeners would hit a 404. The key transited a
       chat; rotating after flipping visibility is rotating too late.
-- [ ] Confirm the deployed backend runs with `NODE_ENV=production` — it is what
-      disables the payer faucet, which otherwise hands real USDC out of the only
-      gas key to anyone who asks.
+- [ ] Confirm the deployed backend runs with `NODE_ENV=production` — it **caps**
+      the payer faucet at 20 USDC per rolling 24h across all addresses (it does
+      not close it; burner payments must still work for a judge) and switches
+      self-service onboarding OFF.
+- [ ] Set the Vercel build vars before the first build: `NEXT_PUBLIC_BURNER=1`,
+      `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_BACKEND_URL`,
+      `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`. Miss the burner one and the
+      deployed payer page cannot take a payment at all.
 - [ ] Export the mermaid diagram to PNG and check it reads at thumbnail size.
 - [ ] Print slide 1 and confirm the QR scans off a projected image, not just
       off a screen.

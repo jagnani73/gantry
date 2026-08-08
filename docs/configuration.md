@@ -3,9 +3,10 @@
 The environment variables that change **what the app does** — which key signs a
 payment, which token moves, whether the agent thinks for itself.
 
-Plumbing is deliberately not here: chain selection, RPC and WebSocket URLs,
-ports, database path, CORS, and the keys themselves are documented inline in the
-three `.env.example` files. Nothing below is needed to *run* the app — only to
+Plumbing is deliberately not here: RPC and WebSocket URLs, ports, CORS and
+the keys themselves are documented inline in the four `.env.example` files.
+(Chain selection and the database path are no longer configurable at all — they
+are hardcoded in `config.ts`.) Nothing below is needed to *run* the app — only to
 change how it behaves.
 
 Claims are traced from the code. References name a **file and a symbol** rather
@@ -42,7 +43,7 @@ branch). The connected wallet is never funded and must already hold the token.
 | Balance vs `amountIn` | Result |
 |---|---|
 | sufficient | Straight to signing, no faucet call. |
-| insufficient | `funding` step → the funder **transfers 4 real USDC** (60s cooldown per address) → poll balance 10× 1.5s → sign, or fail "faucet funds not visible yet" after ~15s. |
+| insufficient | `funding` step → the funder **transfers 4 real USDC** (60s cooldown per address) → poll balance 10× 1.5s → sign, or fail "funds not visible yet — try again" after ~15s. |
 
 The funder is the relayer wallet: settlement is in real Circle USDC, which
 cannot be minted, so the grant is a transfer out of a finite balance and can run
@@ -72,7 +73,8 @@ handle, and nobody needs to onboard from their seat. Funding is **capped**
 instead, because burner mode is what lets a judge scan the deck's QR and pay
 with no wallet at all; switching it off would make the deployed payer page
 unusable by the people it exists to convince. 20 USDC is five grants — enough
-for a Q&A, and a loss the ETH→USDC top-up swap absorbs without touching gas.
+for a Q&A, and a loss the ETH→USDC top-up swap can replace — though not for
+free: that swap buys USDC with ETH from the same key, bounded by a per-swap cap.
 
 The cap is in-process, so a restart resets it and two instances get one cap
 each. That bounds casual abuse, which is the real threat to a faucet whose asset

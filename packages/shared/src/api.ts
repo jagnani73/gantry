@@ -58,7 +58,7 @@ export interface RegisterMerchantResponse extends MerchantResponse {
  * page ⇒ Human; the facilitator bridge and POST /api/pbm/intent ⇒ Agent). */
 export interface CreateIntentRequest {
   handle: string;
-  /** 6dp XSGD units, e.g. "6500000" for S$6.50. */
+  /** 6dp XSGD units, e.g. "1500000" for S$1.50. */
   xsgdAmount: string;
   token: TokenId;
 }
@@ -80,7 +80,7 @@ export interface IntentResponse {
   tokenSymbol: TokenId;
   amountIn: string;
   xsgdAmount: string;
-  /** XSGD 6dp out per 1e6 tokenIn units ("1000000" when tokenIn is XSGD). */
+  /** XSGD 6dp out per 1e6 tokenIn units ("1000000" when tokenIn is MockXSGD). */
   rate: string;
   expiry: number;
   door: WireDoor;
@@ -133,7 +133,7 @@ export interface SettleResponse {
  * client must sign over (the SpendAuthorization binds the intentId). */
 export interface CreatePbmIntentRequest {
   handle: string;
-  /** 6dp XSGD units, e.g. "19500000" for S$19.50. */
+  /** 6dp XSGD units, e.g. "4500000" for S$4.50. */
   xsgdAmount: string;
 }
 
@@ -171,7 +171,8 @@ export interface PolicyResponse {
   categoryBitmap: string;
   /** Decoded category names for bits set in the bitmap. */
   categories: string[];
-  /** The order token whose balance is reported — what a top-up must mint. */
+  /** The order token whose balance is reported — what a top-up must TRANSFER (it
+ * is real Circle USDC and cannot be minted). */
   token: TokenId;
   /** Wallet's balance of the order token. */
   balance: string;

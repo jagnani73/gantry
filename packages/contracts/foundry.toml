@@ -1,5 +1,5 @@
 # Remappings live in remappings.txt, NOT here — that file takes precedence over
-# this one, so a `remappings` key added below would be silently ignored.
+# this one, so a `remappings` key added below would be silently shadowed if it names the same prefix.
 # OpenZeppelin comes from npm (see package.json) rather than `forge install`:
 # OZ's docs warn a git install can silently follow the unreleased master branch
 # on update, whereas a published npm version is immutable. forge-std stays a

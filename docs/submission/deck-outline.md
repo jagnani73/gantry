@@ -91,8 +91,8 @@ merchants supply their own payout address rather than being issued a wallet · n
 fiat off-ramp.
 
 ### 8. Built so far — feasibility evidence
-Basescan links for all six contracts · the live dashboard URL · 162 Foundry
-tests (fuzz + real-USDC fork) plus 64 TypeScript tests · the commit graph with
+Basescan links for all five contracts · the live dashboard URL · 162 Foundry
+tests (fuzz + real-USDC fork) plus 91 TypeScript tests · the commit graph with
 `m1`/`m2`/`m3`/`m4` tags. Screening risk this counters: "solo builder, will
 never ship."
 

@@ -72,7 +72,7 @@ pnpm dev                                                 # backend :4000 + web :
 
 The relayer address needs Base Sepolia ETH — it is the only gas key in the system, so with an empty balance every settlement, registration and payer top-up fails. It doubles as the **funder**: payer burners and the demo policy wallet are topped up by transferring real USDC out of its balance, so it needs USDC too. `pnpm demo:reset` reports both and swaps ETH for USDC on Uniswap v3 when the USDC runs low. Nothing else needs deploying: the contracts are live and their addresses are pinned in `@gantry/shared`.
 
-The variables that change **what the app does** — payer key source, agent autonomy, the revoke gate — are documented in **[docs/configuration.md](docs/configuration.md)**, along with the flows each combination produces. Plumbing (RPC URLs, ports, keys) is documented inline in the three `.env.example` files.
+The variables that change **what the app does** — payer key source, agent autonomy, the revoke gate — are documented in **[docs/configuration.md](docs/configuration.md)**, along with the flows each combination produces. Plumbing (RPC URLs, ports, keys) is documented inline in the four `.env.example` files.
 
 - **Phone demo:** put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL`/`NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, open `/qr/ah-hock-chicken-rice`, scan, pay. Set `NEXT_PUBLIC_BURNER=1` for an in-browser demo wallet — auto-funded by the backend (a 4 USDC transfer from the relayer, which is why burner amounts cap at S$5), zero wallet setup — or to a `0x` private key to pin it to one pre-funded account.
 - **CLI smoke test:** `pnpm --filter @gantry/backend e2e:pay` (quote → EIP-3009 sign → settle → replay-rejection check).
@@ -90,8 +90,19 @@ process alive.
 
 | Half | Host | Config |
 |---|---|---|
-| `packages/web` | Vercel | `vercel.json` at the repo root — deploy from the root, leave Vercel's "Root Directory" unset |
-| `packages/backend` | Railway or Fly | `packages/backend/Dockerfile`, built with the **repo root** as context: `docker build -f packages/backend/Dockerfile .` |
+| `packages/web` | Vercel | `vercel.json` at the repo root — deploy from the root, leave Vercel's "Root Directory" unset. If Vercel cannot find the Next output, set Root Directory to `packages/web` and drop `outputDirectory`. |
+| `packages/backend` | Railway or Fly | `packages/backend/Dockerfile`, built with the **repo root** as context: `docker build -f packages/backend/Dockerfile .`. Railway looks for `./Dockerfile` by default and will otherwise fall back to Nixpacks, which cannot install this workspace — point it at the path explicitly. |
+
+**The web build needs these set in the Vercel project before the first build.**
+They are `NEXT_PUBLIC_*`, so they are inlined at build time, not read at runtime
+— a missing one cannot be fixed without redeploying:
+
+| Variable | Why it is not optional |
+|---|---|
+| `NEXT_PUBLIC_BACKEND_URL` | Without it the app talks to `localhost:4000`, i.e. the visitor's own machine. |
+| `NEXT_PUBLIC_APP_URL` | Baked into the printed QR by `/qr/[handle]`. Defaults to `http://localhost:3000`, which makes every QR the deployed site generates unscannable. |
+| `NEXT_PUBLIC_BURNER=1` | **The one that is easy to miss.** Unset means burner mode is off and the payer page only serves a connected wallet holding Base Sepolia USDC. A visitor scanning the QR would get a connect-wallet prompt and no way to pay — and the faucet's 20 USDC ceiling would be guarding a path nobody can reach. |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Needed for the connect-wallet path alongside the burner. |
 
 On the public backend, set `POLICY_ADMIN_ENABLED=0` — an open revoke lets any
 visitor zero the agent's policy and only `ADMIN_TOKEN` can re-arm it. Two other
@@ -108,7 +119,8 @@ a handle, and nobody needs to onboard from their seat — so it is off, and
 `/onboard` renders a verified-merchant-only card instead of the form. Funding is
 capped rather than off, because burner mode is what lets a visitor pay with no
 wallet at all: five grants a day is enough to try it, and small enough that the
-ETH→USDC top-up swap absorbs the worst case. Point the
+ETH→USDC top-up swap can replace the worst case (spending ETH from the same
+key to do it, bounded by a per-swap cap). Point the
 web app's `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
 `CORS_ORIGIN` to the Vercel origin rather than `*`.
 

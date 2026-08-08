@@ -16,7 +16,7 @@ export const ORDER_ROUTE = "POST /api/order/:handle";
 /** DynamicPrice for the 402 challenge AND its paid retry — it must resolve
  * identically both times (the middleware deep-equal-matches the rebuilt
  * requirement against what the client signed). That holds while the rate is
- * the owner-set FixedRateSwap; NOTE: an AMM-backed rate (M4's GantrySwap)
+ * the owner-set FixedRateSwap; NOTE: an AMM-backed rate (a future AMM; GantrySwap was cancelled)
  * breaks this and would need a short-lived quote pin.
  *
  * Besides the price, this pins {handle, xsgdAmount} into requirements.extra —
@@ -29,7 +29,7 @@ async function buildOrderPrice(context: HTTPRequestContext) {
     throw new ApiError(
       400,
       "ValidationError",
-      "expected /api/order/:handle?sgd=<positive amount>, e.g. ?sgd=6.50",
+      "expected /api/order/:handle?sgd=<positive amount>, e.g. ?sgd=1.50",
     );
   }
   await getMerchant(order.handle); // unknown merchant → 404 before any quote

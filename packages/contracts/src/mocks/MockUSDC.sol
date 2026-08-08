@@ -5,7 +5,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {EIP3009} from "./EIP3009.sol";
 
 /// @title MockUSDC — test double for Circle's FiatToken (USDC) with hand-written EIP-3009
-/// @notice Open mint = faucet-independent fallback for demos. Real Base Sepolia USDC
+/// @notice TEST DOUBLE ONLY. Nothing in the backend, web or agent packages resolves this
+///         contract — do NOT wire it back in as a demo fallback. Real Base Sepolia USDC
 ///         (0x036CbD53842c5426634e7929541eC2318f3dCF7e) is the primary pay token.
 contract MockUSDC is EIP3009 {
     constructor() ERC20("Mock USDC", "USDC") {}

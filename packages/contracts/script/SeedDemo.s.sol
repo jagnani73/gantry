@@ -11,8 +11,9 @@ import {GantryCore} from "../src/GantryCore.sol";
 ///      permanently claimed. Reseeding means redeploying (or using a fresh handle).
 ///
 ///      It used to also mint the demo payer 1,000 MockUSDC. Payers hold real Circle
-///      USDC now, which cannot be minted — the relayer funds them by transfer, either
-///      through the payer page's faucet call or `POST /api/admin/wallet/topup`.
+///      USDC now, which cannot be minted — the relayer funds them by transfer through
+///      `POST /api/faucet`. (`/api/admin/wallet/topup` funds only the demo PBM wallet
+///      and takes no address, so it cannot stand in for this.)
 contract SeedDemo is Script {
     string internal constant HANDLE = "ah-hock-chicken-rice";
     uint16 internal constant CATEGORY_FOOD_BEVERAGE = 1;
