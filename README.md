@@ -145,7 +145,9 @@ demo laptop are necessarily the same key.
 
 They differ because the stakes do. Onboarding spends ETH and permanently claims
 a handle, and nobody needs to onboard from their seat — so it is off, and
-`/onboard` renders a verified-merchant-only card instead of the form. Profile
+`/onboard` says so instead of rendering the form. It says exactly that, too:
+nothing in Gantry reviews or verifies a merchant, so the card names the gas key
+it is protecting rather than implying an approval queue. Profile
 editing is off for a blunter reason: the route has no login at all, so on a
 public host anyone could rewrite any shop's identity. Funding is capped rather
 than off, because the demo account is what lets a visitor pay with no wallet at

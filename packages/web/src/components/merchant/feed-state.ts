@@ -48,3 +48,21 @@ export function rowsForToday(
   const today = dayKey(nowSeconds);
   return groupByDay(rows, (row) => row.blockTime).find((group) => group.day === today)?.rows ?? [];
 }
+
+/**
+ * Whether today's figures are a floor rather than a total.
+ *
+ * The feed pages backwards from the newest row, so today's rows are a prefix of
+ * what is loaded: the moment one loaded row predates today, today is complete and
+ * the KPIs are exact no matter how many older pages remain. Only when EVERY
+ * loaded row falls today can an unloaded page still hold more of it — and then
+ * the day's takings, its payment count and the card comparison are all lower
+ * bounds, which a merchant cannot possibly infer from the screen.
+ */
+export function todayIsPartial(
+  todayCount: number,
+  loadedCount: number,
+  hasMore: boolean,
+): boolean {
+  return hasMore && loadedCount > 0 && todayCount === loadedCount;
+}

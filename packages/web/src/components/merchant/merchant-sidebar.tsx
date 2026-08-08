@@ -83,9 +83,7 @@ export function MerchantSidebar() {
               href={href}
               aria-current={active ? "page" : undefined}
               // `text-list-title` bakes weight 500, which is the active state;
-              // `font-normal` composes over it for the idle one. NOT `text-input`
-              // — `input` is a legacy shadcn colour alias, so cn classifies
-              // `text-input` as a colour and it paints rather than sizes.
+              // `font-normal` composes over it for the idle one.
               className={cn(
                 "focus-ring text-list-title flex shrink-0 items-center justify-between gap-3 rounded-nav px-3.5 py-2.5 whitespace-nowrap transition-colors",
                 active

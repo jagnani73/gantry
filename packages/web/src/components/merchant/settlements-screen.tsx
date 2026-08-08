@@ -6,8 +6,8 @@ import { CapMeter, Card, Figure, Label, StatusDot } from "@/components/primitive
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EmptyPanel } from "./empty-panel";
-import { feedStatusOf, rowsForToday } from "./feed-state";
-import { longDate, plural, totalsOf } from "./format";
+import { feedStatusOf, rowsForToday, todayIsPartial } from "./feed-state";
+import { grouped, longDate, plural, totalsOf } from "./format";
 import { useMerchantContext } from "./merchant-context";
 import { ScreenHeader } from "./screen-header";
 import { SettlementFeedRow } from "./settlement-feed-row";
@@ -32,6 +32,7 @@ export function SettlementsScreen() {
   const today = rowsForToday(feed.rows, now);
   const status = feedStatusOf(feed.connection, today.length);
   const totals = totalsOf(today, CARD_FEE_BPS);
+  const partial = todayIsPartial(today.length, feed.rows.length, feed.hasMore);
 
   return (
     <>
@@ -57,49 +58,75 @@ export function SettlementsScreen() {
         {now === null ? null : <>{longDate(now)} · </>}every payment lands as XSGD
       </ScreenHeader>
 
-      <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr]">
-        <Card tone="accent" radius="card" pad="lg">
-          <Label size="lg" tone="on-accent-muted">
-            Collected today
-          </Label>
-          <Figure units={totals.net} size="kpi" tone="on-accent" className="mt-4" />
-          <div className="mt-3.5 text-body-sm text-on-accent-body">
-            {totals.count === 0
-              ? "Nothing settled yet today"
-              : `${plural(totals.count, "payment")} · net of the ${formatBps(GANTRY_FEE_BPS)} fee`}
-          </div>
-        </Card>
-
-        <Card radius="card" pad="lg" className="flex flex-col justify-between gap-4">
-          <Label size="lg">Paid by agents</Label>
-          <div>
-            <Figure
-              value={totals.agentCount}
-              prefix={null}
-              size="sm"
-              suffix={`of ${totals.count}`}
-            />
-            {/* Counts scaled into the 6dp units the meter speaks. The ratio is
-                what the bar draws; the readable version is spelled out for
-                assistive tech rather than left as "4.00 of 14.00". */}
-            <CapMeter
-              spent={String(totals.agentCount * 1_000_000)}
-              cap={String(totals.count * 1_000_000)}
-              aria-valuetext={`${totals.agentCount} of ${totals.count} payments came through the agent door`}
-              className="mt-3"
-            />
-          </div>
-        </Card>
-
-        <Card radius="card" pad="lg" className="flex flex-col justify-between gap-4">
-          <Label size="lg">Saved vs cards</Label>
-          <div>
-            <Figure units={totals.saved} size="sm" />
-            <div className="mt-3 text-meta text-muted">
-              against a {formatBps(CARD_FEE_BPS)} card rate
+      <div className="flex flex-col gap-3.5">
+        <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr]">
+          <Card tone="accent" radius="card" pad="lg">
+            <Label size="lg" tone="on-accent-muted">
+              Collected today
+            </Label>
+            <Figure units={totals.net} size="kpi" tone="on-accent" className="mt-4" />
+            <div className="mt-3.5 text-body-sm text-on-accent-body">
+              {totals.count === 0
+                ? "Nothing settled yet today"
+                : `${plural(totals.count, "payment")} · net of the ${formatBps(GANTRY_FEE_BPS)} fee`}
             </div>
+          </Card>
+
+          <Card radius="card" pad="lg" className="flex flex-col justify-between gap-4">
+            <Label size="lg">Paid by agents</Label>
+            <div>
+              <Figure
+                value={totals.agentCount}
+                prefix={null}
+                size="sm"
+                suffix={`of ${totals.count}`}
+              />
+              {/* Counts, fed to the meter as counts. `Units` is bigint | string
+                  precisely to keep `number` away from money, so scaling these
+                  into 6dp units would launder integers through a contract they
+                  do not belong to — and the same expression over a float renders
+                  "300000.00000000006", which `toUnits` throws on, mid-render. The
+                  bar draws a ratio, which is scale-free; the caption overrides the
+                  money-shaped default rather than reading "4.00 of 14.00". */}
+              <CapMeter
+                spent={BigInt(totals.agentCount)}
+                cap={BigInt(totals.count)}
+                aria-valuetext={`${totals.agentCount} of ${totals.count} payments came through the agent door`}
+                className="mt-3"
+              />
+            </div>
+          </Card>
+
+          <Card radius="card" pad="lg" className="flex flex-col justify-between gap-4">
+            <Label size="lg">Saved vs cards</Label>
+            <div>
+              <Figure units={totals.saved} size="sm" />
+              <div className="mt-3 text-meta text-muted">
+                against a {formatBps(CARD_FEE_BPS)} card rate
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Every figure above sums the rows this browser holds. Past one page
+            that is a floor, not the day, and a merchant has no way to tell —
+            so say it, and hand them the control that fixes it. */}
+        {partial ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-fine text-faint">
+              Covers the {grouped(feed.rows.length)} payments loaded so far, of{" "}
+              {grouped(feed.total)}. Earlier payments from today are not in these figures yet.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={feed.loadMore}
+              disabled={feed.loadingMore}
+            >
+              {feed.loadingMore ? "Loading…" : "Load older"}
+            </Button>
           </div>
-        </Card>
+        ) : null}
       </div>
 
       <Card radius="card" pad="list">

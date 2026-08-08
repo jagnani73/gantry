@@ -232,7 +232,19 @@ export function ProfileScreen() {
               </Mono>
             ) : null}
           </Card>
+          {/* The chip is a claim about the HANDLE, and the name sitting above it
+              is not covered by it. Only handle, payout and category are written
+              to GantryCore; everything on this form is display text this shop
+              typed about itself, stored off-chain, checked by nobody. Saying so
+              here is the honest-labels rule applied to the one screen that puts
+              self-attested text under an on-chain badge. */}
           <p className="mt-3.5 text-fine text-quiet">
+            The name, location and one-liner are yours to write — they live in Gantry&apos;s
+            database, not on-chain, and nobody verifies them. Only the handle, payout address and
+            category are on the chain, and &ldquo;registered&rdquo; there means a contract call
+            anyone can make, not a check anyone ran.
+          </p>
+          <p className="mt-2.5 text-fine text-quiet">
             Payers reach this from a receipt or from a shop they have paid before. It carries
             nothing about your balance or your payouts.
           </p>

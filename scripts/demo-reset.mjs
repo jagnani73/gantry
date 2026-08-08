@@ -358,7 +358,14 @@ let armed = null;
     degraded = true;
     walletProblems.push(`lookup failed (${why(res, body)}) — nothing was created, funded or armed`);
   } else if (body.agents.length > 0) {
-    wallet = body.agents[0].wallet;
+    // The SAME rule step 6b checks and the agent CLI applies — newest active
+    // first. Taking `agents[0]` here was a second, silently different rule: with
+    // two wallets for one signer it funds and arms the OLDEST while 6b blesses
+    // the newest, so the script would arm one wallet, report another, and the
+    // agent would spend from a third state entirely. One rule, stated once.
+    const now = Math.floor(Date.now() / 1000);
+    const active = body.agents.filter((agent) => isActive(agent, now));
+    wallet = (active.at(-1) ?? body.agents.at(-1)).wallet;
   } else {
     try {
       const receipt = await payerTx({
@@ -424,7 +431,17 @@ if (wallet) {
  */
 const READBACK_RETRIES = 5;
 const READBACK_DELAY_MS = 800;
-const armedHere = (body) => body?.dailyCap === DEMO_POLICY.dailyCap.toString();
+/**
+ * `spentToday` is part of the freshness test, not just the cap and categories.
+ * `setPolicy` zeroes the counter, so ANY non-zero read after a confirmed arm is
+ * definitionally stale — and it was the one field slipping through: a run right
+ * after a rehearsal printed "spent S$4.50" off a lagging replica while the chain
+ * said 0. That is the same class of lie the retry exists for, and the more
+ * expensive one, because a presenter reads it as "the reset did not take" and
+ * budgets the rehearsal around a cap that is not actually consumed.
+ */
+const armedHere = (body) =>
+  body?.dailyCap === DEMO_POLICY.dailyCap.toString() && body?.spentToday === "0";
 async function readArmedPolicy() {
   let result = await call("GET", `/api/agents/${wallet}`);
   for (let attempt = 0; attempt < READBACK_RETRIES && !armedHere(result.body); attempt++) {

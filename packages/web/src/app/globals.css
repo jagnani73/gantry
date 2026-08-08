@@ -9,9 +9,10 @@
    white — not from shadow and not from a dark/light split. Green is the single
    chromatic colour; danger appears only on failure. Values are verbatim from the
    design handoff's token table.
-   Translucent variants are NOT tokens: use Tailwind's opacity modifier against
-   the base colour (bg-ink/28 for the drawer scrim, bg-on-accent/15 for a fill on
-   green, bg-paper/94 for the phone's tab bar). */
+   Translucent values are tokens ONLY where the handoff named one (on-accent-muted
+   and on-accent-body, below). Everything else composes with Tailwind's opacity
+   modifier against the base colour: bg-ink/28 for the drawer scrim, bg-paper/94
+   for the phone's tab bar, bg-on-accent/8..22 for fills on green. */
 @theme {
   --color-paper: #f4f2ed; /* app background, both surfaces */
   --color-surface: #ffffff; /* cards, panels, row containers */

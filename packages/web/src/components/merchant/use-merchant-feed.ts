@@ -11,10 +11,12 @@ import { backendUrl } from "@/lib/env";
  * Two sources describe the same table: `GET /api/settlements` pages backwards
  * through it and the SSE stream pushes the head of it. They overlap — the stream
  * replays its most recent rows on every connect — so the merge dedupes on
- * `(txHash, logIndex)`, which is the backend's own primary key and the grammar
- * of both the SSE event id and a page cursor. Deduping on anything else (a tx
- * hash alone, an intent id) would collapse two settlements that shared a
- * transaction, which the contract permits.
+ * `(txHash, logIndex)`, which is the backend's own primary key. (The SSE event
+ * id and the page cursor are a different pair, `blockNumber:logIndex`; both
+ * identify a row, but only the primary key is what the store itself dedupes on,
+ * so it is what a client merging two views of that store should use.) Deduping
+ * on anything else — a tx hash alone, an intent id — would collapse two
+ * settlements that shared a transaction, which the contract permits.
  *
  * Rows are held in a Map and sorted on read rather than appended in arrival
  * order, because arrival order is not chronological: a replay burst can land
@@ -70,6 +72,42 @@ function newestFirst(a: SettlementEvent, b: SettlementEvent): number {
 
 function describe(err: unknown): string {
   return err instanceof ApiClientError || err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * One SSE frame → a row, or nothing.
+ *
+ * The parse is guarded because an uncaught throw inside an EventSource listener
+ * is the quietest failure this screen has: a truncated or proxy-mangled frame
+ * loses the settlement with no chime and no line, while `connection` still reads
+ * "live" — the merchant's screen looks healthy while the payer's says paid. The
+ * indexer's 15s sweep does not repair it either, since the stream only pushes
+ * rows it has not pushed before.
+ *
+ * The shape check closes the same hole from the other side: `JSON.parse("null")`
+ * returns without throwing, and a row missing its primary key would mint the
+ * dedupe key `"undefined:undefined"` — swallowing every later malformed row and
+ * rendering one with no amount.
+ *
+ * A dropped row is not lost, just not recoverable by this path: `GET
+ * /api/settlements` is the correctness source, so Retry or a reload brings it
+ * back. That is why this logs and returns rather than tearing the feed down.
+ */
+function parseSettlementFrame(data: string): SettlementEvent | null {
+  try {
+    const parsed: unknown = JSON.parse(data);
+    if (typeof parsed !== "object" || parsed === null) {
+      throw new TypeError("frame is not an object");
+    }
+    const { txHash, logIndex } = parsed as Partial<SettlementEvent>;
+    if (typeof txHash !== "string" || typeof logIndex !== "number") {
+      throw new TypeError("frame carries no (txHash, logIndex) key");
+    }
+    return parsed as SettlementEvent;
+  } catch (err) {
+    console.error(`[merchant-feed] dropped an unreadable settlement frame: ${describe(err)}`, data);
+    return null;
+  }
 }
 
 export function useMerchantFeed(
@@ -141,7 +179,8 @@ export function useMerchantFeed(
     };
 
     source.addEventListener("settlement", (event) => {
-      const row = JSON.parse(event.data) as SettlementEvent;
+      const row = parseSettlementFrame(event.data);
+      if (row === null) return;
       // The stream carries every merchant on the rail; this surface is one shop.
       if (row.handle !== handle) return;
       const key = settlementKey(row);

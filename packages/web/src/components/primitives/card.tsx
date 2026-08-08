@@ -2,9 +2,11 @@ import * as React from "react";
 import { cn } from "./cn";
 
 /**
- * A surface. There is no border and no shadow anywhere in this system except the
- * transaction drawer — depth is white on paper, then green on white — so a Card
- * is a fill plus a radius plus the padding step that goes with it.
+ * A surface. Depth in this system is fill, not elevation — white on paper, then
+ * green on white — so a Card is a fill plus a radius plus the padding step that
+ * goes with it, and carries no border of its own. (Borders do exist elsewhere:
+ * hairline rules inside cards, the sidebar edge, the printed standee's frame.
+ * The one shadow in the whole system is the transaction drawer's.)
  */
 type CardTone = "surface" | "sunken" | "fill" | "paper" | "accent" | "ink" | "danger";
 type CardRadius = "card" | "panel" | "card-m" | "hero" | "control-m" | "tile";

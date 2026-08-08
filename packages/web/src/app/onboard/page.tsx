@@ -15,6 +15,12 @@ import { OnboardClient } from "@/components/onboard-client";
  * boundary is drawn before dead-code elimination — but it is never mounted, so
  * the only cost is ~3 kB nobody downloads a second copy of. Do not read the
  * bundle size as evidence the gate leaked.
+ *
+ * The turned-away copy must never imply a review process. Nothing in Gantry
+ * reviews or verifies a merchant — there is no reviewer, no queue and no KYC,
+ * and every shop that is live got there by calling a permissionless contract.
+ * What the gate actually protects is the relayer's gas key, which is the one
+ * thing this page may say it protects.
  */
 const onboardingEnabled = process.env.NODE_ENV !== "production";
 
@@ -27,10 +33,11 @@ export default function OnboardPage() {
   return (
     <main className="mx-auto max-w-[720px] px-5 py-14 sm:px-10">
       <Label size="eyebrow">For shops</Label>
-      <h1 className="mt-3 text-page-title">Onboarding is verified-merchant-only here</h1>
+      <h1 className="mt-3 text-page-title">Self-service registration is off here</h1>
       <p className="mt-2.5 text-body text-quiet">
-        Merchants are reviewed before they are added on this deployment, the way merchant
-        acquiring works everywhere else. Self-service registration runs on the demo host.
+        Registering a shop from this page spends Gantry&apos;s own gas key, so the form runs on the
+        demo host instead. Nothing on this deployment reviews or verifies a shop — there is no
+        queue to join and no check to pass.
       </p>
 
       <Card pad="lg" className="mt-8 flex flex-col gap-4">
