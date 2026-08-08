@@ -9,10 +9,10 @@ import { isAddress, type Address } from "viem";
  * filtered on the human's address alone would show them an activity feed
  * missing every payment their agents made on their behalf.
  *
- * Both surfaces parse the same string: the backend turns it into an IN-list,
- * and the payer app filters the live SSE stream client-side with the same
- * predicate. Two implementations of "does this row belong to me" would show two
- * different feeds in the same window.
+ * The backend turns the parsed list into an IN-list; `matchesPayerFilter` below
+ * is the row-side half of the same rule, for a caller holding rows already.
+ * NOTHING calls it today — the payer app fetches a filtered page rather than
+ * sifting one client-side, and it has no SSE stream to sift.
  *
  * EIP-55 is deliberately NOT enforced here, unlike a payout address. A filter
  * is a read: the worst a wrong one does is return no rows, nothing is
@@ -79,9 +79,17 @@ export function parsePayerFilter(raw: string | null | undefined): PayerFilterRes
 }
 
 /**
- * The row-side half of the same rule, for filtering a live stream (or a cached
- * page) without a round trip. Case-insensitive on both sides so it is total —
- * a caller that skipped `parsePayerFilter` still gets the right answer.
+ * "Is this row in this filter" — the predicate `?payer=` compiles to in SQL,
+ * for a caller that already holds the rows. Case-insensitive on both sides so a
+ * caller that skipped `parsePayerFilter` still gets the right answer.
+ *
+ * UNUSED so far, and do NOT reach for it as "the client-side payer filter": the
+ * payer app's `isOwnPayment` (components/payer/activity.ts) answers a different
+ * question and deliberately NEGATES on `agentPayer` where this ORs on it. That
+ * one is "I paid this myself", which excludes agent spending; this one is "my
+ * address is on it", which is what the agents screen and the history endpoint
+ * mean by mine. Same field, opposite semantics — pick by the question, and never
+ * swap one for the other to remove a duplicate.
  */
 export function matchesPayerFilter(
   row: { payer: Address; agentPayer?: Address | null },

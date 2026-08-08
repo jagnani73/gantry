@@ -92,9 +92,25 @@ test("row matching is case-insensitive on both sides", () => {
   assert.equal(matchesPayerFilter(row(HUMAN.toLowerCase()), [HUMAN as Address]), true);
 });
 
-test("a null agentPayer never matches a null-ish needle", () => {
-  // Guards the shape of the OR: `undefined === undefined` would make every
-  // PBM-less row match a filter that somehow carried an empty entry.
-  assert.equal(matchesPayerFilter(row(WALLET, undefined), [HUMAN.toLowerCase() as Address]), false);
-  assert.equal(matchesPayerFilter({ payer: WALLET as Address, agentPayer: null }, [HUMAN.toLowerCase() as Address]), false);
+test("an entry that names nobody matches nothing, least of all an absent agentPayer", () => {
+  // The row-side half of what parsePayerFilter refuses: an entry naming nobody
+  // must not become "everything". It reaches the OR's weak spot — the row's
+  // agentPayer is normalised to null rather than left as-is, so an empty entry
+  // cannot pair off against an empty field and quietly claim every row an agent
+  // never touched. Only a caller that skipped parsePayerFilter gets here, which
+  // is exactly the caller this function promises to be total for.
+  const empty = "" as Address;
+  for (const noAgent of [
+    row(WALLET, undefined),
+    { payer: WALLET as Address, agentPayer: null },
+    { payer: WALLET as Address, agentPayer: empty },
+  ]) {
+    assert.equal(
+      matchesPayerFilter(noAgent, [empty]),
+      false,
+      `empty entry matched ${JSON.stringify(noAgent)}`,
+    );
+  }
+  // And it does not swallow the rest of the list either.
+  assert.equal(matchesPayerFilter(row(WALLET), [empty, WALLET as Address]), true);
 });

@@ -90,7 +90,8 @@ Mocked: `MockXSGD` — the only mocked token, and unavoidable (XSGD exists on no
 one trusted relayer/facilitator key, which briefly custodies funds on the
 standard `exact` path · self-attested merchant categories and self-attested shop
 profiles, no KYC — the badge reads "Registered on-chain", and self-service
-onboarding is a demo affordance while the deployed host is verified-merchant-only
+onboarding is a demo affordance, off on the deployed host because it spends the
+relayer's gas key, not because anyone is reviewed
 · no login on the merchant back-office, so anyone with the URL can read a shop's
 takings · the deployed demo payer is one shared account, so its history is not
 private · merchants supply their own payout address rather than being issued a

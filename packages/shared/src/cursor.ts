@@ -3,10 +3,11 @@ import type { SettlementCursor } from "./api";
 /**
  * Settlement feed cursors — `${blockNumber}:${logIndex}`.
  *
- * This is the SSE event id's grammar (routes/events.ts parses Last-Event-ID
- * with the same `\d+:\d+` shape), reused rather than reinvented: one string
+ * This is also the SSE event id's grammar: routes/events.ts writes ids with
+ * `encodeCursor` and reads `Last-Event-ID` with `decodeCursor`, so one string
  * says "where I am in the feed" whether it came from the live stream or from a
- * page of history, and a second encoding would be two things to keep in step.
+ * page of history. Both halves go through here on purpose — a second parser
+ * drifted, and the safe-integer guard below was the half it was missing.
  *
  * A cursor is a POSITION, not an offset. Rows are ordered by (blockNumber,
  * logIndex), so new settlements arriving at the head while a client pages
