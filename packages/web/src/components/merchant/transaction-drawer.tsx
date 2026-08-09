@@ -150,7 +150,7 @@ export function TransactionDrawer() {
               </MoneyLine>
               <MoneyLine label="Swapped at">
                 {rate === null ? (
-                  "—"
+                  "Unknown"
                 ) : (
                   <Mono size="md">
                     1 {row.tokenSymbol ?? "token"} = {formatUnits6(rate, 4)} SGD

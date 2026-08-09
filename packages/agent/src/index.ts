@@ -111,8 +111,8 @@ function refuseFallback(context: string): never {
   // Money may already have moved — never re-run the flow. The tool-status
   // lines above carry the structured results; just state the narration died.
   console.error(
-    `\n[agent] ${context} after ${toolCallsStarted} tool call(s) started — ` +
-      "see the tool results above; not re-running the flow.",
+    `\n[agent] ${context} after ${toolCallsStarted} tool call(s) started. ` +
+      "See the tool results above; not re-running the flow.",
   );
   process.exit(1);
 }
@@ -158,7 +158,7 @@ async function main(): Promise<void> {
  * decisions" is on the honest-labels list. stderr keeps it off the demo output.
  */
 function announceFallback(reason: string): void {
-  console.error(`\n[agent] ${reason} — falling back to scripted narration; wire traffic is unchanged.`);
+  console.error(`\n[agent] falling back to scripted narration (${reason}); wire traffic is unchanged.`);
 }
 
 main().catch((err) => {

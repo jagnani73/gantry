@@ -177,7 +177,7 @@ const reset = await fetch(`${backend}/api/admin/reset`, {
   method: "POST",
   headers: { "x-admin-token": adminToken },
 }).catch((err) => {
-  console.error(`cannot reach the backend at ${backend} (${err instanceof Error ? err.message : err}) — is \`pnpm dev\` running?`);
+  console.error(`cannot reach the backend at ${backend} (${err instanceof Error ? err.message : err}). Is \`pnpm dev\` running?`);
   process.exit(1);
 });
 if (!reset.ok) {
@@ -235,7 +235,7 @@ let funderLine;
          ↳ ${body.detail}` : "");
   } else {
     degraded = true;
-    funderLine = `⚠ funder  ${BASE_SEPOLIA_RELAYER}  top-up failed (${why(res, body)}) — every door spends this key`;
+    funderLine = `⚠ funder  ${BASE_SEPOLIA_RELAYER}  top-up failed (${why(res, body)}); every door spends this key`;
   }
 }
 
@@ -285,13 +285,13 @@ let payerLine;
   if (!balances) {
     degraded = true;
     payerLine =
-      `⚠ payer   ${payer.address}  balances unreadable (${unreadable}) — cannot tell whether it ` +
+      `⚠ payer   ${payer.address}  balances unreadable (${unreadable}); cannot tell whether it ` +
       `can sign the owner transactions the steps below depend on`;
   } else if (balances.usdc < PAYER_USDC_FLOOR || balances.eth < PAYER_ETH_FLOOR) {
     degraded = true;
     payerLine =
-      `⚠ payer   ${payer.address}  ${usd(balances.usdc)} · ${formatEther(balances.eth)} ETH — ` +
-      `still short (${faucet ?? "not funded"}); createWallet/setPolicy need gas and the QR beat needs USDC`;
+      `⚠ payer   ${payer.address}  ${usd(balances.usdc)} · ${formatEther(balances.eth)} ETH. ` +
+      `Still short (${faucet ?? "not funded"}); createWallet/setPolicy need gas and the QR beat needs USDC`;
   } else {
     payerLine =
       `payer    ${payer.address}  ${usd(balances.usdc)} · ${Number(formatEther(balances.eth)).toFixed(4)} ETH` +
@@ -330,7 +330,7 @@ let profileLine;
   } else {
     degraded = true;
     profileLine =
-      `⚠ profile seeding failed for ${failed.map((entry) => `${entry.handle} (${entry.detail})`).join(", ")} — ` +
+      `⚠ profile seeding failed for ${failed.map((entry) => `${entry.handle} (${entry.detail})`).join(", ")}; ` +
       `the shop renders under its fallback name, with no blurb`;
   }
 }
@@ -356,7 +356,7 @@ let armed = null;
   );
   if (!res?.ok || !body) {
     degraded = true;
-    walletProblems.push(`lookup failed (${why(res, body)}) — nothing was created, funded or armed`);
+    walletProblems.push(`lookup failed (${why(res, body)}); nothing was created, funded or armed`);
   } else if (body.agents.length > 0) {
     // The SAME rule step 6b checks and the agent CLI applies — newest active
     // first. Taking `agents[0]` here was a second, silently different rule: with
@@ -389,14 +389,14 @@ let armed = null;
       } else {
         degraded = true;
         walletProblems.push(
-          `createWallet mined in ${receipt.transactionHash} but carried no WalletCreated log — ` +
-            `a wallet may exist, so re-run before creating another`,
+          `createWallet mined in ${receipt.transactionHash} but carried no WalletCreated log. ` +
+            `A wallet may exist, so re-run before creating another`,
         );
       }
     } catch (err) {
       degraded = true;
       walletProblems.push(
-        `createWallet failed (${brief(err instanceof Error ? err.message : String(err))}) — the payer ` +
+        `createWallet failed (${brief(err instanceof Error ? err.message : String(err))}); the payer ` +
           `owns no agent wallet, so both agent beats die at "no PBM wallet lists this signer"`,
       );
     }
@@ -416,7 +416,7 @@ if (wallet) {
     if (body.sent !== "0") sentLine = `+${Number(body.sent).toFixed(2)} sent`;
   } else {
     degraded = true;
-    walletProblems.push(`top-up FAILED (${why(res, body)}) — the rejection beat will die as insufficient_funds`);
+    walletProblems.push(`top-up FAILED (${why(res, body)}); the rejection beat will die as insufficient_funds`);
   }
 }
 
@@ -482,20 +482,20 @@ if (wallet) {
         // A confirmed setPolicy and a wallet that does not report it is not lag
         // any more — it is a wallet whose policy is not what this run armed.
         degraded = true;
-        walletProblems.push(`setPolicy confirmed but the wallet still reads ${armed} — re-read it before rehearsing`);
+        walletProblems.push(`setPolicy confirmed but the wallet still reads ${armed}. Re-read it before rehearsing`);
         armed = null;
       }
     } else {
       degraded = true;
       // The arm LANDED — do not claim the policy is missing; the readback flaked.
       walletProblems.push(
-        `policy armed but readback failed (${why(res, body)}) — verify GET /api/agents/${wallet} manually`,
+        `policy armed but readback failed (${why(res, body)}). Verify GET /api/agents/${wallet} manually`,
       );
     }
   } catch (err) {
     degraded = true;
     walletProblems.push(
-      `setPolicy FAILED (${brief(err instanceof Error ? err.message : String(err))}) — ` +
+      `setPolicy FAILED (${brief(err instanceof Error ? err.message : String(err))}); ` +
         `spentToday accumulates across rehearsals`,
     );
   }
@@ -551,13 +551,13 @@ let gadgetLine;
 {
   const gadget = await fetch(`${backend}/api/merchants/gadgethub-sg`).catch(() => null);
   if (gadget?.ok) {
-    gadgetLine = "gadgethub-sg registered (category electronics — the rejection beat)";
+    gadgetLine = "gadgethub-sg registered (category electronics, the rejection beat)";
   } else if (gadget?.status === 404) {
     degraded = true;
-    gadgetLine = "⚠ gadgethub-sg NOT registered on-chain — the rejection beat will fail";
+    gadgetLine = "⚠ gadgethub-sg NOT registered on-chain; the rejection beat will fail";
   } else {
     degraded = true;
-    gadgetLine = `⚠ could not verify gadgethub-sg (${gadget ? `status ${gadget.status}` : "network error"}) — registration state UNKNOWN`;
+    gadgetLine = `⚠ could not verify gadgethub-sg (${gadget ? `status ${gadget.status}` : "network error"}); registration state UNKNOWN`;
   }
 }
 
@@ -579,7 +579,7 @@ contracts (Base Sepolia)
   MockXSGD       ${BASE_SEPOLIA_ADDRESSES.mockXsgd}
   Circle USDC    ${BASE_SEPOLIA_ADDRESSES.realUsdc}
   PBM factory    ${BASE_SEPOLIA_ADDRESSES.agentPbmFactory}
-  PBM wallet     ${wallet ?? "none — not provisioned this run"}
+  PBM wallet     ${wallet ?? "none (not provisioned this run)"}
 
 demo urls
   merchant   ${app}/merchant/${DEMO_MERCHANT_HANDLE}/settlements
@@ -599,6 +599,6 @@ done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 // cheat sheet prints first: it is why the script exists, and a degraded run still
 // needs it.
 if (degraded) {
-  console.error("\n⚠ demo-reset finished DEGRADED — fix the warnings above before rehearsing.");
+  console.error("\n⚠ demo-reset finished DEGRADED. Fix the warnings above before rehearsing.");
   process.exit(1);
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CATEGORY_LABELS, shortAddress } from "@gantry/shared";
-import { Card, Label, Mono, StatusDot } from "@/components/primitives";
+import { Card, GantryMark, Label, Mono, StatusDot } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { feedStatusOf, rowsForToday } from "./feed-state";
 import { shopName, useMerchantContext } from "./merchant-context";
@@ -43,7 +43,7 @@ export function MerchantSidebar() {
   return (
     <aside className="flex flex-col gap-7.5 border-b border-hairline-strong px-6 py-8 min-[1100px]:border-r min-[1100px]:border-b-0 print:hidden">
       <div className="flex items-center gap-2.5">
-        <span aria-hidden className="size-5.5 rounded-badge bg-ink" />
+        <GantryMark className="h-5.5" />
         <span className="text-card-title-sm">Gantry</span>
         <Label as="span" size="eyebrow-sm" tone="faint" className="ml-auto">
           Merchant
@@ -58,7 +58,7 @@ export function MerchantSidebar() {
         <div className="mt-3.5 flex items-center justify-between gap-3 border-t border-hairline pt-3.5">
           <span className="text-meta-sm text-muted">
             {merchant === null
-              ? "—"
+              ? "…"
               : (CATEGORY_LABELS[merchant.categoryId] ?? merchant.categoryName)}
           </span>
           <span
@@ -107,7 +107,7 @@ export function MerchantSidebar() {
           Payouts settle instantly to
           <br />
           {merchant === null ? (
-            "—"
+            "…"
           ) : (
             <Mono size="2xs" tone="quiet">
               {shortAddress(merchant.payout)}

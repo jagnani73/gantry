@@ -111,12 +111,12 @@ async function resolveFailedPbmSettle(
   const cancelled = await tryCancelIntent(intentId);
   if (cancelled === "already_settled") return pbmSettleLandedAfterAll(intentId, pbmWallet, requirements);
   if (cancelled === "cancelled") {
-    return failure(reason, `settlement did not land; intent cancelled — ${message}`, pbmWallet);
+    return failure(reason, `settlement did not land; intent cancelled (${message})`, pbmWallet);
   }
   // Unresolved, but nothing is custodied: the intent expires on its own and
   // the wallet's funds never left it unless the settle mined (in which case
   // the indexer sweep will surface the row).
-  return failure(reason, `${message} (settle outcome unresolved — no funds are custodied)`, pbmWallet);
+  return failure(reason, `${message} (settle outcome unresolved; no funds are custodied)`, pbmWallet);
 }
 
 /**

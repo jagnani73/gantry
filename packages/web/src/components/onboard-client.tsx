@@ -69,9 +69,9 @@ const FIELD_LABEL: Record<ProfileField, string> = {
 };
 
 const REQUIRED_HINT: Record<ProfileField, string> = {
-  displayName: "Required — this is the name on every receipt.",
-  location: "Required — it sits under your name on the payer's page.",
-  blurb: "Required — one line, and payers see it before they pay.",
+  displayName: "Required. This is the name on every receipt.",
+  location: "Required. It sits under your name on the payer's page.",
+  blurb: "Required. One line, and payers see it before they pay.",
 };
 
 /**
@@ -90,7 +90,7 @@ function profileIssue(field: ProfileField, value: string): string | null {
     return `${length - PROFILE_LIMITS[field]} characters too long.`;
   }
   if (isDeceptive(value.trim())) {
-    return "One line of plain text — no line breaks, invisible or direction-flipping characters.";
+    return "One line of plain text. No line breaks, invisible or direction-flipping characters.";
   }
   return null;
 }
@@ -213,7 +213,7 @@ export function OnboardClient() {
 
   /** The one thing still standing between this form and a registration. */
   function blocker(): string | null {
-    if (availability.name === "idle") return "Start with your shop name — the handle follows it.";
+    if (availability.name === "idle") return "Start with your shop name. The handle follows it.";
     if (availability.name === "checking") return "Checking that handle…";
     if (availability.name !== "available") return "Pick a shop handle that is free.";
     if (!payoutCheck.ok) {
@@ -226,7 +226,7 @@ export function OnboardClient() {
     if (!profileCheck.ok) {
       const field = profileCheck.field;
       const issue = profileIssue(field, { displayName, location, blurb }[field]);
-      return `${FIELD_LABEL[field]} — ${issue ?? profileCheck.message}`;
+      return `${FIELD_LABEL[field]}: ${issue ?? profileCheck.message}`;
     }
     return null;
   }
@@ -291,7 +291,7 @@ export function OnboardClient() {
           <h1 className="mt-3 text-page-title">Set up your shop</h1>
           <p className="mt-2.5 max-w-[58ch] text-body text-quiet">
             Six fields, no account, no app to install. At the end you have a printable code for
-            the counter and a live feed of every payment — whether a person scanned it or an AI
+            the counter and a live feed of every payment, whether a person scanned it or an AI
             agent paid over the same link.
           </p>
         </header>
@@ -385,7 +385,7 @@ export function OnboardClient() {
                   </span>
                 </div>
                 <p id="category-msg" className="text-fine text-faint">
-                  Agents check this against their spend policy — a food budget cannot buy
+                  Agents check this against their spend policy: a food budget cannot buy
                   electronics.
                 </p>
               </div>
@@ -412,7 +412,7 @@ export function OnboardClient() {
               limit={PROFILE_LIMITS.blurb}
               placeholder="Hainanese chicken rice since 1987."
               error={touched.blurb ? profileIssue("blurb", blurb) : null}
-              hint="One line, on purpose — it renders as a single line on your shop page."
+              hint="One line, on purpose: it renders as a single line on your shop page."
               onChange={edited(setBlurb)}
               onBlur={() => setTouched((t) => ({ ...t, blurb: true }))}
             />
@@ -429,7 +429,7 @@ export function OnboardClient() {
                 mono
                 placeholder="0x…"
                 error={payout === "" || payoutCheck.ok ? null : payoutCheck.message}
-                hint={`Every payment lands here as XSGD, minus the ${formatBps(GANTRY_FEE_BPS)} protocol fee. Only this address can ever change it — check it against your wallet.`}
+                hint={`Every payment lands here as XSGD, minus the ${formatBps(GANTRY_FEE_BPS)} protocol fee. Only this address can ever change it. Check it against your wallet.`}
                 onChange={edited((value: string) => setPayout(value.trim()))}
               />
             </div>
@@ -452,7 +452,7 @@ export function OnboardClient() {
                 {serverIssue ?? blocker() ?? ""}
               </p>
               <p className="text-fine text-faint">
-                A real transaction on Base Sepolia — the relayer pays its gas, so you need no ETH.
+                A real transaction on Base Sepolia: the relayer pays its gas, so you need no ETH.
                 The handle is yours permanently and cannot be renamed; the payout address can only
                 ever be changed by itself.
               </p>
@@ -492,7 +492,7 @@ export function OnboardClient() {
             <Link className="focus-ring underline underline-offset-2" href={`/pay/${handle}`}>
               /pay/{handle}
             </Link>{" "}
-            before retrying — if it loads, you are already registered.
+            before retrying. If it loads, you are already registered.
           </p>
           <button type="button" className={cn(BTN_SUBTLE, "mt-2")} onClick={backToForm}>
             Back to the form
@@ -627,8 +627,8 @@ function AvailabilityHint({
     case "idle":
       return (
         <>
-          Lowercase letters, numbers and hyphens. It becomes your pay link, and it is claimed
-          on-chain — permanently, by the first shop to take it.
+          Lowercase letters, numbers and hyphens. It becomes your pay link. The first shop to take
+          it claims it on-chain, permanently.
         </>
       );
     case "invalid":
@@ -644,7 +644,7 @@ function AvailabilityHint({
     case "taken":
       return (
         <span className="text-danger">
-          {handle} is taken — pick another. Handles are claimed once, permanently.
+          {handle} is taken. Pick another. Handles are claimed once, permanently.
         </span>
       );
     case "unknown":
@@ -801,7 +801,7 @@ function RegisteredCard({ merchant }: { merchant: RegisterMerchantResponse }) {
         // say so, and do not show a transaction that this attempt did not send.
         <Card tone="fill" radius="tile" pad="none" className="w-full p-4 text-left">
           <p className="text-meta text-quiet">
-            This handle was already registered to your payout address — an earlier attempt went
+            This handle was already registered to your payout address: an earlier attempt went
             through, and this one sent nothing.
           </p>
         </Card>

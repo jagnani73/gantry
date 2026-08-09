@@ -242,7 +242,7 @@ function AgentFormFields({
       />
       <div className="flex flex-col gap-3.5 px-5 pt-6 pb-11">
         <Card radius="card-m" pad="none" className="flex flex-col gap-4 px-5 py-5">
-          <Field label="Name" hint="Yours alone — it stays in this browser and never leaves it.">
+          <Field label="Name" hint="Yours alone. It stays in this browser and never leaves it.">
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -367,8 +367,8 @@ function AgentFormFields({
         <p className="px-1 text-center text-fine text-faint">
           {problem ??
             (writesNothing
-              ? "Nothing here differs from the wallet, so no transaction is sent — only the name is stored."
-              : "You sign this yourself — no server can set or raise an agent's limits. Gas for it comes from the demo faucet.")}
+              ? "Nothing here differs from the wallet, so no transaction is sent. Only the name is stored."
+              : "You sign this yourself. No server can set or raise an agent's limits. Gas for it comes from the demo faucet.")}
         </p>
         {wallet ? null : (
           <Mono size="2xs" tone="faintest" className="px-1 text-center">
@@ -462,7 +462,7 @@ function validate(input: {
     return `The per-payment cap cannot exceed the daily cap (${formatUnits6(perTx, 6)} > ${formatUnits6(daily, 6)} USDC).`;
   }
   if (input.categories.length === 0) {
-    return "Pick at least one category — an agent allowed nowhere can never spend.";
+    return "Pick at least one category. An agent allowed nowhere can never spend.";
   }
   if (!/^\d+$/.test(input.days) || Number(input.days) < 1 || Number(input.days) > MAX_DAYS) {
     return `Expiry must be between 1 and ${MAX_DAYS} days.`;

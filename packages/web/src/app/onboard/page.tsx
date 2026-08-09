@@ -36,13 +36,13 @@ export default function OnboardPage() {
       <h1 className="mt-3 text-page-title">Self-service registration is off here</h1>
       <p className="mt-2.5 text-body text-quiet">
         Registering a shop from this page spends Gantry&apos;s own gas key, so the form runs on the
-        demo host instead. Nothing on this deployment reviews or verifies a shop — there is no
+        demo host instead. Nothing on this deployment reviews or verifies a shop: there is no
         queue to join and no check to pass.
       </p>
 
       <Card pad="lg" className="mt-8 flex flex-col gap-4">
         <p className="text-body text-quiet">
-          Registration itself is permissionless on-chain — <Mono tone="ink">registerMerchant</Mono>{" "}
+          Registration itself is permissionless on-chain: <Mono tone="ink">registerMerchant</Mono>{" "}
           on <Mono tone="ink">GantryCore</Mono> is callable by anyone with gas. What is gated here
           is Gantry paying that gas for an unauthenticated caller.
         </p>

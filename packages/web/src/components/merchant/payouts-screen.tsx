@@ -20,7 +20,7 @@ export function PayoutsScreen() {
   return (
     <>
       <ScreenHeader title="Payouts">
-        There is no payout schedule — each payment settles to your address in the same transaction.
+        There is no payout schedule. Each payment settles to your address in the same transaction.
       </ScreenHeader>
 
       <div className="grid grid-cols-1 gap-3.5 xl:grid-cols-[1.4fr_1fr]">
@@ -61,7 +61,7 @@ export function PayoutsScreen() {
             {merchant?.payout}
           </Mono>
           <p className="mt-auto pt-4.5 text-meta text-muted">
-            Set once, on-chain, at registration. Only this address can change it — the contract
+            Set once, on-chain, at registration. Only this address can change it. The contract
             gates the rotation on the current payout, so nobody else can point your takings
             somewhere new.
           </p>
@@ -82,7 +82,7 @@ export function PayoutsScreen() {
         <div className="text-card-title-sm">By day</div>
         <p className="mt-2 max-w-[64ch] text-body text-muted">
           A day-by-day breakdown of gross, fee and net is still to come. Every payment above is
-          already final and individually settled, so this is a summary that has yet to be built —
+          already final and individually settled, so this is a summary that has yet to be built,
           not a payout that has yet to run.
         </p>
       </Card>

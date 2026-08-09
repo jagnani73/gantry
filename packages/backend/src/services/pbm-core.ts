@@ -79,16 +79,16 @@ export function pbmIntentMismatch(
   const mismatch = (message: string): VerifyFailure => ({ reason: "intent_mismatch", message });
 
   if (facts.status === "unknown") {
-    return { reason: "unknown_intent", message: "intent does not exist — POST /api/pbm/intent first" };
+    return { reason: "unknown_intent", message: "intent does not exist; POST /api/pbm/intent first" };
   }
   if (facts.status === "settled") {
     return { reason: "intent_already_settled", message: "intent already settled (replay?)" };
   }
   if (facts.status === "cancelled") {
-    return { reason: "intent_cancelled", message: "intent was cancelled — create a fresh one" };
+    return { reason: "intent_cancelled", message: "intent was cancelled; create a fresh one" };
   }
   if (facts.expiry < now + PBM_EXPIRY_MARGIN_SECONDS) {
-    return { reason: "intent_expired", message: "intent expired (or expires too soon) — create a fresh one" };
+    return { reason: "intent_expired", message: "intent expired (or expires too soon); create a fresh one" };
   }
   if (facts.door !== AGENT_DOOR) return mismatch("intent is not an Agent-door intent");
   if (facts.merchantId !== expectedMerchantId.toLowerCase()) {
@@ -302,7 +302,7 @@ export const DENIAL_PAGE_LIMIT = 50;
 export function parseDenialQuery(params: Record<string, unknown>): { wallet: Address } {
   const raw = params["wallet"];
   if (raw === undefined) {
-    throw new ApiError(400, "MissingWallet", "wallet is required — GET /api/denials?wallet=0x…");
+    throw new ApiError(400, "MissingWallet", "wallet is required; GET /api/denials?wallet=0x…");
   }
   if (typeof raw !== "string") {
     // A repeated `?wallet=a&wallet=b` arrives as an array; picking a winner

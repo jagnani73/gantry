@@ -116,7 +116,7 @@ export function Scan() {
 
       const detector = barcodeDetector();
       if (!detector) {
-        setCameraNote("This browser cannot read a code automatically — type the handle instead.");
+        setCameraNote("This browser cannot read a code automatically. Type the handle instead.");
         return;
       }
       // A quarter-second poll: fast enough that a code held up is caught before

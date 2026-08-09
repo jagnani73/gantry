@@ -164,7 +164,7 @@ export async function verifyPbm(
     if (err instanceof ContractFunctionExecutionError) {
       return invalid("invalid_payload", `${pbmWallet} is not an AgentPBMWallet (agentSigner()/CORE() unreadable)`);
     }
-    return invalid("network_error", "chain read failed during verification — retry shortly");
+    return invalid("network_error", "chain read failed during verification; retry shortly");
   }
   if (walletCore.toLowerCase() !== config.addresses.gantryCore.toLowerCase()) {
     return invalid("invalid_payload", `wallet is bound to a different GantryCore (${walletCore})`, pbmWallet);

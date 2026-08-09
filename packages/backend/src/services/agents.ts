@@ -347,7 +347,7 @@ export async function getAgent(wallet: Address): Promise<AgentSummary> {
     throw new ApiError(
       503,
       "AgentReadFailed",
-      `${wallet} holds code but did not answer owner()/policy() — the read failed, ` +
+      `${wallet} holds code but did not answer owner()/policy(). The read failed, ` +
         "the wallet is not missing. Retry in a moment.",
     );
   }

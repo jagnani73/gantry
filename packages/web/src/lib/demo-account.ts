@@ -18,7 +18,7 @@ import { demoKey } from "./env";
 export function getDemoAccount(): PrivateKeyAccount {
   const key = demoKey();
   if (!key) {
-    throw new Error("no demo account configured — NEXT_PUBLIC_DEMO_KEY is unset or malformed");
+    throw new Error("no demo account configured: NEXT_PUBLIC_DEMO_KEY is unset or malformed");
   }
   return privateKeyToAccount(key);
 }

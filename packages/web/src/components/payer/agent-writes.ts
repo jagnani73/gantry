@@ -88,7 +88,7 @@ export function useAgentWrites(): AgentWrites {
 
   /** The signer for owner actions, plus the gas the payer needs to send them. */
   const signer = useCallback(async (): Promise<{ client: WalletClient; account: Address }> => {
-    if (!publicClient) throw new Error("no RPC client — reload the page");
+    if (!publicClient) throw new Error("no RPC client: reload the page");
     if (demo) {
       const account = getDemoAccount();
       if ((await publicClient.getBalance({ address: account.address })) < GAS_FLOOR) {
@@ -107,7 +107,7 @@ export function useAgentWrites(): AgentWrites {
           // so the write proceeds and the wallet decides. Re-reading the
           // balance here to make that judgement would be the same stale-read
           // trap: gas can land while a refusal propagates.
-          console.warn("gantry: gas top-up refused — sending with the balance on hand", err);
+          console.warn("gantry: gas top-up refused, sending with the balance on hand", err);
         }
       }
       return {
@@ -125,7 +125,7 @@ export function useAgentWrites(): AgentWrites {
   }, [address, demo, connected, connectedWalletClient, publicClient, switchChainAsync]);
 
   const chainNow = useCallback(async (): Promise<number> => {
-    if (!publicClient) throw new Error("no RPC client — reload the page");
+    if (!publicClient) throw new Error("no RPC client: reload the page");
     const block = await publicClient.getBlock();
     return Number(block.timestamp);
   }, [publicClient]);
@@ -133,7 +133,7 @@ export function useAgentWrites(): AgentWrites {
   const createWallet = useCallback(
     async (agentSigner: Address) => {
       const { client, account } = await signer();
-      if (!publicClient) throw new Error("no RPC client — reload the page");
+      if (!publicClient) throw new Error("no RPC client: reload the page");
       // Simulate first, as everything that sends in this repo does: a policy or
       // wiring revert surfaces as a decodable error instead of a burnt tx.
       await publicClient.simulateContract({
@@ -168,7 +168,7 @@ export function useAgentWrites(): AgentWrites {
       // `setPolicy` against this address, which fails outright if the code is
       // not there yet. Same lag the payer page waits out before signing.
       for (let i = 0; (await publicClient.getCode({ address: created.args.wallet })) === undefined; i++) {
-        if (i >= 8) throw new Error("the wallet was created but is not visible yet — try again");
+        if (i >= 8) throw new Error("the wallet was created but is not visible yet: try again");
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
       return { wallet: created.args.wallet, txHash };
@@ -179,7 +179,7 @@ export function useAgentWrites(): AgentWrites {
   const setPolicy = useCallback(
     async (wallet: Address, policy: WalletPolicy) => {
       const { client, account } = await signer();
-      if (!publicClient) throw new Error("no RPC client — reload the page");
+      if (!publicClient) throw new Error("no RPC client: reload the page");
       const args = [policy] as const;
       await publicClient.simulateContract({
         address: wallet,
@@ -205,7 +205,7 @@ export function useAgentWrites(): AgentWrites {
   const revoke = useCallback(
     async (wallet: Address) => {
       const { client, account } = await signer();
-      if (!publicClient) throw new Error("no RPC client — reload the page");
+      if (!publicClient) throw new Error("no RPC client: reload the page");
       await publicClient.simulateContract({
         address: wallet,
         abi: agentPbmWalletAbi,

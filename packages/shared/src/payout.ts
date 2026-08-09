@@ -29,7 +29,7 @@ export function normalizePayout(raw: string): PayoutResult {
     return {
       ok: false,
       reason: "malformed",
-      message: "payout must be a wallet address — 0x followed by 40 hex characters",
+      message: "payout must be a wallet address: 0x followed by 40 hex characters",
     };
   }
 
@@ -38,7 +38,7 @@ export function normalizePayout(raw: string): PayoutResult {
       ok: false,
       reason: "bad_checksum",
       message:
-        "that address's capitalisation doesn't match its checksum — it may have been mistyped. " +
+        "that address's capitalisation doesn't match its checksum, so it may have been mistyped. " +
         "Paste it again from your wallet, or enter it in all lowercase.",
     };
   }
@@ -48,7 +48,7 @@ export function normalizePayout(raw: string): PayoutResult {
     return {
       ok: false,
       reason: "zero_address",
-      message: "payout cannot be the zero address — payments to it are unrecoverable",
+      message: "payout cannot be the zero address: payments to it are unrecoverable",
     };
   }
   return { ok: true, address: checksummed };

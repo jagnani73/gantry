@@ -112,7 +112,7 @@ function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: numb
           <KeyValue label="Shop received">{formatUnits6(netToShop)} XSGD</KeyValue>
           {rate === null ? null : <KeyValue label="Rate">1 USDC = {formatRate(rate)}</KeyValue>}
           <KeyValue label="Network fee" mono={false}>
-            <span className="text-accent">0.00 — sponsored</span>
+            <span className="text-accent">0.00 · sponsored</span>
           </KeyValue>
           <KeyValue label="Paid by">{paidBy(settlement, identity.address, agentName)}</KeyValue>
           <KeyValue label="Transaction" divider={false}>
@@ -128,7 +128,7 @@ function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: numb
         </KeyValueList>
       </Card>
       <p className="px-1 text-fine text-faint">
-        The shop is paid in XSGD, a testnet mock — XSGD exists on no testnet. The rate is set by the
+        The shop is paid in XSGD, a testnet mock. XSGD exists on no testnet. The rate is set by the
         swap&apos;s owner, not sourced from a market.
       </p>
     </>
@@ -160,7 +160,7 @@ function DeclinedBody({
         </Mono>
         <p className="mt-2 text-body-sm">{reading.explanation}</p>
         <p className="mt-3 text-meta-sm text-danger">
-          The wallet reverted the payment on-chain. No money moved, and no server was asked — the
+          The wallet reverted the payment on-chain. No money moved, and no server was asked. The
           rule is the contract.
         </p>
       </Card>
@@ -170,7 +170,7 @@ function DeclinedBody({
           <KeyValue label="Attempted">{relativeWhen(at, chainNow())}</KeyValue>
           <KeyValue label="Amount">S${formatUnits6(BigInt(denial.xsgdAmount))}</KeyValue>
           <KeyValue label="Agent">{agentName(denial.wallet) ?? shortAddress(denial.wallet)}</KeyValue>
-          <KeyValue label="Merchant category">{merchantCategory ?? "—"}</KeyValue>
+          <KeyValue label="Merchant category">{merchantCategory ?? "Unknown"}</KeyValue>
           <KeyValue label="Rule that stopped it">{reading.rule}</KeyValue>
           <KeyValue label="Moved" mono={false}>
             Nothing
@@ -191,13 +191,13 @@ function DeclinedBody({
             </KeyValue>
           ) : (
             <KeyValue label="Cancelled" divider={false} mono={false}>
-              The cancel did not land — the intent expires on its own
+              The cancel did not land, so the intent expires on its own
             </KeyValue>
           )}
         </KeyValueList>
       </Card>
       <p className="px-1 text-fine text-faint">
-        Recorded at {clockTime(at)}. Nothing was mined, so this attempt has no block — the only
+        Recorded at {clockTime(at)}. Nothing was mined, so this attempt has no block. The only
         transaction it produced is the cancel.
       </p>
     </>

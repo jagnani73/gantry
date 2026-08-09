@@ -92,7 +92,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
             <>
               <p className="text-body text-muted">
                 We couldn&apos;t read this agent&apos;s policy. Its limits are on-chain and
-                unchanged — this is the reading, not the rules.
+                unchanged. This is the reading, not the rules.
               </p>
               <p className="max-w-[34ch] text-fine text-faint break-words">{readError}</p>
               <button
@@ -196,7 +196,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           </KeyValueList>
         </Card>
         <p className="px-1 text-fine text-faint">
-          Caps are stored in {agent.token} — the S$ figures convert at the swap&apos;s owner-set
+          Caps are stored in {agent.token}. The S$ figures convert at the swap&apos;s owner-set
           rate of 1 {agent.token} = {formatUnits6(rate, 4)} XSGD.
         </p>
 
@@ -256,8 +256,8 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           </button>
         </div>
         <p className="px-1 text-center text-fine text-faint">
-          Revoking writes to the wallet on-chain, signed by you. Every payment after it reverts — no
-          server can override it.
+          Revoking writes to the wallet on-chain, signed by you. Every payment after it reverts, and
+          no server can override it.
         </p>
       </div>
     </OverlayScreen>

@@ -62,7 +62,7 @@ function MerchantGate() {
         <p className="mt-2.5 text-body text-quiet">
           <span className="font-mono">@{handle}</span> is not in GantryCore&apos;s merchant
           registry, so there is nothing to show. Handles are claimed on-chain and the claim is
-          permanent — if this is your shop, it was registered under a different one.
+          permanent. If this is your shop, it was registered under a different one.
         </p>
         <Button asChild className="mt-5">
           <Link href="/onboard">Register a shop →</Link>
@@ -76,7 +76,7 @@ function MerchantGate() {
       <h1 className="text-title-lg">Can&apos;t reach the backend</h1>
       <p className="mt-2.5 text-body text-quiet">
         The merchant record is read live from GantryCore through the Gantry API, and that request
-        did not come back. Payments are unaffected — they settle on-chain whether or not this
+        did not come back. Payments are unaffected. They settle on-chain whether or not this
         screen can see them.
       </p>
       {error ? <p className="mt-3 font-mono text-mono-sm break-all text-faint">{error}</p> : null}

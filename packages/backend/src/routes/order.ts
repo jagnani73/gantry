@@ -40,7 +40,7 @@ async function buildOrderPrice(context: HTTPRequestContext) {
     rate = await readRate(token);
   } catch (err) {
     if (err instanceof ApiError) throw err; // TokenUnsupported stays a 400
-    throw new ApiError(503, "QuoteUnavailable", "rate source unreachable — retry shortly");
+    throw new ApiError(503, "QuoteUnavailable", "rate source unreachable; retry shortly");
   }
   return {
     // Same CEIL quote createIntent applies — keeps the bridge's equality guard true.
@@ -120,6 +120,6 @@ ordersRouter.post("/api/order/:handle", async (req, res) => {
       xsgdAmount: xsgdAmount.toString(),
       token: "USDC" as const,
     },
-    message: "order confirmed — the settlement receipt travels in the PAYMENT-RESPONSE header",
+    message: "order confirmed: the settlement receipt travels in the PAYMENT-RESPONSE header",
   });
 });

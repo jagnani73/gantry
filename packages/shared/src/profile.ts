@@ -134,7 +134,7 @@ export function normalizeProfile(input: MerchantProfile): ProfileResult {
       return {
         ok: false,
         field,
-        message: `${field} must be a single line of plain text — no line breaks, invisible or direction-override characters`,
+        message: `${field} must be a single line of plain text: no line breaks, invisible or direction-override characters`,
       };
     }
     if (!hasVisibleContent(trimmed)) {

@@ -200,9 +200,11 @@ current payout: a mistyped-but-valid address would be unrecoverable by anyone.
 - *Is the LLM making the payment?* No. The model chooses and narrates; the
   signing and the HTTP live in tools it cannot reach. If the model times out, a
   scripted path sends identical wire traffic.
-- *Can anyone register as a merchant?* On the demo host, yes — that's the
-  2-minute onboarding beat. On the deployed instance, no: merchants are verified
-  first, the way acquiring works everywhere else. Registration is permissionless
-  on the contract itself; what's gated is Gantry paying the gas for an anonymous
-  caller.
+- *Can anyone register as a merchant?* On the contract, yes, and that is the
+  point: `registerMerchant` is permissionless. On the demo host the form is open
+  too, which is the 2-minute onboarding beat. It is closed on the deployed
+  instance for one reason only, and it is not vetting: that form spends our gas
+  key, and we will not leave an unauthenticated ETH spend on the public
+  internet. Nothing in Gantry reviews or verifies a merchant. Categories are
+  self-attested and there is no KYC anywhere in the system.
 - *Solo project?* Yes. Solo student entry, NTU.

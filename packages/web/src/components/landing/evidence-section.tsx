@@ -67,7 +67,7 @@ export function EvidenceSection() {
             this panel that asserts something IS real, and listing it beside the
             seams would read as a sixth seam. */}
         <p className="mt-2 max-w-[80ch] text-body-sm text-quiet">
-          Payments themselves settle in real Circle USDC — the payer signs an EIP-3009
+          Payments themselves settle in real Circle USDC: the payer signs an EIP-3009
           authorization against Circle&apos;s own contract. These are the parts that are not real.
         </p>
         <div className="mt-5 grid gap-x-10 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">

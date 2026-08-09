@@ -37,7 +37,7 @@ export function SettingsScreen() {
           <>
             <p className="mt-3 text-meta text-muted">
               A shared demo account this build is configured with, funded for you. It is not
-              yours and it is not private — everyone running this demo signs with the same key,
+              yours and it is not private: everyone running this demo signs with the same key,
               so treat the payments and agents here as a public sandbox.
             </p>
             {/* Deliberately inert. Migrating this history onto a connected
@@ -80,8 +80,8 @@ export function SettingsScreen() {
       </Card>
 
       <p className="mt-5 px-1 text-fine text-faint">
-        Payments settle in real Circle USDC on Base Sepolia — you sign an EIP-3009 authorization
-        against Circle&apos;s own contract — and pay out in XSGD, which here is a testnet mock
+        Payments settle in real Circle USDC on Base Sepolia: you sign an EIP-3009 authorization
+        against Circle&apos;s own contract. The payout is in XSGD, which here is a testnet mock
         because XSGD exists on no testnet. The FX rate is set by the swap&apos;s owner, not sourced
         from a market.
       </p>

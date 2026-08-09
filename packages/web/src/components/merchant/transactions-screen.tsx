@@ -153,7 +153,7 @@ export function TransactionsScreen() {
             body={
               filtered
                 ? "Nothing in the loaded history matches. Search runs over the pages already loaded, so an older payment may need loading first."
-                : "Settlements land here as they happen — through the printed QR or through the x402 door."
+                : "Settlements land here as they happen, through the printed QR or the x402 door."
             }
           />
         ) : (

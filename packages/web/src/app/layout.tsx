@@ -25,7 +25,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Gantry",
-  description: "Payer-agnostic payment rail on stablecoins — QR for humans, x402 for AI agents.",
+  description: "Payer-agnostic payment rail on stablecoins: QR for humans, x402 for AI agents.",
 };
 
 export const viewport: Viewport = {

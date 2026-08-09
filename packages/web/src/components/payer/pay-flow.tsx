@@ -313,7 +313,7 @@ export function PayFlow({ handle }: { handle: string }) {
               // The transfer is mined, but RPC replicas lag — wait until the
               // balance is actually visible before signing against it.
               for (let i = 0; (await readBalance()) < BigInt(intent.amountIn); i++) {
-                if (i >= 10) throw new Error("funds not visible yet — try again");
+                if (i >= 10) throw new Error("funds not visible yet: try again");
                 await new Promise((resolve) => setTimeout(resolve, 1500));
               }
             }
@@ -475,7 +475,7 @@ export function PayFlow({ handle }: { handle: string }) {
           </h2>
           <p className="mt-3 text-body text-muted">
             {settled
-              ? "The rail says it settled, but it didn't hand back the transaction. Don't pay again — check your activity in a moment."
+              ? "The rail says it settled, but it didn't hand back the transaction. Don't pay again: check your activity in a moment."
               : "Your authorization was submitted and we lost the answer, so it may or may not have settled. Don't pay again: check your activity in a moment, or ask the shop."}
           </p>
           {/* The error name travels verbatim, same as on the failure screen. */}
@@ -521,7 +521,7 @@ export function PayFlow({ handle }: { handle: string }) {
           <h2 className="mt-5.5 text-title">Payment didn&apos;t go through</h2>
           <p className="mt-3 text-body text-muted">
             {stale
-              ? "The rate you were quoted ran out before it settled. Nothing was charged — take a fresh rate and try again."
+              ? "The rate you were quoted ran out before it settled. Nothing was charged. Take a fresh rate and try again."
               : "Nothing left your wallet. The authorization is only good for this one payment, so it is safe to try again on a fresh quote."}
           </p>
           {/* The error name travels verbatim from the chain or the API; the
@@ -640,7 +640,7 @@ export function PayFlow({ handle }: { handle: string }) {
                 onClick={() => void confirm(intent)}
                 className="focus-ring h-13.5 w-full rounded-control-m bg-ink text-btn text-paper transition-colors hover:bg-ink-hover"
               >
-                Pay — one signature
+                Pay with one signature
               </button>
               <p className="mt-3 text-center text-fine text-faint">
                 You sign once. Funds move only for this exact payment, and the gas is paid for you.

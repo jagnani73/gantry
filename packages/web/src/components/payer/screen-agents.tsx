@@ -47,7 +47,7 @@ export function AgentsScreen() {
         {noWallet ? (
           <Card radius="card-m" pad="m">
             <p className="text-body-sm text-muted">
-              Connect a wallet in Settings — an agent is a wallet you own on-chain, so there has to
+              Connect a wallet in Settings. An agent is a wallet you own on-chain, so there has to
               be an owner first.
             </p>
           </Card>
@@ -55,7 +55,7 @@ export function AgentsScreen() {
           <Card tone="danger" radius="card-m" pad="m">
             <p className="text-body-sm">
               We couldn&apos;t list your agents. Any wallet you own is still on-chain with its
-              policy intact — this is the reading, not the rules. Don&apos;t create a new one until
+              policy intact. This is the reading, not the rules. Don&apos;t create a new one until
               this loads, or you&apos;ll end up with two.
             </p>
             <p className="mt-2.5 text-meta-sm break-words">{agentsError}</p>
@@ -76,7 +76,7 @@ export function AgentsScreen() {
           <Card radius="card-m" pad="m">
             <p className="text-body-sm text-muted">
               You don&apos;t have an agent yet. Creating one deploys a wallet you own and arms it
-              with a spend policy only you can change — two transactions, signed here.
+              with a spend policy only you can change: two transactions, signed here.
             </p>
             <button
               type="button"
@@ -103,7 +103,7 @@ export function AgentsScreen() {
           back has to say so — this is the only place this screen can. */}
       {agents && agents.length > 0 ? (
         <p className="mt-3 px-1 text-fine text-faint">
-          Caps are stored in USDC — S$ figures convert at the swap&apos;s owner-set rate.
+          Caps are stored in USDC. S$ figures convert at the swap&apos;s owner-set rate.
         </p>
       ) : null}
       <div className="h-3" />

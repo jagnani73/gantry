@@ -234,7 +234,7 @@ async function resolveFailedCollect(
         `bridge CRITICAL: ambiguous collect DID land for intent ${intent.intentId} — refunding ${from}`,
       );
       await refundQuietly(requirements.asset, from, BigInt(authorization.value));
-      return failure(reason, `collect landed but settlement was aborted; funds refunded — ${message}`, from);
+      return failure(reason, `collect landed but settlement was aborted; funds refunded (${message})`, from);
     }
   }
   console.error(
@@ -242,7 +242,7 @@ async function resolveFailedCollect(
       `If token.authorizationState(${from}, ${authorization.nonce}) turns true, ` +
       `refund manually: token.transfer(${from}, ${authorization.value}).`,
   );
-  return failure(reason, `${message} (collect outcome unresolved — manual review logged)`, from);
+  return failure(reason, `${message} (collect outcome unresolved; manual review logged)`, from);
 }
 
 /**
@@ -282,7 +282,7 @@ async function resolveFailedSettle(
   if (cancelled === "already_settled") return settleLandedAfterAll(intent, requirements, from);
   if (cancelled === "cancelled") {
     await refundQuietly(requirements.asset, from, value);
-    return failure(reason, `settlement did not land; funds refunded — ${message}`, from);
+    return failure(reason, `settlement did not land; funds refunded (${message})`, from);
   }
 
   console.error(
@@ -290,7 +290,7 @@ async function resolveFailedSettle(
       `If getIntent shows Settled all is well; otherwise refund manually: ` +
       `token.transfer(${from}, ${value}). No refund was sent.`,
   );
-  return failure(reason, `${message} (settle outcome unresolved — funds held pending manual review)`, from);
+  return failure(reason, `${message} (settle outcome unresolved; funds held pending manual review)`, from);
 }
 
 function settleLandedAfterAll(

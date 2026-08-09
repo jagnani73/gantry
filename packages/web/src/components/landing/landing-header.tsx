@@ -1,3 +1,4 @@
+import { GantryMark } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { GUTTER_X, REPO_URL } from "./content";
 
@@ -15,7 +16,7 @@ export function LandingHeader() {
       )}
     >
       <div className="flex items-center gap-2.5">
-        <span aria-hidden className="size-5.5 rounded-badge bg-ink" />
+        <GantryMark className="h-5.5" />
         <span className="text-card-title-sm">Gantry</span>
       </div>
       <nav className="flex items-center gap-4 sm:gap-6.5">

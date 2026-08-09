@@ -50,7 +50,7 @@ export function parsePayerFilter(raw: string | null | undefined): PayerFilterRes
     return {
       ok: false,
       reason: "empty",
-      message: "payer filter was supplied but lists no addresses — omit it to match every payer",
+      message: "payer filter was supplied but lists no addresses. Omit it to match every payer",
     };
   }
   // Capped on the raw item count, before any per-item work: the cap exists to

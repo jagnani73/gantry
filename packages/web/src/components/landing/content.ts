@@ -33,7 +33,7 @@ export const GANTRY_FEE_LABEL = formatBps(GANTRY_FEE_BPS);
 export const CARD_FEE_LABEL = formatBps(CARD_FEE_BPS);
 
 export const IDEA = [
-  { n: "01", text: "A payment is an intent — merchant M requests S$X." },
+  { n: "01", text: "A payment is an intent: merchant M requests S$X." },
   { n: "02", text: "A QR code and an HTTP 402 response are two encodings of that same intent." },
   { n: "03", text: "One contract consumes both, so a hawker and an API get paid the same way." },
 ] as const;
@@ -43,7 +43,7 @@ export const WHY = [
     title: "PayNow needs a Singapore bank account",
     // "Benchmarked here" rather than a flat "cards cost 2.8%": CARD_FEE_BPS is
     // this project's comparison rate, not a claim about the card industry.
-    body: `The ~16M visitors who arrive each year have none. They fall back to cards — benchmarked here at ${CARD_FEE_LABEL} in merchant fees — or to cash.`,
+    body: `The ~16M visitors who arrive each year have none. They fall back to cards (benchmarked here at ${CARD_FEE_LABEL} in merchant fees) or to cash.`,
   },
   {
     title: "AI agents can't open bank accounts at all",
@@ -51,7 +51,7 @@ export const WHY = [
   },
   {
     title: "Agent spending stays inside on-chain allowances",
-    body: "Daily caps, category allowlists, expiry — Purpose-Bound Money, applied to software. Denials are contract reverts, not backend checks.",
+    body: "Daily caps, category allowlists, expiry: Purpose-Bound Money, applied to software. Denials are contract reverts, not backend checks.",
   },
 ] as const;
 
@@ -71,11 +71,11 @@ export const WHY = [
 export const SEAMS = [
   {
     title: "XSGD is a mock",
-    body: "MockXSGD is the only mocked token in the system, and it has to be — XSGD exists on no testnet.",
+    body: "MockXSGD is the only mocked token in the system, and it has to be: XSGD exists on no testnet.",
   },
   {
     title: "The FX rate is owner-set",
-    body: "One address sets it, and nothing arbitrages it — behind an interface built to be swapped for real liquidity.",
+    body: "One address sets it, and nothing arbitrages it. The interface it sits behind is built to be swapped for real liquidity.",
   },
   {
     title: "One key does everything",
@@ -83,7 +83,7 @@ export const SEAMS = [
   },
   {
     title: "Merchants are self-attested",
-    body: "Categories carry no KYC, and the back-office has no login — anyone with the URL can read a shop's takings.",
+    body: "Categories carry no KYC, and the back-office has no login. Anyone with the URL can read a shop's takings.",
   },
   {
     title: "There is no off-ramp",
@@ -120,7 +120,7 @@ export const CONTRACTS: ContractRow[] = [
   },
   {
     name: "USDC",
-    note: "Circle's real testnet contract — payers sign against it",
+    note: "Circle's real testnet contract: payers sign against it",
     address: BASE_SEPOLIA_ADDRESSES.realUsdc,
   },
   {

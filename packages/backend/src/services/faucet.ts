@@ -129,7 +129,7 @@ async function grantUsdc(address: Address): Promise<FaucetResponse> {
       throw new ApiError(
         503,
         "FunderExhausted",
-        `the demo funder is out of USDC (holds ${funderBalance}, needs ${GRANT}) — top up ${relayerAccount.address}`,
+        `the demo funder is out of USDC (holds ${funderBalance}, needs ${GRANT}). Top up ${relayerAccount.address}`,
       );
     }
 
@@ -174,7 +174,7 @@ async function grantUsdc(address: Address): Promise<FaucetResponse> {
 
 function usdcRefusalError(refusal: LegRefusal): ApiError {
   if (refusal.kind === "cooldown") {
-    return new ApiError(429, "FaucetCooldown", "faucet cooldown active — try again shortly");
+    return new ApiError(429, "FaucetCooldown", "faucet cooldown active; try again shortly");
   }
   if (refusal.kind === "in_flight") {
     return new ApiError(429, "FaucetInFlight", "a grant to this address is already in flight");
@@ -184,7 +184,7 @@ function usdcRefusalError(refusal: LegRefusal): ApiError {
     429,
     "FaucetBudgetExhausted",
     `the demo faucet's daily allowance is spent (${refusal.remaining} units left, ` +
-      `resets in ~${mins} min) — pay from a wallet that already holds Base Sepolia USDC, ` +
+      `resets in ~${mins} min). Pay from a wallet that already holds Base Sepolia USDC, ` +
       "or run a local backend, where funding is unmetered.",
   );
 }
@@ -236,8 +236,8 @@ async function topUpGas(address: Address, fatal: boolean): Promise<GasTopUpResul
         503,
         "FunderGasLow",
         `cannot spare ${formatEther(send)} ETH for ${address}: the relayer holds ` +
-          `${formatEther(funderEth)} and keeps ${formatEther(FUNDER_ETH_RESERVE)} for relaying — ` +
-          `top up ${relayerAccount.address}`,
+          `${formatEther(funderEth)} and keeps ${formatEther(FUNDER_ETH_RESERVE)} for relaying. ` +
+          `Top up ${relayerAccount.address}`,
       );
     }
 
@@ -302,7 +302,7 @@ function gasRefusalError(refusal: LegRefusal, address: Address, send: bigint): A
     return new ApiError(
       429,
       "FaucetGasCooldown",
-      `gas top-up cooldown active for ${address} — try again in ~${Math.ceil(refusal.retryInMs / 1000)}s`,
+      `gas top-up cooldown active for ${address}; try again in ~${Math.ceil(refusal.retryInMs / 1000)}s`,
     );
   }
   if (refusal.kind === "in_flight") {
@@ -313,7 +313,7 @@ function gasRefusalError(refusal: LegRefusal, address: Address, send: bigint): A
     429,
     "FaucetGasBudgetExhausted",
     `the demo faucet's daily gas allowance is spent (needs ${formatEther(send)} ETH, ` +
-      `${formatEther(refusal.remaining)} left, resets in ~${mins} min) — the payer can still ` +
+      `${formatEther(refusal.remaining)} left, resets in ~${mins} min). The payer can still ` +
       "pay; they cannot configure an agent until they hold gas. Send ETH to the address, or " +
       "run a local backend, where funding is unmetered.",
   );

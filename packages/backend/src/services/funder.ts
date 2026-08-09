@@ -159,9 +159,9 @@ export async function topUpFunder(): Promise<FunderStatus> {
     const idle = await wethBalance();
     if (idle > 0n) {
       await sendRelayerTx({ address: WETH, abi: wethAbi, functionName: "withdraw", args: [idle] });
-      return status(false, `USDC above the ${formatUnits(FLOOR, 6)} floor — unwrapped ${formatEther(idle)} stranded WETH`);
+      return status(false, `USDC above the ${formatUnits(FLOOR, 6)} floor; unwrapped ${formatEther(idle)} stranded WETH`);
     }
-    return status(false, `USDC above the ${formatUnits(FLOOR, 6)} floor — no swap needed`);
+    return status(false, `USDC above the ${formatUnits(FLOOR, 6)} floor: no swap needed`);
   }
 
   const need = TARGET - balance;
@@ -182,7 +182,7 @@ export async function topUpFunder(): Promise<FunderStatus> {
       503,
       "FunderQuoteImplausible",
       `the pool wants ${formatEther(maxEthIn)} ETH for ${formatUnits(need, 6)} USDC, above the ` +
-        `${formatEther(MAX_ETH_PER_SWAP)} ETH per-swap cap — the WETH/USDC pool has probably been ` +
+        `${formatEther(MAX_ETH_PER_SWAP)} ETH per-swap cap. The WETH/USDC pool has probably been ` +
         `skewed. Refusing to convert the gas key; buy USDC manually or raise MAX_ETH_PER_SWAP.`,
     );
   }
@@ -202,8 +202,8 @@ export async function topUpFunder(): Promise<FunderStatus> {
       `need ${formatEther(toWrap)} ETH to buy ${formatUnits(need, 6)} USDC but only ` +
         `${formatEther(ethBalance)} ETH is held (keeping ${formatEther(MIN_ETH_RESERVE)} for gas)` +
         (stranded > 0n
-          ? ` — note ${formatEther(stranded)} WETH is already held and will be reused`
-          : ` — top up ${relayerAccount.address}`),
+          ? `. Note ${formatEther(stranded)} WETH is already held and will be reused`
+          : `. Top up ${relayerAccount.address}`),
     );
   }
 
@@ -258,9 +258,9 @@ export async function topUpFunder(): Promise<FunderStatus> {
       503,
       "FunderSwapIncomplete",
       after
-        ? `swap did not complete — funder holds ${after.eth} ETH, ${after.usdc} USDC and ` +
+        ? `swap did not complete: funder holds ${after.eth} ETH, ${after.usdc} USDC and ` +
           `${after.weth} WETH. Re-run to resume; the swap may have landed if the receipt timed out.`
-        : `swap did not complete and the chain state could not be read — check ${relayerAccount.address}`,
+        : `swap did not complete and the chain state could not be read. Check ${relayerAccount.address}`,
     );
   }
 

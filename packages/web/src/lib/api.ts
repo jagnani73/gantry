@@ -79,7 +79,7 @@ async function call<T>(path: string, init?: RequestInit & { timeoutMs?: number }
     // an error card, not crash the next render with undefined data.
     throw new ApiClientError(res.status, {
       name: "BadResponse",
-      message: "non-JSON response from backend — check NEXT_PUBLIC_BACKEND_URL",
+      message: "non-JSON response from backend. Check NEXT_PUBLIC_BACKEND_URL",
     });
   }
   return body as T;

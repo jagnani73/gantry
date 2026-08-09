@@ -28,7 +28,7 @@ export function SettingsScreen() {
     {
       label: "Payout address",
       help: "Where every payment lands, in XSGD. Changing it is an on-chain write only this address can sign.",
-      value: merchant ? shortAddress(merchant.payout) : "—",
+      value: merchant ? shortAddress(merchant.payout) : "…",
     },
     {
       label: "Handle",
@@ -37,17 +37,17 @@ export function SettingsScreen() {
     },
     {
       label: "Category",
-      help: "Read by agent spend policies. Self-attested — there is no KYC on this deployment.",
+      help: "Read by agent spend policies. Self-attested: there is no KYC on this deployment.",
       value: merchant
         ? (CATEGORY_LABELS[merchant.categoryId] ?? merchant.categoryName)
-        : "—",
+        : "…",
     },
     {
       label: "Registered",
       help: "The block your merchant record was written to GantryCore.",
       // Absent when the log lookup did not resolve. An estimate would be worse
-      // than a dash: this is the date a shop would cite as proof it existed.
-      value: merchant?.registeredAt === undefined ? "—" : shortDate(merchant.registeredAt),
+      // than saying so: this is the date a shop would cite as proof it existed.
+      value: merchant?.registeredAt === undefined ? "Unknown" : shortDate(merchant.registeredAt),
     },
   ];
 

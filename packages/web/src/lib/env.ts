@@ -34,7 +34,7 @@ export function demoKey(): `0x${string}` | undefined {
   if (!warned) {
     warned = true;
     console.warn(
-      `NEXT_PUBLIC_DEMO_KEY="${raw}" is not a 0x-prefixed 32-byte key — the demo account stays off.`,
+      `NEXT_PUBLIC_DEMO_KEY="${raw}" is not a 0x-prefixed 32-byte key. The demo account stays off.`,
     );
   }
   return undefined;

@@ -160,7 +160,7 @@ function FeedBody({
     return (
       <EmptyPanel
         title="The feed is disconnected"
-        body="Payments are still settling on-chain — this screen simply cannot see them. The browser closed the stream rather than retrying, which means the backend answered with something other than a live event stream."
+        body="Payments are still settling on-chain. This screen simply cannot see them. The browser closed the stream rather than retrying, which means the backend answered with something other than a live event stream."
         action={
           <Button variant="destructive" size="sm" onClick={feed.retry}>
             Retry connection

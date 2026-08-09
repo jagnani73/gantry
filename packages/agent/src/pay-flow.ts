@@ -115,7 +115,7 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
   const active = agents.filter((a) => agentStatus(a, now) === "active");
   const usable = active.at(-1) ?? agents.at(-1);
   if (!usable) {
-    throw new Error(`no PBM wallet lists ${signer} as its agent signer — has one been created?`);
+    throw new Error(`no PBM wallet lists ${signer} as its agent signer. Has one been created?`);
   }
   // Say which one, and say it out loud when the choice was not forced. This is
   // the failure that looks healthy from both ends, so it must be visible on the
@@ -244,8 +244,8 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
   } catch (err) {
     return fail(
       "transport_error",
-      `a pre-payment step failed (${err instanceof Error ? err.message : String(err)}) — ` +
-        "nothing was paid; retrying once is safe",
+      `a pre-payment step failed (${err instanceof Error ? err.message : String(err)}). ` +
+        "Nothing was paid; retrying once is safe",
     );
   }
 
@@ -279,7 +279,7 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
         amountToken: offer.amount,
         ...(txHash
           ? { txHash, explorerUrl: `${BASESCAN_BASE_URL}/tx/${txHash}` }
-          : { note: "settled — tx hash pending the indexer; see the dashboard row" }),
+          : { note: "settled: tx hash pending the indexer; see the dashboard row" }),
         payer: receipt.payer,
       };
     }
@@ -292,12 +292,12 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
       const decoded = decodePaymentRequiredHeader(rechallenge);
       return fail(decoded.error ?? "verification_failed", `payment rejected at verify (status ${paid.status})`);
     }
-    return fail("outcome_unknown", `paid retry returned ${paid.status} with no payment headers — the payment MAY have settled; do NOT retry, check the dashboard`);
+    return fail("outcome_unknown", `paid retry returned ${paid.status} with no payment headers. The payment MAY have settled; do NOT retry, check the dashboard`);
   } catch (err) {
     return fail(
       "outcome_unknown",
-      `the paid request failed mid-flight (${err instanceof Error ? err.message : String(err)}) — ` +
-        "the payment MAY have settled; do NOT retry, check the dashboard",
+      `the paid request failed mid-flight (${err instanceof Error ? err.message : String(err)}). ` +
+        "The payment MAY have settled; do NOT retry, check the dashboard",
     );
   }
 }

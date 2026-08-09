@@ -22,7 +22,7 @@ export function LandingHero() {
         <h1 className="mt-6.5 max-w-[14ch] text-section md:text-hero">One rail, every payer.</h1>
 
         <p className="mt-6.5 max-w-[52ch] text-standfirst text-pretty text-quiet">
-          A merchant integrates once and gets paid by anyone — a person scanning a printed QR, or an
+          A merchant integrates once and gets paid by anyone: a person scanning a printed QR, or an
           AI agent paying over x402. Both are the same on-chain payment intent. The shop always
           receives XSGD.
         </p>
@@ -51,7 +51,7 @@ export function LandingHero() {
           ))}
         </ol>
         <p className="mt-6.5 border-t border-hairline pt-5.5 text-meta text-muted">
-          Track 1 — Payments &amp; Financial Infrastructure. Contracts deployed and verified; x402
+          Track 1: Payments &amp; Financial Infrastructure. Contracts deployed and verified; x402
           traffic an unmodified client pays.
         </p>
       </Card>

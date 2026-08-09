@@ -35,7 +35,7 @@ export function requireSigningEnv(): { key: `0x${string}`; signer: `0x${string}`
   // Shape-check the key so a malformed one fails HERE, before any HTTP — not at
   // signing time, after an on-chain intent was already created.
   if (!env.agentSessionKey || !/^0x[0-9a-fA-F]{64}$/.test(env.agentSessionKey)) {
-    throw new Error("AGENT_SESSION_KEY missing or malformed — expected 0x + 64 hex chars");
+    throw new Error("AGENT_SESSION_KEY missing or malformed: expected 0x + 64 hex chars");
   }
   return { key: env.agentSessionKey, signer: privateKeyToAccount(env.agentSessionKey).address };
 }

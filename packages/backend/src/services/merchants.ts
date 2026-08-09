@@ -266,12 +266,12 @@ function armThrottle(t: Throttle, key: string): void {
 const registerThrottle = throttle(
   30_000,
   "OnboardingCooldown",
-  "registration cooldown active — try again shortly",
+  "registration cooldown active; try again shortly",
 );
 const profileThrottle = throttle(
   10_000,
   "ProfileEditCooldown",
-  "profile edit cooldown active — try again shortly",
+  "profile edit cooldown active; try again shortly",
 );
 
 /**
@@ -300,8 +300,13 @@ export async function registerMerchant(
     throw new ApiError(
       403,
       "OnboardingDisabled",
-      "self-service onboarding is off on this deployment — merchants are verified before they are added. " +
-        "Run the backend without NODE_ENV=production to onboard (demo host), or register on-chain directly.",
+      // NOT "merchants are verified": nothing anywhere in Gantry reviews or
+      // verifies a merchant, and saying otherwise claims a KYC that does not
+      // exist. What this gate protects is the relayer's gas key, which is the
+      // honest reason and the only one.
+      "self-service onboarding is off on this deployment: registering through this route spends " +
+        "Gantry's own gas key. Run the backend without NODE_ENV=production to onboard (demo host), " +
+        "or register on-chain directly — registerMerchant is permissionless and needs no permission from us.",
     );
   }
   if (!isValidHandle(req.handle)) {
@@ -427,7 +432,7 @@ export async function updateMerchantProfile(
     throw new ApiError(
       403,
       "ProfileEditingDisabled",
-      "profile editing is off on this deployment — the route is unauthenticated, so anyone with " +
+      "profile editing is off on this deployment: the route is unauthenticated, so anyone with " +
         "the URL could rewrite any shop's identity. Edit on the demo host, or call with x-admin-token.",
     );
   }

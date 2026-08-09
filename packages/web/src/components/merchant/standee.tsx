@@ -1,4 +1,4 @@
-import { Label, Mono } from "@/components/primitives";
+import { GantryMark, Label, Mono } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { QR_QUIET_ZONE, type QrMatrix } from "./qr-matrix";
 
@@ -26,6 +26,14 @@ export function Standee({
   const span = qr.size + QR_QUIET_ZONE * 2;
   return (
     <div className={cn("rounded-tile border border-nav-active p-7 text-center", className)}>
+      {/* The scheme mark sits above the instruction, where a payment standee
+          puts it — this sheet is the only Gantry surface a payer meets before
+          they have opened anything, so it is the one that has to identify
+          itself. Quiet enough not to outrank the shop's own name. */}
+      <div className="mb-5 flex items-center justify-center gap-2">
+        <GantryMark className="h-4.5" />
+        <span className="text-card-title-sm text-quiet">Gantry</span>
+      </div>
       <Label size="wide">Scan to pay</Label>
       <div className="mt-2 mb-4.5 text-title-sm">{name}</div>
       <svg

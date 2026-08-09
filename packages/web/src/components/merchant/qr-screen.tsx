@@ -46,7 +46,7 @@ export function QrScreen({ payUrl, qr }: { payUrl: string; qr: QrMatrix }) {
   return (
     <>
       <ScreenHeader title="QR & standee" className="print:hidden">
-        One printed code. Anyone scans it — no app, no account, no gas.
+        One printed code. Anyone scans it: no app, no account, no gas.
       </ScreenHeader>
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[420px_1fr]">
@@ -63,7 +63,7 @@ export function QrScreen({ payUrl, qr }: { payUrl: string; qr: QrMatrix }) {
           <Card radius="card" pad="md">
             <div className="text-card-title-sm">Print it</div>
             <p className="mt-2 mb-4 text-body text-muted">
-              The code never expires and never needs replacing — it points at your handle, not at
+              The code never expires and never needs replacing: it points at your handle, not at
               an amount. Printing hides everything on this page except the standee.
             </p>
             <div className="flex flex-wrap gap-2">

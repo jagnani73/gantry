@@ -67,10 +67,10 @@ async function main() {
       const { funded } = (await funder.json()) as { funded: string };
       console.log(`funder: sent ${formatUnits6(BigInt(funded))} USDC`);
     } else {
-      console.log(`funder refused (${funder.status}): ${await funder.text()} — continuing anyway`);
+      console.log(`funder refused (${funder.status}): ${await funder.text()}. Continuing anyway.`);
     }
   } catch (err) {
-    console.log(`funder unreachable (${err instanceof Error ? err.message : err}) — continuing anyway`);
+    console.log(`funder unreachable (${err instanceof Error ? err.message : err}). Continuing anyway.`);
   }
 
   // 3. The vanilla client: standard scheme registration, then one call.
@@ -89,7 +89,7 @@ async function main() {
       const failedReceipt = paid.headers.get(PAYMENT_RESPONSE_HEADER);
       if (failedReceipt) {
         const r = decodePaymentResponseHeader(failedReceipt);
-        console.error(`settle failed: ${r.errorReason} — ${r.errorMessage ?? ""}`);
+        console.error(`settle failed: ${r.errorReason}: ${r.errorMessage ?? ""}`);
       }
     } catch (decodeErr) {
       console.error(`(could not decode failure headers: ${decodeErr instanceof Error ? decodeErr.message : decodeErr})`);
