@@ -103,13 +103,22 @@ export function ProfileScreen() {
   return (
     <>
       <ScreenHeader title="Shop profile">
-        Your public identity — what a payer sees before they hand over money.
+        Your public identity: what a payer sees before they hand over money.
       </ScreenHeader>
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[1fr_392px]">
         <Card as="form" radius="card" pad="lg" onSubmit={submit} className="flex flex-col gap-5.5">
-          <div className="flex flex-wrap items-start gap-5">
-            <ShopTile name={preview.displayName} size="lg" />
+          {/* Grid, not flex, from `sm` up: the tile is square and takes its
+              height from the field stack beside it, and only a grid track
+              feeds a stretched height back into an `aspect-square` width. A
+              stretched FLEX item keeps its content width (measured: 22px wide,
+              150 tall), so the same classes on a flex row draw a sliver. */}
+          <div className="flex flex-wrap items-start gap-5 sm:grid sm:grid-cols-[auto_1fr] sm:items-stretch">
+            <ShopTile
+              name={preview.displayName}
+              size="lg"
+              className="sm:size-auto sm:aspect-square"
+            />
             <div className="min-w-56 flex-1">
               <Field
                 field="displayName"
@@ -138,7 +147,7 @@ export function ProfileScreen() {
               <div className="mt-1.5 flex items-center justify-between gap-3 rounded-control bg-fill-subtle px-3.5 py-2.75">
                 <span className="text-body-lg text-muted">
                   {merchant === null
-                    ? "—"
+                    ? "…"
                     : (CATEGORY_LABELS[merchant.categoryId] ?? merchant.categoryName)}
                 </span>
                 <Mono size="2xs" tone="faint">
@@ -239,7 +248,7 @@ export function ProfileScreen() {
               here is the honest-labels rule applied to the one screen that puts
               self-attested text under an on-chain badge. */}
           <p className="mt-3.5 text-fine text-quiet">
-            The name, location and one-liner are yours to write — they live in Gantry&apos;s
+            The name, location and one-liner are yours to write. They live in Gantry&apos;s
             database, not on-chain, and nobody verifies them. Only the handle, payout address and
             category are on the chain, and &ldquo;registered&rdquo; there means a contract call
             anyone can make, not a check anyone ran.
@@ -290,8 +299,6 @@ function Field({
         onChange={(event) => onChange(field, event.target.value)}
         aria-invalid={invalid || used > limit}
         className={cn(
-          // `text-body-lg`, not `text-input`: `input` is a legacy shadcn colour
-          // alias, so cn classifies `text-input` as a colour and drops the size.
           "focus-ring text-body-lg mt-1.5 w-full rounded-control bg-fill-hover px-3.5 py-2.75 text-ink placeholder:text-faint",
           "aria-invalid:border aria-invalid:border-danger",
         )}
