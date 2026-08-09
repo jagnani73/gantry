@@ -263,6 +263,13 @@
    Tailwind's dynamic scale (p-1, p-1.5, p-2, …), so re-declaring it as tokens
    would give every value two names. */
 @theme {
+  /* Presentation chrome, not part of the design language: the phone mock the
+     payer app sits inside on a desktop viewport. 402px is the width the handoff
+     drew that surface at, so a screenshot taken here matches the design. Never
+     applies below `lg` — on a real phone the app IS the screen. */
+  --container-device: 402px;
+  --radius-device: 44px;
+
   --radius-hero: 24px; /* hero panels */
   --radius-panel: 20px; /* large cards */
   --radius-card-m: 18px; /* phone cards */
@@ -399,6 +406,33 @@
 
 /* The empty logo / camera slot. One definition so a shop with no logo looks the
    same on the merchant profile, the payer's receipt and the merchant page. */
+/**
+ * Hides scrollbars on this element and everything inside it.
+ *
+ * For the payer surface only, and not merely cosmetic. A desktop scrollbar is
+ * laid INSIDE the box: measured, it took 15px out of the 402px the phone mock is
+ * drawn at, so every screen rendered ~4% narrower than the design — and narrower
+ * than the same screen on a real handset, where the scrollbar is an overlay and
+ * costs nothing. Hiding it makes desktop and phone agree, which is the whole
+ * point of a mock. The prototypes in the design handoff do the same.
+ *
+ * Content stays scrollable by wheel, trackpad, touch and keyboard; only the
+ * indicator goes. Do NOT reach for this on the merchant back-office — that is a
+ * real desktop surface and its scrollbar is doing its job.
+ */
+@utility scrollbar-hidden {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  & * {
+    scrollbar-width: none;
+  }
+  & *::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @utility stripe-placeholder {
   background-image: repeating-linear-gradient(
     135deg,

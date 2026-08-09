@@ -7,11 +7,15 @@ import { cn } from "@/components/primitives";
  * A full-screen step that sits over the tabs — scan, the pay flow, a receipt, a
  * shop, an agent.
  *
- * Drawn at 402px in the design and built here as a normal responsive page: the
- * iPhone bezel in the prototype was presentation scaffolding. On a wide screen
- * the column stays phone-width and the tone bleeds to the edges, so a green
- * success screen still reads as one surface rather than a card floating on
- * paper.
+ * Drawn at 402px in the design and built here as a normal responsive page. On a
+ * wide screen the column stays phone-width and the tone bleeds to the edges, so
+ * a green success screen still reads as one surface rather than a card floating
+ * on paper.
+ *
+ * `absolute`, not `fixed`: these are positioned against PayerFrame, so on a
+ * desktop viewport they fill the phone mock instead of escaping it to cover the
+ * whole window. On a phone the frame IS the viewport, so the two are identical
+ * there — nothing about the handset rendering changes.
  */
 
 type OverlayTone = "paper" | "ink" | "accent";
@@ -32,7 +36,7 @@ export function OverlayScreen({
   className?: string;
 }) {
   return (
-    <div className={cn("fixed inset-0 z-30 flex justify-center", TONE[tone])}>
+    <div className={cn("absolute inset-0 z-30 flex justify-center", TONE[tone])}>
       <div
         className={cn(
           "animate-overlay-push flex h-full w-full max-w-md flex-col overflow-y-auto",
