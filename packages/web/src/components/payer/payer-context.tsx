@@ -101,7 +101,10 @@ export interface PayerStore {
   /** Re-reads only the settlement and denial pages. For a payment, which cannot
    * have changed which wallets the payer owns. */
   refreshHistory(): void;
-  refreshBalance(): void;
+  /** Pass `expectChange` after a transfer this app just caused: the read is
+   * re-issued on a bounded schedule until the figure actually moves, because a
+   * replica can answer a fresh transfer with the balance from before it. */
+  refreshBalance(options?: { expectChange?: boolean }): void;
 
   overlay: Overlay | null;
   pushOverlay(overlay: Overlay): void;
@@ -127,6 +130,12 @@ const AGENT_NAMES_KEY = "gantry.agent.names";
  * well past what a demo wallet accumulates — paging is an easy addition later,
  * every row already carries the cursor it would need. */
 const HISTORY_LIMIT = 100;
+
+/** Bounded, and sized like the pay flow's own post-funding wait: a transfer
+ * that has not surfaced after this long is a failure to report, not a slow
+ * replica to keep polling. */
+const BALANCE_POLL_ATTEMPTS = 8;
+const BALANCE_POLL_MS = 1_500;
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -174,7 +183,43 @@ export function PayerProvider({
     setHistoryNonce((n) => n + 1);
   }, []);
   const refreshHistory = useCallback(() => setHistoryNonce((n) => n + 1), []);
-  const refreshBalance = useCallback(() => setBalanceNonce((n) => n + 1), []);
+
+  /* A balance read issued the instant a transfer returns is a read of the state
+     BEFORE it: the transfer is mined, but the replica answering can be behind,
+     and one shot at it leaves the old number on screen until something else
+     happens to refetch. That is what made "Top up" look like it did nothing —
+     the grant landed and the figure did not move.
+
+     So `expectChange` re-reads on a bounded schedule and stops the moment the
+     value actually differs. Same discipline as the pay flow, which polls after
+     funding a burner before it will sign. It gives up rather than spinning: an
+     amount that never arrives is a real failure, and pretending otherwise would
+     hide it. */
+  const balanceRef = useRef<bigint | null>(null);
+  const balanceTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const pending = balanceTimers.current;
+    return () => {
+      pending.forEach(clearTimeout);
+      pending.clear();
+    };
+  }, []);
+
+  const refreshBalance = useCallback((options?: { expectChange?: boolean }) => {
+    setBalanceNonce((n) => n + 1);
+    if (!options?.expectChange) return;
+    const before = balanceRef.current;
+    let attempts = 0;
+    const poll = () => {
+      if (attempts >= BALANCE_POLL_ATTEMPTS || balanceRef.current !== before) return;
+      attempts += 1;
+      setBalanceNonce((n) => n + 1);
+      const timer = setTimeout(poll, BALANCE_POLL_MS);
+      balanceTimers.current.add(timer);
+    };
+    const first = setTimeout(poll, BALANCE_POLL_MS);
+    balanceTimers.current.add(first);
+  }, []);
 
   /* The feed can change without this app doing anything — the payer's own agent
      pays while they watch. There is no SSE here on purpose: the live stream is
@@ -330,6 +375,7 @@ export function PayerProvider({
       if (cancelled) return;
       if (balanceResult.status === "fulfilled") {
         setBalance(balanceResult.value);
+        balanceRef.current = balanceResult.value;
         setBalanceError(null);
       } else {
         console.warn("gantry: USDC balance read failed", balanceResult.reason);
@@ -345,7 +391,7 @@ export function PayerProvider({
       if (blockResult.status === "fulfilled") {
         setClockOffset(Number(blockResult.value.timestamp) - Math.floor(Date.now() / 1000));
       } else {
-        console.warn("gantry: block read failed — falling back to this device's clock", blockResult.reason);
+        console.warn("gantry: block read failed, falling back to this device's clock", blockResult.reason);
       }
     })();
     return () => {

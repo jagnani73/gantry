@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { formatUnits6, shortAddress } from "@gantry/shared";
-import { Card, Chip, Figure, Label, Money, Mono, StatusDot } from "@/components/primitives";
+import { Card, Chip, Figure, Label, Money, Mono, StatusDot, useToast } from "@/components/primitives";
 import { api } from "@/lib/api";
 import { ActivityRowItem } from "./activity-row";
 import { placesPaid } from "./activity";
@@ -32,6 +32,7 @@ export function WalletScreen() {
     refreshBalance,
     pushOverlay,
   } = usePayer();
+  const toast = useToast();
   const [toppingUp, setToppingUp] = useState(false);
   const [topUpError, setTopUpError] = useState<string | null>(null);
 
@@ -46,10 +47,21 @@ export function WalletScreen() {
     setTopUpError(null);
     setToppingUp(true);
     try {
-      await api.faucet(identity.address);
-      refreshBalance();
+      const granted = await api.faucet(identity.address);
+      // `expectChange`: the transfer is mined by the time this resolves, but the
+      // replica answering the next read can still be behind it. Without this the
+      // figure stayed put and the whole action looked like it did nothing.
+      refreshBalance({ expectChange: true });
+      // Say what arrived, not just that something did. The balance is at the top
+      // of a screen the payer may have scrolled past, so the confirmation has to
+      // carry the amount itself.
+      toast.success(`Added ${formatUnits6(BigInt(granted.funded), 2)} USDC`);
     } catch (err) {
-      setTopUpError(err instanceof Error ? err.message : String(err));
+      // Toast AND the card: the card is the record, the toast is what gets
+      // noticed. A failure must not live only in something that disappears.
+      const message = err instanceof Error ? err.message : String(err);
+      setTopUpError(message);
+      toast.error(`Top up failed. ${message}`);
     } finally {
       setToppingUp(false);
     }
@@ -72,7 +84,7 @@ export function WalletScreen() {
       <Card tone="accent" radius="panel" pad="md" className="mt-4.5">
         <Label tone="on-accent-muted">Available to spend</Label>
         {balance === null ? (
-          <Figure value="—" size="balance" tone="on-accent" className="mt-3" />
+          <Figure value="…" size="balance" tone="on-accent" className="mt-3" />
         ) : rate ? (
           <Figure units={sgdUnits(balance, rate)} size="balance" tone="on-accent" className="mt-3" />
         ) : (
@@ -121,7 +133,7 @@ export function WalletScreen() {
           // Say which one is on screen rather than letting the units change
           // underneath the same layout.
           <p className="mt-2.5 text-fine text-on-accent-muted">
-            showing USDC — the swap&apos;s rate could not be read, so no S$ conversion is shown
+            showing USDC: the swap&apos;s rate could not be read, so no S$ conversion is shown
           </p>
         ) : null}
       </Card>
@@ -135,8 +147,8 @@ export function WalletScreen() {
       {balanceError || rateError ? (
         <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
           <p className="text-meta-sm break-words">
+            Reading Base Sepolia failed. Your funds are untouched; this is the reading.{" "}
             {balanceError ?? rateError}
-            {" — reading Base Sepolia failed. Your funds are untouched; this is the reading."}
           </p>
         </Card>
       ) : null}

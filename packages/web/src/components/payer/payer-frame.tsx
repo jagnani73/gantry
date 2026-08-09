@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ToastProvider } from "@/components/primitives";
 import { AgentDetail } from "./agent-detail";
 import { AgentForm } from "./agent-form";
 import { MerchantPage } from "./merchant-page";
@@ -43,9 +44,15 @@ export function PayerFrame({ children }: { children: ReactNode }) {
           aria-hidden
           className="absolute top-4 left-1/2 hidden h-1.5 w-16 -translate-x-1/2 rounded-full bg-ink/15 lg:block"
         />
-        <main className="flex-1 overflow-y-auto px-5 pt-15.5 pb-6">{children}</main>
-        <TabBar />
-        <OverlayHost overlay={overlay} />
+        {/* Inside the frame, not around it: the toast stack is positioned
+            against the nearest positioned ancestor, and this element is it. A
+            provider mounted at the layout would put toasts outside the phone
+            mock on a desktop viewport. `pb-28` clears the tab bar. */}
+        <ToastProvider viewportClassName="pb-28">
+          <main className="flex-1 overflow-y-auto px-5 pt-15.5 pb-6">{children}</main>
+          <TabBar />
+          <OverlayHost overlay={overlay} />
+        </ToastProvider>
       </div>
     </div>
   );
