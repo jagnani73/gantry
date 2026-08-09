@@ -14,36 +14,66 @@ Cut from the bottom if time runs short.
 | 2 | Demo clip, 60–90s, unlisted YouTube (`demo-script.md`) | script drafted | record 10 Aug AM, upload PM |
 | 3 | Public GitHub repo with real commit history | **PRIVATE — must flip** | before submit |
 | 4 | Architecture diagram PNG (`architecture.md`) | mermaid source drafted | 10 Aug PM |
-| 5 | Live merchant back-office URL (Vercel) + Basescan contract links | **not deployed yet** | 10 Aug |
+| 5 | Live merchant back-office URL (Vercel) + Basescan contract links | **deployed and wired 9 Aug** — see Live URLs below | 10 Aug |
 | 6 | Team details + NTU proof of student status | **not requested yet** | ASAP |
+
+## Live URLs
+
+Paste these verbatim into Devpost, the deck's slide 8 and the repo README.
+
+| | URL |
+|---|---|
+| Merchant back-office | <https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview> |
+| Payer app | <https://gantry-innovatex.vercel.app/app> |
+| Payer page (what the printed QR opens) | <https://gantry-innovatex.vercel.app/pay/ah-hock-chicken-rice> |
+| API health | <https://gantry-backend.onrender.com/health> |
+
+Render's free tier spins an idle instance down, so the first hit after a quiet
+spell takes ~50s. Warm the backend before sending anyone the link, and warm it
+again right before any live walkthrough.
 
 ## Still to do
 
 - [ ] **Request the NTU enrolment certificate.** Longest lead time of anything
       on this list and entirely outside our control. Do this first.
-- [ ] Deploy web to **Vercel** (Root Directory `packages/web`; the committed
+- [x] Deploy web to **Vercel** (Root Directory `packages/web`; the committed
       `packages/web/vercel.json` only narrows the install to that package) and
       backend to **Render** as a free web service — one instance, never
       autoscaled, because SSE, the relayer nonce and every rate limit are
-      in-process. Neither has been run against a real host yet, so budget time
-      for a first deploy to fail on something small.
-- [ ] Point `NEXT_PUBLIC_BACKEND_URL` at the deployed backend and set
-      `CORS_ORIGIN` to the Vercel origin instead of `*`.
+      in-process. Done 9 Aug.
+- [x] `NEXT_PUBLIC_BACKEND_URL` set on the Vercel project and redeployed —
+      confirmed by grepping the shipped chunks for `onrender.com`, which the page
+      itself cannot tell you. It was missing from the first build, and the
+      symptom is worth recognising: every screen fetched `localhost:4000`, the
+      visitor's own machine, which Chrome 138+ meets with an "Access other apps
+      and services on this device" prompt and the app meets with "Can't reach the
+      backend". `NEXT_PUBLIC_*` is inlined, so a redeploy is always part of the
+      fix.
+- [x] `CORS_ORIGIN` set to the Vercel origin instead of `*` — verified by
+      preflight, the response echoes the origin rather than `*`.
 - [ ] **Rotate the Gemini API key, then make the repo public** — in that order.
       The repo is currently PRIVATE, but a public GitHub repo is one of the five
       submission artifacts, so screeners would hit a 404. The key transited a
       chat; rotating after flipping visibility is rotating too late.
-- [ ] Confirm the deployed backend runs with `NODE_ENV=production`. It is the
+- [x] Confirm the deployed backend runs with `NODE_ENV=production` — `/health`
+      reports `hostClass: "public"`, which is the only way to check it once the
+      boot warning has scrolled away. It is the
       single host-class switch: it **caps** the payer faucet at 20 USDC and
       0.01 ETH per rolling 24h across all addresses (it does not close it —
       demo-account payments must still work for a judge), switches self-service
       onboarding OFF, and closes unauthenticated merchant-profile editing.
-- [ ] Set the Vercel build vars before the first build:
-      `NEXT_PUBLIC_DEMO_KEY=0x…`, `NEXT_PUBLIC_APP_URL`,
-      `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`. Miss the
-      demo key and the deployed payer page cannot take a payment at all. Use a
+- [ ] **Confirm `NEXT_PUBLIC_DEMO_KEY` is set on the Vercel project.** Use a
       throwaway testnet key and know what you are shipping: it is inlined into
       the client bundle and shared by every visitor.
+      Of the four build vars, three are confirmed from outside as of the 9 Aug build:
+      `NEXT_PUBLIC_APP_URL` (the printable QR encodes the Vercel origin, not
+      `localhost:3000`), `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (the
+      `gantry-dev-placeholder` fallback is nowhere in the shipped chunks) and
+      `NEXT_PUBLIC_BACKEND_URL` (the chunks carry `onrender.com`).
+      **`NEXT_PUBLIC_DEMO_KEY` is the one left to confirm**, and only the Vercel
+      dashboard can do it: its fallback is `undefined`, so it leaves no
+      fingerprint to grep for the way the other three do. Miss it and the
+      deployed payer page cannot take a payment at all.
 - [ ] Fund the deployed build's demo account with a little ETH as well as USDC,
       or its agents screen cannot sign anything — `setPolicy`/`revoke` are the
       payer's own transactions now. (The faucet's gas leg does this
@@ -127,3 +157,8 @@ been wrong in a draft at least once.
   relayer hop), `gantry-pbm` is not.
 - Contracts are named `GantryCore` and `AgentPBMWallet`. `SettlementRouter` and
   `PolicyGuard` appear in old planning notes and never existed in code.
+- **Test counts are quoted on deck slide 8, so re-measure before quoting them.**
+  As of 9 Aug 2026: **99 shared + 137 backend = 236 TypeScript tests**, plus 162
+  Foundry. They had drifted to "97 / 105 / 202" and nothing caught it, because
+  the only place they appear is prose. `pnpm --filter @gantry/shared test` and
+  `pnpm --filter @gantry/backend test` print the real numbers in one line each.

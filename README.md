@@ -8,6 +8,19 @@ Every payment system ever built assumes the payer is a human. Gantry is a paymen
 
 Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.devpost.com/) — Track 1: Payments & Financial Infrastructure.
 
+## Live
+
+| | |
+|---|---|
+| **Web** | **<https://gantry-innovatex.vercel.app>** — [merchant back-office](https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview) · [payer app](https://gantry-innovatex.vercel.app/app) · [pay Ah Hock](https://gantry-innovatex.vercel.app/pay/ah-hock-chicken-rice) · [printable QR](https://gantry-innovatex.vercel.app/qr/ah-hock-chicken-rice) |
+| **API** | <https://gantry-backend.onrender.com> — [`/health`](https://gantry-backend.onrender.com/health) reports the indexer's cursor, the chain head and the lag between them |
+
+The backend is a Render free web service, so an idle instance spins down and the
+first request after that waits ~50s. **The deployed pair is a shop window, not
+the demo** — the stage run happens on a laptop, because self-service onboarding
+and unauthenticated profile edits are switched off in production and payer
+funding is capped rather than closed.
+
 ## The idea in three lines
 
 1. A payment is an **intent**: "merchant M requests S$X."
@@ -94,10 +107,10 @@ The two halves go to different hosts, and the split is forced: the dashboard
 feed is a long-lived SSE stream, so the backend needs a host that keeps a
 process alive.
 
-| Half | Host | How |
-|---|---|---|
-| `packages/web` | Vercel | Import the repo, set Root Directory to `packages/web`. Vercel detects Next.js; the only committed config is `packages/web/vercel.json`, whose single job is a filtered `pnpm install` so the build does not install the whole monorepo. |
-| `packages/backend` | Render (free web service) | Build `pnpm install --frozen-lockfile`, start `pnpm --filter @gantry/backend start`. No container. |
+| Half | Host | Live at | How |
+|---|---|---|---|
+| `packages/web` | Vercel | <https://gantry-innovatex.vercel.app> | Import the repo, set Root Directory to `packages/web`. Vercel detects Next.js; the only committed config is `packages/web/vercel.json`, whose single job is a filtered `pnpm install` so the build does not install the whole monorepo. |
+| `packages/backend` | Render (free web service) | <https://gantry-backend.onrender.com> | Build `pnpm install --frozen-lockfile`, start `pnpm --filter @gantry/backend start`. No container. |
 
 The backend **cannot** be serverless, and not only because of SSE: the relayer's
 nonce counter, the faucet's cooldown/in-flight/daily-ceiling state, the merchant
@@ -109,7 +122,7 @@ in effectiveness.
 
 A persistent disk is *not* required for correctness — SQLite is a disposable
 cache, and an indexer with no stored cursor re-sweeps from the deploy block in
-1,999-block chunks (~74 `getLogs` calls today, growing ~43k blocks a day). One
+1,999-block chunks (~89 `getLogs` chunks today, growing ~22 a day). One
 caveat worth knowing: those chunks are sized for the public node's 2,000-block
 ceiling, and Alchemy's free tier caps `eth_getLogs` at **ten** blocks, so every
 chunk is refused by the paid endpoint and served by the rate-limited public one.
@@ -128,7 +141,7 @@ They are `NEXT_PUBLIC_*`, so they are inlined at build time, not read at runtime
 
 | Variable | Why it is not optional |
 |---|---|
-| `NEXT_PUBLIC_BACKEND_URL` | Without it the app talks to `localhost:4000`, i.e. the visitor's own machine. |
+| `NEXT_PUBLIC_BACKEND_URL` | Without it the app talks to `localhost:4000`, i.e. the visitor's own machine. This is the one that has actually been missed: the symptom is a browser permission prompt reading *"Access other apps and services on this device"* (Chrome's Local Network Access gate on a public origin reaching localhost) followed by "Can't reach the backend". |
 | `NEXT_PUBLIC_APP_URL` | Baked into the printed QR by `/qr/[handle]`. Defaults to `http://localhost:3000`, which makes every QR the deployed site generates unscannable. |
 | `NEXT_PUBLIC_DEMO_KEY=0x…` | **The one that is easy to miss.** Unset means the payer page only serves a connected wallet holding Base Sepolia USDC. A visitor scanning the QR would get a connect-wallet prompt and no way to pay — and the faucet's 20 USDC ceiling would be guarding a path nobody can reach. Being `NEXT_PUBLIC_*`, this key is inlined into the client bundle and readable in devtools, and it is **shared**: every visitor signs as the same payer and sees the same history. Testnet demo funds only, never the relayer's key. |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Needed for the connect-wallet path alongside the demo account. |
@@ -155,6 +168,24 @@ all: five grants a day is enough to try it, and small enough that the ETH→USDC
 top-up swap can replace the worst case (spending ETH from the same key to do it,
 bounded by a per-swap cap). Point the web app's `NEXT_PUBLIC_BACKEND_URL` at the
 deployed backend and set `CORS_ORIGIN` to the Vercel origin rather than `*`.
+
+Check the result on the artefacts rather than on the page, because both halves
+can look healthy while the pair is broken — the build vars are inlined, so a
+value saved in Vercel after a build is not in the bundle that is serving:
+
+```bash
+curl -s https://gantry-backend.onrender.com/health                     # hostClass "public", lag small
+curl -s -o /dev/null -w '%{http_code}\n' -X OPTIONS \
+  -H 'Origin: https://gantry-innovatex.vercel.app' \
+  -H 'Access-Control-Request-Method: GET' \
+  https://gantry-backend.onrender.com/api/merchants/ah-hock-chicken-rice   # 204, allow-origin echoes the Vercel origin
+curl -s https://gantry-innovatex.vercel.app/qr/ah-hock-chicken-rice | grep -o 'https://[^"]*/pay/[a-z-]*'  # NEXT_PUBLIC_APP_URL
+```
+
+For `NEXT_PUBLIC_BACKEND_URL` there is no page that reports it, so grep the
+shipped JavaScript: pull the chunk URLs out of any page's HTML and search them
+for `onrender.com`. Finding `localhost:4000` instead means the var was missing at
+build time and the fix is a **redeploy**, not a settings save.
 
 ## Docs
 

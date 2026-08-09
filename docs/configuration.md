@@ -222,7 +222,16 @@ that only its owner can write to it.
 ## Sharp edges
 
 1. `NEXT_PUBLIC_*` values are read at build time — restart after editing, and on
-   Vercel set them *before* the first build.
+   Vercel set them *before* the first build. Saving one afterwards does nothing
+   until a redeploy, and nothing on the page reports which value was baked in.
+   The deployed pair is web <https://gantry-innovatex.vercel.app> against
+   backend <https://gantry-backend.onrender.com>; if
+   `NEXT_PUBLIC_BACKEND_URL` was missing at build time, `backendUrl()` falls
+   back to `http://localhost:4000` and every screen quietly asks the *visitor's*
+   machine for data. Chrome 138+ gates a public origin reaching localhost behind
+   the Local Network Access permission, so the visible symptom is a prompt
+   reading "Access other apps and services on this device" followed by "Can't
+   reach the backend". Grep the shipped chunks for `onrender.com` to check.
 2. Switching payer modes needs an env edit and a restart — there is no
    per-request override.
 3. `AGENT_SESSION_KEY` must be the `agentSigner` of a wallet that already exists;

@@ -68,6 +68,14 @@ Why the hop exists: spec-compliant x402 clients generate their own random EIP-30
 | Agent | Vercel AI SDK + Gemini `gemini-flash-latest` | terminal CLI; tools do all HTTP and signing, the model only decides and narrates |
 | Chain | Base Sepolia `eip155:84532` | contracts verified on Basescan |
 
+Web is on Vercel at **<https://gantry-innovatex.vercel.app>**; the backend is a
+single Render web service at **<https://gantry-backend.onrender.com>**
+([`/health`](https://gantry-backend.onrender.com/health)). The split is forced
+rather than stylistic: the merchant feed is a long-lived SSE stream, and the
+relayer's nonce counter, the faucet's ceilings and the indexer's WebSocket
+subscription all live in process memory — so the backend runs as exactly one
+instance and can never be serverless or autoscaled.
+
 ## Deployed contracts (Base Sepolia)
 
 | Contract | Address |
