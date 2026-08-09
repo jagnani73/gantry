@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { ToastProvider } from "@/components/primitives";
 import { AgentDetail } from "./agent-detail";
 import { AgentForm } from "./agent-form";
@@ -41,6 +42,29 @@ import { usePayer, type Overlay } from "./payer-context";
  */
 export function PayerFrame({ children }: { children: ReactNode }) {
   const { overlay } = usePayer();
+  const mainRef = useRef<HTMLElement>(null);
+  const pathname = usePathname();
+
+  /**
+   * Next resets the DOCUMENT scroll on navigation, and this app deliberately
+   * does not scroll the document — the pane below does, and it lives in the
+   * layout, so it survives a tab change with its offset intact. Without this,
+   * tapping Agents from halfway down a long Activity list lands you halfway
+   * down Agents.
+   *
+   * `instant` is not a stylistic choice: `main` is set to `scroll-behavior:
+   * smooth` in globals.css, so the default would animate a scroll UP through
+   * content the payer never asked to see. It also rules out the reverse bug of
+   * setting `scrollTop` directly, which inherits the same smooth behaviour.
+   *
+   * Keyed on pathname alone. Overlays (pay, receipt, a shop page) are context
+   * state at the same URL and scroll inside their own element, so closing one
+   * returns the payer to where they were — which is what they expect.
+   */
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [pathname]);
+
   return (
     <div className="lg:flex lg:min-h-dvh lg:items-center lg:justify-center lg:bg-nav-active lg:py-10">
       {/* The design draws this at 874px tall, but a 768px-high laptop is common
@@ -62,7 +86,7 @@ export function PayerFrame({ children }: { children: ReactNode }) {
           {/* The scroll is on <main> and the width cap is on the column inside
               it, so a wide window scrolls one full-height surface rather than a
               448px strip of one. The tab bar caps its own grid the same way. */}
-          <main className="flex-1 overflow-y-auto">
+          <main ref={mainRef} className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-md px-5 pt-15.5 pb-6">{children}</div>
           </main>
           <TabBar />
