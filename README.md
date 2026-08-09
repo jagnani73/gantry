@@ -30,7 +30,7 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 - [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E))
 - [x] Stablecoin-in → XSGD-out atomic FX behind the `IGantrySwap` seam — shipping on `FixedRateSwap`, which accepts any token with an owner-listed rate (USDC today). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
 - [x] Merchant onboarding — one form, live handle availability, on-chain registration, printable QR (`/onboard`)
-- [x] Merchant back-office — settlements, transactions, payouts, QR/standee, profile and settings, with a live SSE feed carrying Human/Agent badges and one feed for both doors
+- [x] Merchant back-office — an overview with the live feed, transactions, payouts, QR/standee, profile and settings, with a live SSE feed carrying Human/Agent badges and one feed for both doors
 - [x] Payer app — wallet, activity, and an agents console where the payer creates a PBM wallet, sets its policy and revokes it, signing every one of those transactions themselves
 - [x] LLM-powered agent CLI (Gemini via the Vercel AI SDK) paying — and getting rejected on-chain — autonomously, with a visually-identical scripted fallback
 
@@ -58,7 +58,7 @@ packages/web         Next.js — landing /, onboarding /onboard, merchant back-o
 packages/agent       LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallback (pnpm --filter @gantry/agent start "…")
 ```
 
-Two surfaces, one rail. The **merchant back-office** (`/merchant/[handle]/{settlements,transactions,payouts,qr,profile,settings}`) is what a hawker leaves open on the counter; the **payer app** (`/app`, `/app/{activity,agents,settings}`) is where a payer's wallet, history and agents live. `/dashboard` still redirects to the merchant screens, `?handle=` and all.
+Two surfaces, one rail. The **merchant back-office** (`/merchant/[handle]/{overview,transactions,payouts,qr,profile,settings}`) is what a hawker leaves open on the counter; the **payer app** (`/app`, `/app/{activity,agents,settings}`) is where a payer's wallet, history and agents live. `/dashboard` still redirects to the merchant screens, `?handle=` and all.
 
 ## Running locally
 

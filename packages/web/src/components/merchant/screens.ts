@@ -7,7 +7,7 @@
  * so there is no second source of truth for which screen is showing.
  */
 export const MERCHANT_SCREENS = [
-  "settlements",
+  "overview",
   "transactions",
   "payouts",
   "qr",
@@ -18,7 +18,7 @@ export const MERCHANT_SCREENS = [
 export type MerchantScreen = (typeof MERCHANT_SCREENS)[number];
 
 export const SCREEN_LABEL: Record<MerchantScreen, string> = {
-  settlements: "Settlements",
+  overview: "Overview",
   transactions: "Transactions",
   payouts: "Payouts",
   qr: "QR & standee",
@@ -30,8 +30,15 @@ export function merchantHref(handle: string, screen: MerchantScreen): string {
   return `/merchant/${handle}/${screen}`;
 }
 
-/** Where every merchant link lands. Settlements is the counter-facing screen. */
-export const DEFAULT_SCREEN: MerchantScreen = "settlements";
+/**
+ * Where every merchant link lands: today at a glance, plus the live feed.
+ *
+ * Named Overview rather than Settlements because the screen beside it lists
+ * settlements too. Two nav items called "Settlements" and "Transactions" say
+ * nothing about which one a merchant wants; "Overview" (today, live) against
+ * "Transactions" (the whole book, searchable) says it in the label.
+ */
+export const DEFAULT_SCREEN: MerchantScreen = "overview";
 
 /** The shop a handle-less link falls back to — the one that is always
  * registered and always has rows. Deliberately a literal rather than an import

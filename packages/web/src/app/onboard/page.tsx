@@ -52,7 +52,7 @@ export default function OnboardPage() {
         </p>
         <div className="mt-1 flex flex-wrap gap-2">
           <Link
-            href={`/merchant/${DEMO_HANDLE}/settlements`}
+            href={`/merchant/${DEMO_HANDLE}/overview`}
             className="focus-ring inline-flex items-center justify-center rounded-control bg-ink px-4.5 py-3 text-btn-sm text-paper transition-colors hover:bg-ink-hover"
           >
             Open a live shop →

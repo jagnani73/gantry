@@ -27,7 +27,7 @@ const STATUS_TEXT = {
   danger: "text-danger",
 } as const;
 
-export function SettlementsScreen() {
+export function OverviewScreen() {
   const { handle, feed, select } = useMerchantContext();
   const now = useNowSeconds();
 
@@ -39,7 +39,7 @@ export function SettlementsScreen() {
   return (
     <>
       <ScreenHeader
-        title="Settlements"
+        title="Overview"
         action={
           <div className="flex items-center gap-3.5">
             <span

@@ -33,10 +33,10 @@ export function MerchantSidebar() {
   const today = rowsForToday(feed.rows, now);
   const status = feedStatusOf(feed.connection, today.length);
 
-  // Settlements is scoped to today, Transactions is the whole book. Two counts,
+  // Overview is scoped to today, Transactions is the whole book. Two counts,
   // because they answer different questions and a merchant reads both.
   const count: Partial<Record<MerchantScreen, string>> = {
-    settlements: today.length > 0 ? grouped(today.length) : "",
+    overview: today.length > 0 ? grouped(today.length) : "",
     transactions: feed.total > 0 ? grouped(feed.total) : "",
   };
 

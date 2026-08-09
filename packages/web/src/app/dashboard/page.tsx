@@ -10,7 +10,7 @@ import {
  * The old all-merchants dashboard, kept alive as a redirect.
  *
  * Nothing links here any more — the onboarding success card points at
- * `/merchant/<handle>/settlements` — but it is still typed from rehearsal
+ * `/merchant/<handle>/overview` — but it is still typed from rehearsal
  * muscle memory, and both the README and the deck outline state that the path
  * redirects, so it has to keep landing somewhere sensible. `?handle=` was how
  * the old screen scoped itself to one shop; that is now the route, so the

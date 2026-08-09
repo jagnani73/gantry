@@ -587,7 +587,7 @@ contracts (Base Sepolia)
   PBM wallet     ${wallet ?? "none (not provisioned this run)"}
 
 demo urls
-  merchant   ${app}/merchant/${DEMO_MERCHANT_HANDLE}/settlements
+  merchant   ${app}/merchant/${DEMO_MERCHANT_HANDLE}/overview
   payer app  ${app}/app
   pay link   ${app}/pay/${DEMO_MERCHANT_HANDLE}
   print QR   ${app}/qr/${DEMO_MERCHANT_HANDLE}

@@ -104,7 +104,7 @@ been wrong in a draft at least once.
   **S$4**. The old S$19.50 lunch / S$29 powerbank figures survive only as
   arithmetic fixtures in the test suites — never quote them.
 - The fee story runs on the demo day's **S$6.00**: Gantry S$0.03, cards S$0.168.
-  The Settlements screen renders net **S$5.97** ("Collected today") and
+  The Overview screen renders net **S$5.97** ("Collected today") and
   **S$0.13** ("Saved vs cards") — the S$0.13 is the *saving*, not our cut. Never
   say "we took thirteen cents".
 - **Agent PBM wallets are owned on-chain by the payer.** `setPolicy` and

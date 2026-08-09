@@ -4,7 +4,7 @@ Three things here: the 3-minute finals script, the 60–90s Stage 1 clip, and th
 Q&A prep. Rehearse against the finals script; record against the clip script.
 
 **Stage setup.** The merchant back-office
-(`/merchant/ah-hock-chicken-rice/settlements`) never leaves the projector. The
+(`/merchant/ah-hock-chicken-rice/overview`) never leaves the projector. The
 phone (via scrcpy) and the agent terminal swap into a side panel; the payer app's
 agents screen (`/app/agents`) is a third tab, because that is where revoke now
 lives. Everything runs against **Base Sepolia over the laptop's own hotspot** —
@@ -44,7 +44,7 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 | 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same contract. Same feed. Ah Hock does not know or care that one of these customers is software." |
 | 1:48–2:12 | **WOW 2** | Terminal: phone cable → red row on dashboard | "Now watch it get told no. I ask it for a S$4 phone cable from an electronics shop — well inside its budget. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
 | 2:12–2:26 | **Revoke** | Payer app `/app/agents`: cap meter, tap Revoke, confirm | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a daily cap, an allowlist, an expiry, and a kill switch the human owner holds. And *holds* is literal: this wallet is owned by me on-chain, so that's my signature, not a Gantry API call. One tap, done." |
-| 2:26–2:44 | **Fee tiles** | Back to the merchant Settlements screen | "Two payments. Ah Hock keeps five ninety-seven of six dollars — the third tile is what we saved him. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
+| 2:26–2:44 | **Fee tiles** | Back to the merchant Overview screen | "Two payments. Ah Hock keeps five ninety-seven of six dollars — the third tile is what we saved him. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
 | 2:44–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike. Every contract is verified on Base Sepolia — the address is on the slide." |
 
 ### Optional opening beat — live onboarding (~25s, decide against the clock)

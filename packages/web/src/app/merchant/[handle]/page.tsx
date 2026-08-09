@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { DEFAULT_SCREEN, merchantHref } from "@/components/merchant/screens";
 
-/** `/merchant/<handle>` is not a screen — the back-office opens on settlements. */
+/** `/merchant/<handle>` is not a screen: the back-office opens on the overview. */
 export default async function MerchantIndexPage({
   params,
 }: {

@@ -808,7 +808,7 @@ function RegisteredCard({ merchant }: { merchant: RegisterMerchantResponse }) {
       )}
 
       <div className="mt-2 flex w-full flex-col gap-2">
-        <Link href={`/merchant/${merchant.handle}/settlements`} className={cn(BTN_INK, "w-full")}>
+        <Link href={`/merchant/${merchant.handle}/overview`} className={cn(BTN_INK, "w-full")}>
           Open your shop →
         </Link>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
