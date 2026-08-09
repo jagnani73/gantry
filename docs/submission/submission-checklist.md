@@ -159,6 +159,7 @@ been wrong in a draft at least once.
   `PolicyGuard` appear in old planning notes and never existed in code.
 - **Test counts are quoted on deck slide 8, so re-measure before quoting them.**
   As of 9 Aug 2026: **99 shared + 137 backend = 236 TypeScript tests**, plus 162
-  Foundry. They had drifted to "97 / 105 / 202" and nothing caught it, because
+  Foundry of which **157 run in CI** — the 5 fork tests `vm.skip` without a fork
+  RPC URL, so never cite them as something a screener can reproduce by cloning. They had drifted to "97 / 105 / 202" and nothing caught it, because
   the only place they appear is prose. `pnpm --filter @gantry/shared test` and
   `pnpm --filter @gantry/backend test` print the real numbers in one line each.
