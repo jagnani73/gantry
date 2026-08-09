@@ -1,5 +1,10 @@
 import type { Address, Hex } from "viem";
-import { gantryCoreAbi, tokenIdByAddress, type SettlementEvent } from "@gantry/shared";
+import {
+  LOG_CHUNK_SPAN,
+  gantryCoreAbi,
+  tokenIdByAddress,
+  type SettlementEvent,
+} from "@gantry/shared";
 import { publicClient, wsClient } from "./chain";
 import { config } from "./config";
 import {
@@ -114,16 +119,10 @@ export function settlementEventOf(row: SettlementRow): SettlementEvent {
   return toSettlementEvent(row, (token: Address) => tokenIdByAddress(config.addresses, token));
 }
 
-// Sized to the public sepolia.base.org node's 2,000-block getLogs ceiling.
-//
-// Measured 9 Aug 2026, and worth knowing before trusting the fallback chain
-// here: Alchemy's FREE tier caps eth_getLogs at TEN blocks, not the 10k an
-// earlier version of this comment claimed. So every sweep chunk is rejected by
-// the primary and served by the public node — two RPC calls per chunk, and the
-// rate-limited free node is what actually carries the correctness path. Raising
-// the chunk wedges the sweep entirely (the cursor never advances); lowering it
-// to 10 to satisfy Alchemy would turn a cold backfill into thousands of calls.
-const SWEEP_CHUNK = 1_999n;
+// Sized to the public sepolia.base.org node's 2,000-block getLogs ceiling, and
+// shared with the other two chunked walks — see LOG_CHUNK_SPAN for the measured
+// provider facts (including why the paid primary serves none of these calls).
+const SWEEP_CHUNK = LOG_CHUNK_SPAN;
 
 let sweeping = false;
 let resetEpoch = 0;

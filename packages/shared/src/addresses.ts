@@ -45,3 +45,23 @@ export const BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK = 45133047n;
 export const BASE_SEPOLIA_RELAYER: Address = "0x82513007C7eB93b54dC555Bdb74341b3084FC47B";
 
 export const BASESCAN_BASE_URL = "https://sepolia.basescan.org";
+
+/**
+ * Blocks per eth_getLogs window, expressed as a SPAN: a window runs
+ * `from .. from + LOG_CHUNK_SPAN`, so it covers 2,000 blocks and fits the public
+ * Base Sepolia node's documented 2,000-block ceiling exactly.
+ *
+ * One constant because one measured fact governs all three chunked walks (the
+ * indexer sweep, the merchant registration-date walk, the agent factory scan),
+ * and it used to be written out three times with three copies of the reasoning.
+ * When the provider ceiling changes, three places had to change and the third
+ * would have been found by a wedged cursor.
+ *
+ * Do not raise it: a larger range is refused outright and the sweep stops
+ * advancing. Do not lower it to satisfy the paid provider either — Alchemy's free
+ * tier caps this call at TEN blocks (measured 9 Aug 2026), so matching that would
+ * turn a cold backfill into thousands of calls. Every window is therefore
+ * rejected by the primary and served by the rate-limited public node, which is
+ * why the correctness path leans on the free endpoint.
+ */
+export const LOG_CHUNK_SPAN = 1_999n;

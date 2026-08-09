@@ -1,5 +1,6 @@
 import { keccak256, toBytes, zeroAddress, type Address, type Hex } from "viem";
 import {
+  LOG_CHUNK_SPAN,
   categoryName,
   gantryCoreAbi,
   isKnownCategory,
@@ -123,7 +124,7 @@ const registrationTimes = new Map<string, number>();
  *  - a merchant registered THROUGH this backend never needs it at all — the
  *    receipt already names the block (`primeRegisteredAt`).
  */
-const SCAN_CHUNK = 1_999n;
+const SCAN_CHUNK = LOG_CHUNK_SPAN;
 const SCAN_CHUNKS_PER_PASS = 24;
 const SCAN_COOLDOWN_MS = 30_000;
 /** How long a display request waits on a pass in progress. */
