@@ -1,16 +1,24 @@
 import { Card, Mono } from "@/components/primitives";
 import { cn } from "@/lib/utils";
-import { basescanAddress, CONTRACTS, GUTTER_X, shortAddress, WHY } from "./content";
+import { basescanAddress, CONTRACTS, GUTTER_X, SEAMS, shortAddress, WHY } from "./content";
 
 /** The argument on the left, the evidence for it on the right. */
 export function EvidenceSection() {
   return (
     <section className={cn("grid grid-cols-1 gap-12 pb-20 lg:grid-cols-2 lg:gap-5", GUTTER_X)}>
-      <div>
+      {/* The cards share whatever height the contracts table sets, rather than
+          stopping short of it. The grid already stretches this column to the
+          taller one; without `flex-1` the surplus pooled at the bottom as a gap
+          the eye reads as a missing fourth card. Content is centred so the extra
+          lands evenly above and below each card's text instead of all under it. */}
+      <div className="flex flex-col">
         <h2 className="text-section">Why this, and why here</h2>
-        <div className="mt-6.5 flex flex-col gap-2">
+        <div className="mt-6.5 flex flex-1 flex-col gap-2">
           {WHY.map((item) => (
-            <div key={item.title} className="rounded-control-m bg-surface px-6 py-5.5">
+            <div
+              key={item.title}
+              className="flex flex-1 flex-col justify-center rounded-control-m bg-surface px-6 py-5.5"
+            >
               <div className="text-card-title-sm">{item.title}</div>
               <p className="mt-2 text-body text-quiet">{item.body}</p>
             </div>
@@ -53,16 +61,23 @@ export function EvidenceSection() {
           248px of dead space beside it, because the grid stretches both columns
           to the taller one's height. The prose splits into two columns at `lg`
           so full width does not mean a 150-character measure. */}
-      <Card tone="sunken" radius="card" pad="none" className="px-6 py-5.5 lg:col-span-2">
+      <Card tone="sunken" radius="card" pad="none" className="px-6 py-6 lg:col-span-2">
         <div className="text-body font-semibold">What isn&apos;t real, said plainly</div>
-        <p className="mt-2.5 text-body-sm text-quiet lg:columns-2 lg:gap-10">
-          MockXSGD is the only mocked token, and it has to be — XSGD exists on no testnet. Payments
-          themselves settle in real Circle USDC: the payer signs an EIP-3009 authorization against
-          Circle&apos;s own contract. The FX rate is owner-set rather than market-derived, behind an
-          interface built to be swapped for real liquidity. One trusted relayer key pays every gas
-          fee and runs the facilitator. Merchant categories are self-attested — no KYC, no login on
-          the merchant back-office, and no fiat off-ramp.
+        {/* The counterweight goes first and stays prose: it is the one claim in
+            this panel that asserts something IS real, and listing it beside the
+            seams would read as a sixth seam. */}
+        <p className="mt-2 max-w-[80ch] text-body-sm text-quiet">
+          Payments themselves settle in real Circle USDC — the payer signs an EIP-3009
+          authorization against Circle&apos;s own contract. These are the parts that are not real.
         </p>
+        <div className="mt-5 grid gap-x-10 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+          {SEAMS.map((seam) => (
+            <div key={seam.title}>
+              <div className="text-row-title">{seam.title}</div>
+              <p className="mt-1 text-meta text-muted">{seam.body}</p>
+            </div>
+          ))}
+        </div>
       </Card>
     </section>
   );

@@ -55,6 +55,42 @@ export const WHY = [
   },
 ] as const;
 
+/**
+ * The seams, named individually rather than as one paragraph.
+ *
+ * This was a single block of prose set in two CSS columns to fill the panel's
+ * width. It read as nonsense: the columns were only three lines tall, so the eye
+ * carried straight across the gap and joined "XSGD exists on no testnet.
+ * Payments" to "for real liquidity. One trusted relayer key…". Short wide
+ * columns are the one shape multi-column text cannot take.
+ *
+ * Discrete items also serve the purpose better. A judge discounting a demo that
+ * claims everything is real can now count the seams instead of parsing them, and
+ * nothing here can be skimmed past.
+ */
+export const SEAMS = [
+  {
+    title: "XSGD is a mock",
+    body: "MockXSGD is the only mocked token in the system, and it has to be — XSGD exists on no testnet.",
+  },
+  {
+    title: "The FX rate is owner-set",
+    body: "One address sets it, and nothing arbitrages it — behind an interface built to be swapped for real liquidity.",
+  },
+  {
+    title: "One key does everything",
+    body: "A single trusted relayer pays every gas fee and runs the facilitator.",
+  },
+  {
+    title: "Merchants are self-attested",
+    body: "Categories carry no KYC, and the back-office has no login — anyone with the URL can read a shop's takings.",
+  },
+  {
+    title: "There is no off-ramp",
+    body: "Payouts stay in XSGD on a testnet. Nothing here reaches a bank account.",
+  },
+] as const;
+
 export interface ContractRow {
   name: string;
   note: string;
