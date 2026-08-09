@@ -46,7 +46,16 @@ export type Overlay =
 export interface PayerStore {
   identity: PayerIdentity;
 
-  /** null while loading; an empty array is a real "no agents". */
+  /**
+   * null means NOT KNOWN — still loading, or the enumeration failed (check
+   * `agentsError` to tell those apart). An empty array is the stronger claim:
+   * we asked, and this payer owns none.
+   *
+   * Never collapse a failure into `[]`. Beyond the agents screen, this list also
+   * widens the history filter, and a PBM payment's on-chain payer is the wallet
+   * — so `[]` narrows Activity to the human address and drops every agent
+   * payment from a request that otherwise succeeded.
+   */
   agents: AgentSummary[] | null;
   agentsError: string | null;
   /** Wallets the payer owns that hold code but did not answer the read. NOT the
@@ -322,7 +331,13 @@ export function PayerProvider({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setAgents([]);
+        // NOT `[]`. This state means "we do not know", and `[]` means "we asked
+        // and there are none" — the distinction this very field documents. It
+        // leaks past the agents screen: `payerFilter` below is built from this
+        // list, and a PBM payment's on-chain payer is the WALLET, so an empty
+        // list silently narrows the history query to the human address and drops
+        // every agent payment out of Activity with nothing on screen saying so.
+        setAgents(null);
         // The whole enumeration failed, so there is no per-wallet verdict to
         // report; `agentsError` is the one that has to be on screen.
         setAgentsUnreadable([]);

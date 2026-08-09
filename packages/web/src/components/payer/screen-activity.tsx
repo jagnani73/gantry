@@ -22,7 +22,8 @@ const FILTERS: readonly { id: ActivityFilter; label: string }[] = [
  * counting it would make the total disagree with the wallet balance above it.
  */
 export function ActivityScreen() {
-  const { identity, rows, settlements, settlementsError, denialsError, chainNow } = usePayer();
+  const { identity, rows, settlements, settlementsError, denialsError, agentsError, chainNow } =
+    usePayer();
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
   const shown = filterActivity(rows, identity.address, filter);
@@ -56,6 +57,20 @@ export function ActivityScreen() {
       {settlementsError ? (
         <Card tone="danger" radius="control-m" pad="none" className="mt-4 px-4 py-3.5">
           <p className="text-meta-sm break-words">{settlementsError}</p>
+        </Card>
+      ) : null}
+
+      {/* The history is filtered by the payer AND their agent wallets, because a
+          PBM payment's on-chain payer is the wallet. If the wallet list never
+          loaded, that filter is narrower than it should be and every agent
+          payment is missing — from a request that otherwise succeeded, so
+          nothing else here would say a word about it. */}
+      {agentsError ? (
+        <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+          <p className="text-meta-sm break-words">
+            Your agent wallets couldn&apos;t be listed, so payments made by an agent are missing
+            from this list. {agentsError}
+          </p>
         </Card>
       ) : null}
 
