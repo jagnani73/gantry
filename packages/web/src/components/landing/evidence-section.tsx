@@ -42,20 +42,28 @@ export function EvidenceSection() {
           ))}
         </Card>
 
-        {/* Kept deliberately. Judges discount a demo that claims everything is
-            real; the credible move is to name the four seams before they do. */}
-        <Card tone="sunken" radius="card" pad="none" className="mt-4 px-6 py-5.5">
-          <div className="text-body font-semibold">What isn&apos;t real, said plainly</div>
-          <p className="mt-2.5 text-body-sm text-quiet">
-            MockXSGD is the only mocked token, and it has to be — XSGD exists on no testnet.
-            Payments themselves settle in real Circle USDC: the payer signs an EIP-3009
-            authorization against Circle&apos;s own contract. The FX rate is owner-set rather than
-            market-derived, behind an interface built to be swapped for real liquidity. One trusted
-            relayer key pays every gas fee and runs the facilitator. Merchant categories are
-            self-attested — no KYC, no login on the merchant back-office, and no fiat off-ramp.
-          </p>
-        </Card>
       </div>
+
+      {/* Kept deliberately. Judges discount a demo that claims everything is
+          real; the credible move is to name the seams before they do.
+
+          Spans both columns rather than sitting under the contracts table. It
+          is a caveat on the whole section — it qualifies the argument on the
+          left as much as the addresses on the right — and in one column it left
+          248px of dead space beside it, because the grid stretches both columns
+          to the taller one's height. The prose splits into two columns at `lg`
+          so full width does not mean a 150-character measure. */}
+      <Card tone="sunken" radius="card" pad="none" className="px-6 py-5.5 lg:col-span-2">
+        <div className="text-body font-semibold">What isn&apos;t real, said plainly</div>
+        <p className="mt-2.5 text-body-sm text-quiet lg:columns-2 lg:gap-10">
+          MockXSGD is the only mocked token, and it has to be — XSGD exists on no testnet. Payments
+          themselves settle in real Circle USDC: the payer signs an EIP-3009 authorization against
+          Circle&apos;s own contract. The FX rate is owner-set rather than market-derived, behind an
+          interface built to be swapped for real liquidity. One trusted relayer key pays every gas
+          fee and runs the facilitator. Merchant categories are self-attested — no KYC, no login on
+          the merchant back-office, and no fiat off-ramp.
+        </p>
+      </Card>
     </section>
   );
 }

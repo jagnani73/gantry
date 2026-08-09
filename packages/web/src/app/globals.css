@@ -447,6 +447,17 @@
   }
 }
 
+/* Smooth scrolling for the whole app. `html` covers the landing page and the
+   merchant back-office, which scroll the document; `main` covers the payer app,
+   whose scroll deliberately lives on the inner pane so the tab bar stays put.
+   Both anchor jumps (the landing page's "Contracts" link) and programmatic
+   `scrollIntoView` inherit it. The reduced-motion block below already forces
+   `scroll-behavior: auto`, so this needs no separate opt-out. */
+html,
+main {
+  scroll-behavior: smooth;
+}
+
 /* Motion is decoration here — none of it carries meaning that the layout does
    not already carry — so it is safe to switch off wholesale. */
 @media (prefers-reduced-motion: reduce) {
