@@ -49,6 +49,11 @@ export interface PayerStore {
   /** null while loading; an empty array is a real "no agents". */
   agents: AgentSummary[] | null;
   agentsError: string | null;
+  /** Wallets the payer owns that hold code but did not answer the read. NOT the
+   * same as "no agents": a screen that drops these renders "You don't have an
+   * agent yet" beside a Create button for a payer who has one, which is how a
+   * second wallet gets deployed for one signer. Empty is the normal case. */
+  agentsUnreadable: Address[];
   settlements: SettlementEvent[] | null;
   settlementsError: string | null;
   denials: DenialEvent[];
@@ -71,6 +76,19 @@ export interface PayerStore {
   /** Non-null when the rate READ failed. Every S$ figure in the app is this
    * conversion, so a silent failure quietly restates the whole product in USDC. */
   rateError: string | null;
+  /**
+   * Whether a balance change this app just caused has actually shown up.
+   *
+   * - `idle` — nothing is being waited for.
+   * - `watching` — a transfer is mined and the figure has not moved yet.
+   * - `unconfirmed` — the bounded poll ran out and it STILL has not moved.
+   *
+   * The third is the one that has to exist. Both of the poll's exits used to be
+   * the same silent `return`, so "the top-up arrived" and "we gave up looking
+   * for it" were indistinguishable on screen — which is exactly the failure the
+   * poll was added to stop being silent.
+   */
+  balanceWatch: BalanceWatch;
 
   /** Unix seconds on CHAIN time, not the laptop's. */
   chainNow(): number;
@@ -88,9 +106,11 @@ export interface PayerStore {
   /** The lookup for this handle failed (network, timeout, 5xx). Never set for a
    * 404 — that is an answer, not a failure. */
   merchantError(handle: string): string | null;
-  /** Drops the dedupe entry and looks the handle up again. The failed lookup
-   * releases the handle, so this is the only thing standing between one flaky
-   * request and a shop that can never be paid for the life of the page. */
+  /** Drops the dedupe entry and looks the handle up again. A failed lookup
+   * releases the handle rather than caching itself as "no such shop", and this
+   * is how a screen offers the retry — the merchant id is resolved server-side
+   * when an intent is created, so the pay flow deliberately still lets the payer
+   * pay a shop whose DISPLAY record it could not read. */
   retryMerchant(handle: string): void;
 
   agentName(wallet: Address): string | null;
@@ -132,10 +152,13 @@ const AGENT_NAMES_KEY = "gantry.agent.names";
 const HISTORY_LIMIT = 100;
 
 /** Bounded, and sized like the pay flow's own post-funding wait: a transfer
- * that has not surfaced after this long is a failure to report, not a slow
- * replica to keep polling. */
+ * that has not surfaced after this long is reported as unconfirmed rather than
+ * polled forever — see `balanceWatch`, which is what carries that answer to a
+ * screen. */
 const BALANCE_POLL_ATTEMPTS = 8;
 const BALANCE_POLL_MS = 1_500;
+
+export type BalanceWatch = "idle" | "watching" | "unconfirmed";
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -154,6 +177,7 @@ export function PayerProvider({
 
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [agentsUnreadable, setAgentsUnreadable] = useState<Address[]>([]);
   const [settlements, setSettlements] = useState<SettlementEvent[] | null>(null);
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [denials, setDenials] = useState<DenialEvent[]>([]);
@@ -162,6 +186,7 @@ export function PayerProvider({
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [rate, setRate] = useState<bigint | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
+  const [balanceWatch, setBalanceWatch] = useState<BalanceWatch>("idle");
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
@@ -192,11 +217,18 @@ export function PayerProvider({
 
      So `expectChange` re-reads on a bounded schedule and stops the moment the
      value actually differs. Same discipline as the pay flow, which polls after
-     funding a burner before it will sign. It gives up rather than spinning: an
-     amount that never arrives is a real failure, and pretending otherwise would
-     hide it. */
+     funding a burner before it will sign.
+
+     Its two exits are NOT the same answer and must not be the same code path:
+     the figure moved, or the poll ran out with it still sitting where it was.
+     `balanceWatch` is what carries that distinction to a screen — a bare return
+     on both would let "we gave up" render exactly like "it arrived". */
   const balanceRef = useRef<bigint | null>(null);
   const balanceTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  /* Every poll carries the token it started with. A second top-up supersedes the
+     first, and without this the older poll would keep bumping the nonce and
+     could declare `unconfirmed` against a baseline the newer one has moved past. */
+  const pollToken = useRef(0);
   useEffect(() => {
     const pending = balanceTimers.current;
     return () => {
@@ -209,16 +241,37 @@ export function PayerProvider({
     setBalanceNonce((n) => n + 1);
     if (!options?.expectChange) return;
     const before = balanceRef.current;
+    const token = (pollToken.current += 1);
+    setBalanceWatch("watching");
     let attempts = 0;
-    const poll = () => {
-      if (attempts >= BALANCE_POLL_ATTEMPTS || balanceRef.current !== before) return;
-      attempts += 1;
-      setBalanceNonce((n) => n + 1);
-      const timer = setTimeout(poll, BALANCE_POLL_MS);
+    // Timers are removed from the set as they fire, not only on unmount — the
+    // set is a cleanup registry, and one that only ever grows is a leak that
+    // outlives every poll it was meant to cancel. The toast primitive does the
+    // same thing for the same reason.
+    const schedule = () => {
+      const timer = setTimeout(() => {
+        balanceTimers.current.delete(timer);
+        poll();
+      }, BALANCE_POLL_MS);
       balanceTimers.current.add(timer);
     };
-    const first = setTimeout(poll, BALANCE_POLL_MS);
-    balanceTimers.current.add(first);
+    const poll = () => {
+      if (token !== pollToken.current) return; // a newer poll owns the answer
+      if (balanceRef.current !== before) {
+        setBalanceWatch("idle");
+        return;
+      }
+      if (attempts >= BALANCE_POLL_ATTEMPTS) {
+        // The transfer was reported mined and the figure never moved. Say so.
+        console.warn("gantry: balance did not change after a transfer this app caused");
+        setBalanceWatch("unconfirmed");
+        return;
+      }
+      attempts += 1;
+      setBalanceNonce((n) => n + 1);
+      schedule();
+    };
+    schedule();
   }, []);
 
   /* The feed can change without this app doing anything — the payer's own agent
@@ -251,7 +304,11 @@ export function PayerProvider({
   /* ── Agent wallets ──────────────────────────────────────────────────────
      Enumerated from WalletCreated logs, so a cold call walks a block range and
      can take seconds. Screens must render a loading state off `agents === null`
-     rather than flashing "no agents" at a payer who has three. */
+     rather than flashing "no agents" at a payer who has three.
+
+     `unreadable` is carried, never dropped. A wallet that holds code and did not
+     answer is a failed READ, and folding it into an empty `agents` tells a payer
+     who owns an agent that they own none — beside a Create button. */
   useEffect(() => {
     if (!address) return;
     let cancelled = false;
@@ -259,11 +316,16 @@ export function PayerProvider({
     api
       .agents({ owner: address })
       .then((res) => {
-        if (!cancelled) setAgents(res.agents);
+        if (cancelled) return;
+        setAgents(res.agents);
+        setAgentsUnreadable(res.unreadable ?? []);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setAgents([]);
+        // The whole enumeration failed, so there is no per-wallet verdict to
+        // report; `agentsError` is the one that has to be on screen.
+        setAgentsUnreadable([]);
         setAgentsError(messageOf(err));
       });
     return () => {
@@ -340,30 +402,62 @@ export function PayerProvider({
     };
   }, [agentWalletsKey, historyNonce]);
 
-  /* ── Balance, rate and the chain's clock ────────────────────────────────
+  /* ── The payer's balance ────────────────────────────────────────────────
+     Its own effect, because `balanceNonce` is what the poll above bumps — up to
+     nine times for one top-up. The rate and the block used to share this effect
+     and were therefore re-read on every one of those ticks, turning a single
+     grant into three times the RPC calls it needs. Neither of them is what a
+     transfer changed.
+
+     A failed read is BOTH logged and surfaced: collapsed into "not yet", it
+     leaves the wallet screen reading "reading balance…" for as long as the app
+     stays open. */
+  useEffect(() => {
+    if (!address || !publicClient) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await publicClient.readContract({
+          address: BASE_SEPOLIA_ADDRESSES.realUsdc,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        });
+        if (cancelled) return;
+        // Any observed movement answers the question the watch was asking, so
+        // it clears here as well as in the poll — that is what lets a manual
+        // "check again" retire an `unconfirmed` notice.
+        if (next !== balanceRef.current) setBalanceWatch("idle");
+        setBalance(next);
+        balanceRef.current = next;
+        setBalanceError(null);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("gantry: USDC balance read failed", err);
+        setBalanceError(messageOf(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [address, publicClient, balanceNonce, nonce]);
+
+  /* ── The rate and the chain's clock ─────────────────────────────────────
      The rate is read live rather than taken from the seeded constant: it is
      owner-set on FixedRateSwap and one transaction can change it, so a hardcoded
      1.3421 would quietly start lying. The block timestamp is read for the same
      reason `agentStatus` asks for chain time — a laptop minutes ahead would
      render a live policy as lapsed.
 
-     All three are settled independently and each failure is BOTH logged and
-     surfaced: a dropped balance leaves the wallet screen reading "reading
-     balance…" for as long as the app is open, and a dropped rate silently
-     restates every S$ figure in the product as USDC. Only the block read
-     degrades gracefully — the offset stays 0 and the laptop's clock is used —
-     so it is logged and not shown. */
+     Settled independently of each other. A dropped rate silently restates every
+     S$ figure in the product as USDC, so it is surfaced; only the block read
+     degrades gracefully — the offset stays 0 and the device's clock is used — so
+     that one is logged and not shown. */
   useEffect(() => {
     if (!address || !publicClient) return;
     let cancelled = false;
     void (async () => {
-      const [balanceResult, rateResult, blockResult] = await Promise.allSettled([
-        publicClient.readContract({
-          address: BASE_SEPOLIA_ADDRESSES.realUsdc,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address],
-        }),
+      const [rateResult, blockResult] = await Promise.allSettled([
         publicClient.readContract({
           address: BASE_SEPOLIA_ADDRESSES.fixedRateSwap,
           abi: fixedRateSwapAbi,
@@ -373,14 +467,6 @@ export function PayerProvider({
         publicClient.getBlock(),
       ]);
       if (cancelled) return;
-      if (balanceResult.status === "fulfilled") {
-        setBalance(balanceResult.value);
-        balanceRef.current = balanceResult.value;
-        setBalanceError(null);
-      } else {
-        console.warn("gantry: USDC balance read failed", balanceResult.reason);
-        setBalanceError(messageOf(balanceResult.reason));
-      }
       if (rateResult.status === "fulfilled") {
         setRate(rateResult.value);
         setRateError(null);
@@ -397,7 +483,7 @@ export function PayerProvider({
     return () => {
       cancelled = true;
     };
-  }, [address, publicClient, balanceNonce, nonce]);
+  }, [address, publicClient, nonce]);
 
   const chainNow = useCallback(
     () => Math.floor(Date.now() / 1000) + clockOffset,
@@ -518,6 +604,7 @@ export function PayerProvider({
       identity,
       agents,
       agentsError,
+      agentsUnreadable,
       settlements,
       settlementsError,
       denials,
@@ -527,6 +614,7 @@ export function PayerProvider({
       balanceError,
       rate,
       rateError,
+      balanceWatch,
       chainNow,
       merchant,
       ensureMerchant,
@@ -547,6 +635,7 @@ export function PayerProvider({
       identity,
       agents,
       agentsError,
+      agentsUnreadable,
       settlements,
       settlementsError,
       denials,
@@ -556,6 +645,7 @@ export function PayerProvider({
       balanceError,
       rate,
       rateError,
+      balanceWatch,
       chainNow,
       merchant,
       ensureMerchant,

@@ -306,7 +306,7 @@ export async function registerMerchant(
       // honest reason and the only one.
       "self-service onboarding is off on this deployment: registering through this route spends " +
         "Gantry's own gas key. Run the backend without NODE_ENV=production to onboard (demo host), " +
-        "or register on-chain directly — registerMerchant is permissionless and needs no permission from us.",
+        "or register on-chain directly. registerMerchant is permissionless and needs no permission from us.",
     );
   }
   if (!isValidHandle(req.handle)) {

@@ -85,8 +85,8 @@ test("the funder reserve is a floor on what is LEFT, not a cap on the spend", ()
 // ------------------------------------------------------------- the ceilings
 
 test("each public ceiling is five of the thing it meters", () => {
-  // Not literals restated here: the real grant sizes divided by the real
-  // ceilings. Change either number without the other and this fails.
+  // Not literals restated here: the real ceilings divided by the real grant
+  // sizes. Change either number without the other and this fails.
   assert.equal(PUBLIC_USDC_DAILY_BUDGET / GRANT, 5n);
   assert.equal(PUBLIC_USDC_DAILY_BUDGET % GRANT, 0n);
   assert.equal(PUBLIC_GAS_DAILY_BUDGET / ETH_TARGET, 5n);
@@ -199,6 +199,31 @@ test("in-flight is per leg and per address, and clears on finish", () => {
   assert.equal(legs.usdc.claim(A, GRANT, T0), null, "finish releases the key");
 });
 
+test("finish releases by key alone, so only the claim's owner may call it", () => {
+  // This is a contract note, not a nicety. `finish` cannot tell who put the key
+  // there, so a caller that reaches its `finally` WITHOUT having claimed will
+  // clear whoever did. That is exactly what the gas leg did: an already-funded
+  // address returned early, and a second request refused as `in_flight` threw —
+  // both ran the same unconditional `finish`, freeing the marker of the request
+  // that was mid-transfer. A third then claimed and sent a second top-up before
+  // the first armed its cooldown, repeatably, against the only gas key there is.
+  const legs = createFaucetLegs(true);
+  assert.equal(legs.gas.claim(A, ETH_TARGET, T0), null, "the sender claims");
+  assert.deepEqual(
+    legs.gas.claim(A, ETH_TARGET, T0),
+    { kind: "in_flight" },
+    "a concurrent request is refused",
+  );
+
+  // What the refused request must NOT do.
+  legs.gas.finish(A);
+  assert.equal(
+    legs.gas.claim(A, ETH_TARGET, T0),
+    null,
+    "a non-owner's finish frees the key — which is why topUpGas guards its finally on having claimed",
+  );
+});
+
 // ------------------------------------------------------ reservation lifecycle
 
 test("a claim reserves before the spend, so concurrent callers cannot overshoot", () => {
@@ -241,7 +266,13 @@ test("a refusal never restarts the 24h countdown", () => {
   assert.equal(leg.claim(B, GRANT, T0 + BUDGET_WINDOW_MS), null);
 });
 
-test("cooldowns expire at their own leg's interval", () => {
+test("a cooldown refuses until its interval has fully elapsed, then allows", () => {
+  // The boundary only: `<` vs `<=` on each leg. It deliberately does NOT claim
+  // to prove each leg read its OWN constant — USDC_COOLDOWN_MS and
+  // GAS_COOLDOWN_MS are both 60s, so collapsing them into one shared value
+  // would pass this identically. What each leg keeps to itself is proven by the
+  // separate cooldown-, in-flight- and ceiling-independence tests above, which
+  // exercise the two legs against each other rather than against a number.
   const legs = createFaucetLegs(true);
   legs.usdc.armCooldown(A, T0);
   legs.usdc.finish(A);

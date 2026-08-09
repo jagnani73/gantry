@@ -1,5 +1,6 @@
 "use client";
 
+import type { Address } from "viem";
 import { agentStatus, shortAddress, type AgentSummary } from "@gantry/shared";
 import { CapMeter, Card, Chip, Mono } from "@/components/primitives";
 import { STATUS_LABEL } from "./agent-detail";
@@ -18,9 +19,15 @@ import { usePayer } from "./payer-context";
  * a failed enumeration also arrives as an empty list, and "You don't have an
  * agent yet" beside a Create button is an invitation to deploy a SECOND wallet
  * for the same signer — the exact state `demo-reset` exists to detect.
+ *
+ * `agentsUnreadable` is the per-wallet version of that same hazard and gets the
+ * same treatment: those wallets hold code and did not answer, so they may well
+ * be agents. While any are listed, the empty state and its Create button are
+ * replaced by a notice that names them and offers a retry instead.
  */
 export function AgentsScreen() {
-  const { agents, agentsError, chainNow, agentName, identity, refresh, pushOverlay } = usePayer();
+  const { agents, agentsError, agentsUnreadable, chainNow, agentName, identity, refresh, pushOverlay } =
+    usePayer();
   // Without an address there is no owner to enumerate wallets for, so the
   // skeletons would never resolve into anything.
   const noWallet = identity.ready && !identity.address;
@@ -72,30 +79,46 @@ export function AgentsScreen() {
             <SkeletonCard />
             <SkeletonCard />
           </>
-        ) : agents.length === 0 ? (
-          <Card radius="card-m" pad="m">
-            <p className="text-body-sm text-muted">
-              You don&apos;t have an agent yet. Creating one deploys a wallet you own and arms it
-              with a spend policy only you can change: two transactions, signed here.
-            </p>
-            <button
-              type="button"
-              onClick={() => pushOverlay({ kind: "agentForm", wallet: null })}
-              className="focus-ring mt-4 h-12 w-full rounded-control-m bg-ink text-btn-sm text-paper transition-colors hover:bg-ink-hover"
-            >
-              Create an agent
-            </button>
-          </Card>
         ) : (
-          agents.map((agent) => (
-            <AgentCard
-              key={agent.wallet}
-              agent={agent}
-              name={agentName(agent.wallet) ?? shortAddress(agent.wallet)}
-              now={chainNow()}
-              onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
-            />
-          ))
+          <>
+            {agentsUnreadable.length > 0 ? (
+              <UnreadableNotice
+                wallets={agentsUnreadable}
+                onRetry={refresh}
+                onOpen={(wallet) => pushOverlay({ kind: "agent", wallet })}
+              />
+            ) : null}
+            {agents.length === 0 ? (
+              // Only when nothing is unreadable. "You have none" and "one of them
+              // did not answer" are opposite facts, and this branch is the one
+              // that hands the payer a button that deploys a wallet.
+              agentsUnreadable.length === 0 ? (
+                <Card radius="card-m" pad="m">
+                  <p className="text-body-sm text-muted">
+                    You don&apos;t have an agent yet. Creating one deploys a wallet you own and arms
+                    it with a spend policy only you can change: two transactions, signed here.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => pushOverlay({ kind: "agentForm", wallet: null })}
+                    className="focus-ring mt-4 h-12 w-full rounded-control-m bg-ink text-btn-sm text-paper transition-colors hover:bg-ink-hover"
+                  >
+                    Create an agent
+                  </button>
+                </Card>
+              ) : null
+            ) : (
+              agents.map((agent) => (
+                <AgentCard
+                  key={agent.wallet}
+                  agent={agent}
+                  name={agentName(agent.wallet) ?? shortAddress(agent.wallet)}
+                  now={chainNow()}
+                  onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
+                />
+              ))
+            )}
+          </>
         )}
       </div>
       {/* The caps below are stored in USDC; the S$ figures are a conversion at
@@ -108,6 +131,62 @@ export function AgentsScreen() {
       ) : null}
       <div className="h-3" />
     </>
+  );
+}
+
+/**
+ * Wallets the payer owns that hold code and did not answer the read.
+ *
+ * Deliberately not phrased as an error: nothing is wrong with the wallet, its
+ * policy is on-chain and unchanged, and the only thing that failed is this
+ * screen's reading of it. What it must never do is let the payer conclude they
+ * have no agent — so the retry is the offered action, and each address opens the
+ * detail screen, which reads that one wallet on its own and may well succeed
+ * where the batch did not.
+ */
+function UnreadableNotice({
+  wallets,
+  onRetry,
+  onOpen,
+}: {
+  wallets: Address[];
+  onRetry: () => void;
+  onOpen: (wallet: Address) => void;
+}) {
+  return (
+    <Card tone="sunken" radius="card-m" pad="m">
+      <p className="text-body-sm text-muted">
+        {wallets.length === 1 ? "1 agent" : `${wallets.length} agents`} could not be read. You own{" "}
+        {wallets.length === 1 ? "this wallet" : "these wallets"} on-chain and{" "}
+        {wallets.length === 1 ? "its policy is" : "their policies are"} unchanged. This is the
+        reading, not the rules. Don&apos;t create a replacement, or you&apos;ll have two for one
+        signer.
+      </p>
+      <div className="mt-3.5 flex flex-col gap-1">
+        {wallets.map((wallet) => (
+          <button
+            key={wallet}
+            type="button"
+            onClick={() => onOpen(wallet)}
+            className="focus-ring flex items-center justify-between gap-3 rounded-row py-1.5 text-left"
+          >
+            <Mono size="2xs" tone="faint">
+              {shortAddress(wallet)}
+            </Mono>
+            <span className="text-body-sm text-hint" aria-hidden>
+              ›
+            </span>
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="focus-ring mt-4 h-12 w-full rounded-control-m bg-ink text-btn-sm text-paper transition-colors hover:bg-ink-hover"
+      >
+        Try again
+      </button>
+    </Card>
   );
 }
 

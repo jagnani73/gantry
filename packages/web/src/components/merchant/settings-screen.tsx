@@ -45,9 +45,15 @@ export function SettingsScreen() {
     {
       label: "Registered",
       help: "The block your merchant record was written to GantryCore.",
-      // Absent when the log lookup did not resolve. An estimate would be worse
-      // than saying so: this is the date a shop would cite as proof it existed.
-      value: merchant?.registeredAt === undefined ? "Unknown" : shortDate(merchant.registeredAt),
+      // "…", not "Unknown". Absent here is almost always TRANSIENT: the backend
+      // walks MerchantRegistered logs in amortised passes with a cooldown
+      // between them, so a cold process answers "not yet" for the first minute
+      // and a real date after. "Unknown" asserts a resolved negative that the
+      // backend never actually claimed, on the one fact a shop would cite as
+      // proof it existed. An estimate would be worse still, which is why this
+      // never guesses a date either.
+      value:
+        merchant?.registeredAt === undefined ? "…" : shortDate(merchant.registeredAt),
     },
   ];
 

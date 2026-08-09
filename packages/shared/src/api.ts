@@ -242,6 +242,19 @@ export interface AgentSummary {
  */
 export interface AgentListResponse {
   agents: AgentSummary[];
+  /**
+   * Wallets that hold code but did not answer — a failed READ, never a fact
+   * about the wallet. A lagging replica and an out-of-gas aggregate produce the
+   * same per-entry failure as a non-wallet, so these are reported separately
+   * rather than dropped from `agents`.
+   *
+   * A screen MUST announce them. "You have no agent" and "one of your agents
+   * could not be read" lead to opposite actions, and the first one leads a payer
+   * to create a SECOND wallet for the same signer — the state `demo-reset`
+   * step 6b exists to detect. Absent when empty, so a client that ignores it
+   * behaves exactly as before.
+   */
+  unreadable?: Address[];
 }
 
 export interface ApiErrorBody {

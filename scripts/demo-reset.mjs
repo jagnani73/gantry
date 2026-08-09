@@ -1,13 +1,17 @@
-// One-command demo reset. In order, it:
-//   1. clears the backend cache (SQLite + SSE `reset`, cursor jumped to head)
-//   2. tops the FUNDER up — this can execute a real three-transaction Uniswap v3
+// One-command demo reset. It clears the backend cache first (SQLite + SSE
+// `reset`, cursor jumped to head), then runs the numbered steps below. These
+// numbers ARE the `// 1.` … `// 7.` markers in the file, deliberately — "step
+// 6b" is cross-referenced from here and from services/agents.ts, so a header
+// that counted differently would name a different step:
+//   1. tops the FUNDER up — this can execute a real three-transaction Uniswap v3
 //      ETH→USDC swap, so this script spends real balances, not just state
-//   3. funds the demo PAYER (USDC to pay with, ETH to sign its own owner txs)
-//   4. seeds the two canonical merchant profiles
-//   5. finds or CREATES the payer's agent wallet (a real contract deployment)
-//   6. tops that wallet up (a real USDC transfer)
-//   7. re-arms its policy on-chain (setPolicy, resets spentToday)
-//   8. checks gadgethub-sg, then prints the cheat sheet
+//   2. funds the demo PAYER (USDC to pay with, ETH to sign its own owner txs)
+//   3. seeds the two canonical merchant profiles
+//   4. finds or CREATES the payer's agent wallet (a real contract deployment)
+//   5. tops that wallet up (a real USDC transfer)
+//   6. re-arms its policy on-chain (setPolicy, resets spentToday)
+//  6b. confirms the agent CLI would resolve the SAME wallet this run armed
+//   7. checks gadgethub-sg, then prints the cheat sheet
 // Chain state (merchants, contracts, listed swap rate) is reused — Sepolia
 // redeploys are not needed per rehearsal. Exits non-zero if any step degraded.
 //
@@ -246,8 +250,9 @@ let funderLine;
 //    a minute into a warning about a payer that is already funded. What gets
 //    REPORTED is the post-state read off the chain, never the grant we asked
 //    for: the arithmetic is exact only if nothing else touched the address.
-/** One full faucet grant — sized in services/faucet.ts to cover the largest
- * single payment a funded payer makes (the S$5 burner cap ≈ 3.73 USDC). */
+/** One full faucet grant — sized in services/faucet-core.ts (`GRANT`) to cover
+ * the largest single payment a funded payer makes (the payer page's S$5
+ * demo-account cap ≈ 3.73 USDC). */
 const PAYER_USDC_FLOOR = 4_000_000n;
 /** Half the faucet's 0.002 ETH target: below this, one `createWallet` (a
  * contract deployment) plus a couple of `setPolicy` calls gets tight. */
@@ -432,7 +437,7 @@ if (wallet) {
 const READBACK_RETRIES = 5;
 const READBACK_DELAY_MS = 800;
 /**
- * `spentToday` is part of the freshness test, not just the cap and categories.
+ * `spentToday` is part of the freshness test, not just the daily cap.
  * `setPolicy` zeroes the counter, so ANY non-zero read after a confirmed arm is
  * definitionally stale — and it was the one field slipping through: a run right
  * after a rehearsal printed "spent S$4.50" off a lagging replica while the chain

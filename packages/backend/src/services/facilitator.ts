@@ -187,9 +187,10 @@ export async function verifyPbm(
     return invalid(intentFailure.reason, intentFailure.message, pbmWallet);
   }
 
-  // Single balance read, no lag-retry: the demo wallet is funded at deploy
-  // and topped up by demo-reset well before any payment (unlike exact's
-  // faucet-just-funded burners), so a shortfall here is real.
+  // Single balance read, no lag-retry: an agent wallet ships EMPTY from
+  // DeployPBM.s.sol and is topped up by a relayer transfer that demo-reset makes
+  // well before any payment (unlike exact's faucet-just-funded burners, whose
+  // grant lands seconds before they sign), so a shortfall here is real.
   const balance = await publicClient.readContract({
     address: requirements.asset,
     abi: eip3009TokenAbi,

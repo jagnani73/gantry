@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { getAddress, isAddress, type Address } from "viem";
+import { useEffect, useState, type ReactNode } from "react";
+import { getAddress, isAddress, type Address, type Hex } from "viem";
 import {
+  basescanTx,
   BASE_SEPOLIA_ADDRESSES,
   CATEGORY_OPTIONS,
   formatUnits6,
@@ -13,7 +14,7 @@ import { Card, cn, Mono } from "@/components/primitives";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { capUnitsFromSgd, categoryBitmapOf, categoryIdsOf, sgdFromCapUnits } from "./agent-rules";
-import { useAgentWrites } from "./agent-writes";
+import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
 
@@ -40,18 +41,15 @@ const MAX_DAYS = 365;
 const DAY_SECONDS = 86_400;
 
 export function AgentForm({ wallet }: { wallet: Address | null }) {
-  const { agents, popOverlay } = usePayer();
+  const { popOverlay } = usePayer();
 
-  const listed = useMemo(
-    () =>
-      wallet ? (agents ?? []).find((a) => a.wallet.toLowerCase() === wallet.toLowerCase()) : undefined,
-    [agents, wallet],
-  );
-
-  // Read the wallet directly, exactly as the detail screen does. The list is
-  // enumerated from factory logs and lags — right after creating a wallet it has
-  // no entry at all — and prefilling the edit form from a missing entry would
-  // silently rewrite a live policy with this file's defaults.
+  // Read the wallet directly and use NOTHING else. The agents list is enumerated
+  // from factory logs and can be a minute old; falling back to it whenever it
+  // happened to have an entry — which is the normal path, since Edit is reached
+  // by tapping an agent in that very list — is the stale prefill this form's
+  // whole guard exists to prevent. `pnpm demo:reset` re-arms a 30-day policy
+  // while the app is open; opening Edit on the older list and saving would
+  // silently put the old caps back and reset `spentToday` with it.
   const [fresh, setFresh] = useState<AgentSummary | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -75,7 +73,7 @@ export function AgentForm({ wallet }: { wallet: Address | null }) {
     };
   }, [wallet, reloadNonce]);
 
-  const existing = fresh ?? listed;
+  const existing = wallet ? (fresh ?? undefined) : undefined;
 
   if (wallet && !existing) {
     return (
@@ -111,7 +109,12 @@ export function AgentForm({ wallet }: { wallet: Address | null }) {
   }
 
   // Keyed so a different wallet remounts rather than keeping the last one's
-  // prefilled fields — every value below is a `useState` initializer.
+  // prefilled fields — every value below is a `useState` initializer, and an
+  // initializer cannot be re-run by a prop arriving late. That is also why the
+  // guard above must be a hard gate rather than a fallback: this only mounts
+  // once `existing` is the wallet's own answer, so the frozen initializers and
+  // the derived `initialDays` / `preservedExpiry` / `writesNothing` are all
+  // reading the same snapshot.
   return <AgentFormFields key={wallet ?? "new"} wallet={wallet} existing={existing} />;
 }
 
@@ -160,6 +163,20 @@ function AgentFormFields({
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * A wallet this form DEPLOYED, before its policy was armed.
+   *
+   * Creating an agent is two transactions and the first one is irreversible. If
+   * the second fails, the wallet exists — and the only button on screen used to
+   * say "try again", which deployed a second one for the same signer. Holding
+   * the address here makes the retry arm THIS wallet instead. It cannot spend
+   * anything meanwhile: an unarmed policy is all zeroes, so `expiry == 0` and
+   * every authorization reverts `PolicyExpired`.
+   */
+  const [createdWallet, setCreatedWallet] = useState<Address | null>(null);
+  /** A write that was broadcast and not confirmed. Never rendered as a failure —
+   * see `UnknownOutcomeError`. */
+  const [unresolved, setUnresolved] = useState<{ text: string; txHash: Hex } | null>(null);
 
   const problem = validate({ wallet, signer, dailyCap, perTxCap, categories, days, rate });
 
@@ -185,6 +202,12 @@ function AgentFormFields({
   const submit = async () => {
     if (problem || !rate) return;
     setError(null);
+    setUnresolved(null);
+    // Hoisted out of the try because the catch needs it: `setCreatedWallet` does
+    // not update the value this closure captured, so reading the state variable
+    // down there would report "no wallet was deployed" about the run that just
+    // deployed one.
+    let target: Address | null = createdWallet;
     try {
       if (wallet && writesNothing) {
         // No transaction: nothing on-chain differs. Saving anyway would cost gas
@@ -218,19 +241,45 @@ function AgentFormFields({
         return;
       }
 
-      setBusy("Creating the wallet on-chain…");
-      const created = await createWallet(getAddress(signer.trim()));
+      // Deploy only if we have not already. A second tap after a failed arming
+      // must arm the wallet that exists, not mint another one for the same
+      // signer.
+      if (!target) {
+        setBusy("Creating the wallet on-chain…");
+        target = (await createWallet(getAddress(signer.trim()))).wallet;
+        setCreatedWallet(target);
+        // Recorded before the second transaction can fail. The name is this
+        // browser's only note of the wallet, and `refresh()` puts it in the
+        // agents list — otherwise a deployed wallet exists with nothing at all
+        // pointing at it.
+        if (name.trim()) setAgentName(target, name.trim());
+        refresh();
+      }
+
       setBusy("Arming its spend policy…");
-      await setPolicy(created.wallet, policy);
-      if (name.trim()) setAgentName(created.wallet, name.trim());
+      await setPolicy(target, policy);
+      if (name.trim()) setAgentName(target, name.trim());
       refresh();
-      replaceOverlay({ kind: "agent", wallet: created.wallet });
+      replaceOverlay({ kind: "agent", wallet: target });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (err instanceof UnknownOutcomeError) {
+        // Broadcast, outcome unknown. Never a red failure, and never a blind
+        // retry: a second `createWallet` deploys a duplicate, and a second
+        // `setPolicy` is at best pointless gas.
+        setUnresolved({ text: unresolvedText(err, target), txHash: err.txHash });
+        // The agents list is where a deploy that did land will appear.
+        refresh();
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setBusy(null);
     }
   };
+
+  /** The wallet these fields describe: the one being edited, or the one this
+   * form deployed and has not finished arming. */
+  const subject = wallet ?? createdWallet;
 
   return (
     <OverlayScreen>
@@ -238,7 +287,7 @@ function AgentFormFields({
         onBack={popOverlay}
         backLabel="Back"
         title={wallet ? "Edit rules" : "New agent"}
-        subtitle={wallet ? shortAddress(wallet) : undefined}
+        subtitle={subject ? shortAddress(subject) : undefined}
       />
       <div className="flex flex-col gap-3.5 px-5 pt-6 pb-11">
         <Card radius="card-m" pad="none" className="flex flex-col gap-4 px-5 py-5">
@@ -251,10 +300,13 @@ function AgentFormFields({
             />
           </Field>
 
+          {/* Locked once a wallet exists — including one this form just deployed.
+              The signer is baked in at construction, so editing it after the
+              deploy would describe a wallet that is not the one being armed. */}
           <Field
             label="Agent signer"
             hint={
-              wallet
+              wallet || createdWallet
                 ? "Fixed for the life of this wallet."
                 : "The public address of the software that will act as this agent."
             }
@@ -265,7 +317,7 @@ function AgentFormFields({
               placeholder="0x…"
               spellCheck={false}
               autoComplete="off"
-              disabled={Boolean(wallet)}
+              disabled={Boolean(wallet) || createdWallet !== null}
               className="font-mono text-mono"
             />
           </Field>
@@ -356,13 +408,45 @@ function AgentFormFields({
           </Card>
         ) : null}
 
+        {unresolved ? (
+          <Card tone="sunken" radius="control-m" pad="none" className="px-4.5 py-4">
+            <p className="text-meta-sm text-muted break-words">{unresolved.text}</p>
+            <div className="mt-2.5 flex flex-col gap-1.5">
+              <a
+                href={basescanTx(unresolved.txHash)}
+                target="_blank"
+                rel="noreferrer"
+                className="focus-ring rounded-badge text-meta text-accent underline-offset-2 hover:underline"
+              >
+                Check {shortAddress(unresolved.txHash)} on Basescan
+              </a>
+              {createdWallet ? (
+                <button
+                  type="button"
+                  onClick={() => replaceOverlay({ kind: "agent", wallet: createdWallet })}
+                  className="focus-ring self-start rounded-badge text-meta text-accent underline-offset-2 hover:underline"
+                >
+                  Open this agent
+                </button>
+              ) : null}
+            </div>
+          </Card>
+        ) : null}
+
         <button
           type="button"
           disabled={Boolean(problem) || busy !== null}
           onClick={() => void submit()}
           className="focus-ring h-13.5 rounded-control-m bg-ink text-btn text-paper transition-colors hover:bg-ink-hover disabled:bg-nav-active disabled:text-faintest"
         >
-          {busy ?? (wallet ? (writesNothing ? "Done" : "Save rules") : "Create agent")}
+          {busy ??
+            (wallet
+              ? writesNothing
+                ? "Done"
+                : "Save rules"
+              : createdWallet
+                ? "Arm this wallet's policy"
+                : "Create agent")}
         </button>
         <p className="px-1 text-center text-fine text-faint">
           {problem ??
@@ -378,6 +462,23 @@ function AgentFormFields({
       </div>
     </OverlayScreen>
   );
+}
+
+/**
+ * What to say about a write that was broadcast and never confirmed.
+ *
+ * Every branch has the same job: keep the payer from doing the one thing that
+ * makes it worse. For a deploy that is creating a duplicate wallet; for an
+ * arming it is assuming the agent is either live or dead without looking.
+ */
+function unresolvedText(err: UnknownOutcomeError, created: Address | null): string {
+  if (err.what === "createWallet") {
+    return "The wallet deploy was submitted and we couldn't confirm it in time. It may still land. Check your agents list before trying again. Creating another would deploy a second wallet for the same signer.";
+  }
+  if (created) {
+    return `The wallet is deployed at ${shortAddress(created)} and the policy write was submitted without being confirmed in time. An unarmed wallet can't spend anything, because every authorization reverts, so open it and see what the chain says before sending another.`;
+  }
+  return "The policy write was submitted and we couldn't confirm it in time. Open the agent to see what the chain holds before sending it again.";
 }
 
 /**

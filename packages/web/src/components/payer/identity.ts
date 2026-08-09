@@ -9,10 +9,12 @@ import { demoAccountEnabled } from "@/lib/env";
 /**
  * Who the payer is, from the ONE configured key source.
  *
- * `NEXT_PUBLIC_DEMO_KEY` decides: a pinned key or a per-device one means the app
- * signs for itself, anything else means a connected wallet does. There is no URL
- * override and no runtime toggle, because env and URL disagreeing about who
- * signs is a class of bug that only ever shows up on stage.
+ * `NEXT_PUBLIC_DEMO_KEY` decides: a pinned 32-byte key means the app signs for
+ * itself, anything else means a connected wallet does. There is no per-device
+ * mode (it went when agents became payer-owned on-chain — a fresh random address
+ * owns nothing and every agent screen renders empty for it), no URL override and
+ * no runtime toggle, because env and URL disagreeing about who signs is a class
+ * of bug that only ever shows up on stage.
  */
 export interface PayerIdentity {
   address: Address | null;
@@ -20,10 +22,11 @@ export interface PayerIdentity {
   /** A wallet is connected. Only meaningful when `demo` is false. */
   connected: boolean;
   /**
-   * False while the answer is still unknown — the demo key lives in
-   * localStorage and wagmi reconnects asynchronously. Screens must distinguish
-   * this from "no wallet": one is a spinner, the other is an empty state, and
-   * showing the empty state for half a second on every load reads as broken.
+   * False while the answer is still unknown: wagmi reconnects asynchronously,
+   * and the demo account is resolved after mount (see below). Screens must
+   * distinguish this from "no wallet" — one is a spinner, the other is an empty
+   * state, and showing the empty state for half a second on every load reads as
+   * broken.
    */
   ready: boolean;
 }
@@ -35,8 +38,11 @@ export function usePayerIdentity(): PayerIdentity {
 
   useEffect(() => {
     if (!demo) return;
-    // localStorage exists only after mount; reading it during render would make
-    // the server's HTML and the first client paint disagree about the payer.
+    // Resolved after mount rather than during render. The key itself is a
+    // build-time inlined env value now — there is no per-device localStorage
+    // burner any more, so there is no hydration mismatch left to avoid — but
+    // deriving the address means running secp256k1 on it, which is pure client
+    // work with no business happening during a server render.
     setDemoAddress(getDemoAccount().address);
   }, [demo]);
 

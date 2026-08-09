@@ -8,7 +8,8 @@ import { MerchantSidebar } from "./merchant-sidebar";
 import { TransactionDrawer } from "./transaction-drawer";
 
 /**
- * The merchant back-office frame: a fixed nav column and one screen beside it.
+ * The merchant back-office frame: a nav column of fixed WIDTH — a 248px grid
+ * track, not `position: fixed` — and one screen beside it.
  *
  * There is NO merchant login anywhere in Gantry — anyone with the URL can read
  * any shop's back-office. That is on the honest-labels list and is deliberately

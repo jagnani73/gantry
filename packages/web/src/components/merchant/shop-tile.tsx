@@ -10,7 +10,11 @@ import { cn } from "@/lib/utils";
  * empty slot the design system defines once in globals.css.
  */
 const SIZE = {
-  lg: "size-22 rounded-control-m text-card-title", // 88 — the profile editor
+  // 88 — the profile editor, but only below `sm`, where the tile sits on its own
+  // line. From `sm` up that screen overrides this with `sm:size-auto
+  // sm:aspect-square` and the tile takes its height from the field stack beside
+  // it, so 88 is the narrow-viewport case rather than the size it usually draws.
+  lg: "size-22 rounded-control-m text-card-title",
   md: "size-13 rounded-tile text-card-title-xs", // 52 — the payer preview
 } as const;
 

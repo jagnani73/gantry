@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { formatUnits6, shortAddress } from "@gantry/shared";
-import { Card, Chip, Figure, Label, Money, Mono, StatusDot, useToast } from "@/components/primitives";
+import { Card, Chip, cn, Figure, Label, Money, Mono, StatusDot, useToast } from "@/components/primitives";
 import { api } from "@/lib/api";
 import { ActivityRowItem } from "./activity-row";
 import { placesPaid } from "./activity";
@@ -26,6 +26,7 @@ export function WalletScreen() {
     balanceError,
     rate,
     rateError,
+    balanceWatch,
     settlements,
     rows,
     merchant,
@@ -34,7 +35,12 @@ export function WalletScreen() {
   } = usePayer();
   const toast = useToast();
   const [toppingUp, setToppingUp] = useState(false);
-  const [topUpError, setTopUpError] = useState<string | null>(null);
+  /** The record of the last top-up, which the toast is only a reminder of. Its
+   * tone is the verdict: a refused grant is a failure, a grant whose GAS leg was
+   * refused is a partial success and must read as neither. */
+  const [topUpNote, setTopUpNote] = useState<{ tone: "danger" | "sunken"; text: string } | null>(
+    null,
+  );
 
   const places = placesPaid(rows).slice(0, 4);
   const recent = rows.slice(0, 3);
@@ -44,7 +50,7 @@ export function WalletScreen() {
 
   const topUp = async () => {
     if (!identity.address) return;
-    setTopUpError(null);
+    setTopUpNote(null);
     setToppingUp(true);
     try {
       const granted = await api.faucet(identity.address);
@@ -55,12 +61,28 @@ export function WalletScreen() {
       // Say what arrived, not just that something did. The balance is at the top
       // of a screen the payer may have scrolled past, so the confirmation has to
       // carry the amount itself.
-      toast.success(`Added ${formatUnits6(BigInt(granted.funded), 2)} USDC`);
+      const added = `Added ${formatUnits6(BigInt(granted.funded), 2)} USDC`;
+      const gas = granted.gas?.error;
+      if (gas) {
+        // The USDC landed and the ETH leg did not. The route reports that leg
+        // instead of failing the call, and a caller that reads only `funded`
+        // throws the report away: the payer then discovers it when an OWNER
+        // transaction — arming a policy, revoking an agent — dies in their
+        // wallet with a message naming none of this. Paying is unaffected, so
+        // this is a qualification, not a failure.
+        setTopUpNote({
+          tone: "sunken",
+          text: `${added}. The gas top-up was refused (${gas.name}: ${gas.message}). Paying a shop still costs you nothing, but creating or changing an agent needs gas and may fail until this account has some.`,
+        });
+        toast.error(`${added}, but the gas top-up was refused.`);
+      } else {
+        toast.success(added);
+      }
     } catch (err) {
       // Toast AND the card: the card is the record, the toast is what gets
       // noticed. A failure must not live only in something that disappears.
       const message = err instanceof Error ? err.message : String(err);
-      setTopUpError(message);
+      setTopUpNote({ tone: "danger", text: message });
       toast.error(`Top up failed. ${message}`);
     } finally {
       setToppingUp(false);
@@ -138,9 +160,34 @@ export function WalletScreen() {
         ) : null}
       </Card>
 
-      {topUpError ? (
-        <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
-          <p className="text-meta-sm break-words">{topUpError}</p>
+      {topUpNote ? (
+        <Card tone={topUpNote.tone} radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+          <p
+            className={cn("text-meta-sm break-words", topUpNote.tone === "sunken" && "text-muted")}
+          >
+            {topUpNote.text}
+          </p>
+        </Card>
+      ) : null}
+
+      {/* The bounded poll behind `refreshBalance({ expectChange: true })` ran out
+          with the figure still where it started. That is a real thing to report
+          — the alternative is a transfer we were told was mined, a number that
+          never moved, and nothing on screen connecting the two. */}
+      {balanceWatch === "unconfirmed" ? (
+        <Card tone="sunken" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+          <p className="text-meta-sm text-muted">
+            Your last payment or top-up hasn&apos;t reached the figure above yet. We stopped
+            re-checking after a few seconds; nothing is lost, the node answering us may just be
+            behind.
+          </p>
+          <button
+            type="button"
+            onClick={() => refreshBalance()}
+            className="focus-ring mt-2.5 rounded-badge text-meta text-accent underline-offset-2 hover:underline"
+          >
+            Check again
+          </button>
         </Card>
       ) : null}
 

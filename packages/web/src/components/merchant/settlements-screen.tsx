@@ -16,7 +16,9 @@ import { settlementKey } from "./use-merchant-feed";
 import { useNowSeconds } from "./use-now";
 
 /** The counter view shows the day, not the book. Anything longer lives one click
- * away on Transactions, and eight rows is what fits above the fold at 1440. */
+ * away on Transactions. Eight is the count that was measured to reach the fold
+ * on the 1440-wide window the design is drawn for, not a number the layout
+ * enforces: a shorter viewport cuts the list off earlier. */
 const FEED_LIMIT = 8;
 
 const STATUS_TEXT = {

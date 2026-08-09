@@ -9,10 +9,12 @@ import {
 /**
  * The old all-merchants dashboard, kept alive as a redirect.
  *
- * It is linked from the onboarding success card, from `demo-reset`'s printout
- * and from a year of rehearsal muscle memory, so it has to keep landing
- * somewhere sensible. `?handle=` was how the old screen scoped itself to one
- * shop; that is now the route, so the parameter maps straight onto it.
+ * Nothing links here any more — the onboarding success card points at
+ * `/merchant/<handle>/settlements` — but it is still typed from rehearsal
+ * muscle memory, and both the README and the deck outline state that the path
+ * redirects, so it has to keep landing somewhere sensible. `?handle=` was how
+ * the old screen scoped itself to one shop; that is now the route, so the
+ * parameter maps straight onto it.
  */
 export default async function DashboardRedirectPage({
   searchParams,

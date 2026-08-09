@@ -58,9 +58,12 @@ export function EvidenceSection() {
           Spans both columns rather than sitting under the contracts table. It
           is a caveat on the whole section — it qualifies the argument on the
           left as much as the addresses on the right — and in one column it left
-          248px of dead space beside it, because the grid stretches both columns
-          to the taller one's height. The prose splits into two columns at `lg`
-          so full width does not mean a 150-character measure. */}
+          248px of dead space beside it (measured on the layout as it stood),
+          because the grid stretches both columns to the taller one's height.
+          Full width still does not mean a 150-character measure: the one
+          paragraph in here is capped at 80ch, and everything under it is a grid
+          of five seams — two tracks at `sm`, three at `lg`. See the note on
+          `SEAMS` in content.ts for why they are items rather than prose. */}
       <Card tone="sunken" radius="card" pad="none" className="px-6 py-6 lg:col-span-2">
         <div className="text-body font-semibold">What isn&apos;t real, said plainly</div>
         {/* The counterweight goes first and stays prose: it is the one claim in

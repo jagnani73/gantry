@@ -152,7 +152,14 @@ export const api = {
   denials: (wallet: Address) =>
     call<DenialListResponse>(`/api/denials${query({ wallet })}`, { timeoutMs: 12_000 }),
 
-  /** Enumerated from WalletCreated logs, so a cold call can take seconds. */
+  /**
+   * Enumerated from WalletCreated logs, so a cold call can take seconds.
+   *
+   * The response has TWO lists and a caller that reads only `agents` is wrong:
+   * `unreadable` holds wallets that carry code and did not answer, and folding
+   * those into an empty `agents` tells a payer who owns an agent that they own
+   * none — beside a button that deploys another one.
+   */
   agents: (filter: { owner?: Address; agentSigner?: Address }) =>
     call<AgentListResponse>(`/api/agents${query(filter)}`, { timeoutMs: 20_000 }),
 

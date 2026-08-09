@@ -8,11 +8,15 @@ import { cn } from "./cn";
  * Transient confirmation, for actions whose result has nowhere to live.
  *
  * The app's default is inline feedback and it should stay that way: the profile
- * editor prints "Saved." beside its own button, a failed payment renders a card
- * where the payment was. Reach for a toast only where inline is impossible —
- * the action closes the surface that would have shown it (Revoke), or leaves no
- * slot beside it (Copy pay link), or its effect lands somewhere the eye is not
- * (a balance refreshing at the top of a scrolled screen).
+ * editor prints "Saved." above its own Save button, the QR screen's Copy button
+ * relabels itself, a failed payment takes over the pay flow's own screen. Reach
+ * for a toast only where the result lands somewhere the eye is not.
+ *
+ * Exactly one action qualifies today, and it is the only caller: the payer's
+ * top-up on the wallet screen. Its effect is the balance in the panel at the
+ * very top of a screen the payer has usually scrolled down, and the amount the
+ * faucet granted appears nowhere else at all, so the confirmation has to carry
+ * the figure to where the tap happened.
  *
  * NOT a substitute for state. A toast is unreadable to anyone who looked away,
  * so nothing may be announced ONLY here: a balance still updates, an error still
@@ -50,8 +54,11 @@ export function useToast(): ToastApi {
 
 export function ToastProvider({
   children,
-  /** Positions the stack. The payer app pushes it clear of the tab bar; the
-   * merchant surface has nothing at the bottom to avoid. */
+  /** Positions the stack. The payer app is the only mount there is, and it
+   * pushes the stack clear of its tab bar. No merchant surface provides this
+   * context at all — `useToast()` would throw there — and a merchant mount
+   * would first have to give whatever the provider wraps a `relative` of its
+   * own, since the viewport is `absolute` (see ToastViewport). */
   viewportClassName,
 }: {
   children: ReactNode;

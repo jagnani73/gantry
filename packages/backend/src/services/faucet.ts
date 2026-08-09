@@ -16,7 +16,7 @@ import {
 } from "./faucet-core";
 
 /**
- * Demo-only funder: the relayer TRANSFERS real Circle USDC so a burner payer
+ * Demo-only funder: the relayer TRANSFERS real Circle USDC so an unfunded payer
  * needs zero setup. It used to mint MockUSDC, which was the weakest item on the
  * honest-labels list — the payer now signs an EIP-3009 authorization against
  * Circle's actual contract.
@@ -216,6 +216,16 @@ function usdcRefusalError(refusal: LegRefusal): ApiError {
 async function topUpGas(address: Address, fatal: boolean): Promise<GasTopUpResult> {
   const key = address.toLowerCase();
   let reserved = 0n;
+  // Only the request that actually OWNS the claim may release it. `finish`
+  // deletes by key without asking who put it there, and this function reaches
+  // its `finally` on two paths that never claimed: an address already at target
+  // (returns early) and one refused BECAUSE another request holds the key. Both
+  // would clear the in-flight marker of the request mid-transfer, letting a
+  // third claim and send a second top-up before the first arms its cooldown —
+  // repeatable, against the relayer's only gas key, which pays for every door.
+  // `grantUsdc` avoids this by claiming before its try; this leg has to read a
+  // balance first to know the amount, so it tracks ownership instead.
+  let claimed = false;
   try {
     const balance = await publicClient.getBalance({ address });
     const send = gasTopUpAmount(balance, ETH_TARGET);
@@ -225,6 +235,7 @@ async function topUpGas(address: Address, fatal: boolean): Promise<GasTopUpResul
 
     const refusal = legs.gas.claim(key, send, Date.now());
     if (refusal) throw gasRefusalError(refusal, address, send);
+    claimed = true;
     reserved = send;
 
     const funderEth = await publicClient.getBalance({ address: relayerAccount.address });
@@ -247,7 +258,7 @@ async function topUpGas(address: Address, fatal: boolean): Promise<GasTopUpResul
   } catch (err) {
     return resolveFailedGasTopUp(err, address, reserved, fatal);
   } finally {
-    legs.gas.finish(key);
+    if (claimed) legs.gas.finish(key);
   }
 }
 
@@ -257,6 +268,7 @@ function resolveFailedGasTopUp(
   reserved: bigint,
   fatal: boolean,
 ): GasTopUpResult {
+  const key = address.toLowerCase();
   if (reserved === 0n) {
     // Nothing was reserved: a read failed, or the leg refused before spending.
     console.warn(`faucet: gas top-up for ${address} not sent`, err);
@@ -272,14 +284,24 @@ function resolveFailedGasTopUp(
     // reservation is KEPT (over-counting costs one top-up; under-counting hands
     // out ETH nothing accounted for) and nothing is re-sent.
     //
-    // No cooldown is armed, unlike the USDC leg, and the difference is that this
-    // is a top-up rather than a grant: if the transaction we could not confirm
-    // did land, the next call reads the higher balance and sends nothing, so the
-    // retry is free — and if it did NOT land, blocking that retry for a minute
-    // would strand the payer for no gain.
+    // The cooldown is armed, exactly as the USDC leg arms it, and for the same
+    // reason. This branch used to skip it on the reasoning that a top-up is
+    // self-correcting: if the unconfirmed transfer landed, the next call reads a
+    // higher balance and sends nothing. That argument has only two cases and the
+    // real world has three. The dominant ambiguous outcome here is the relayer's
+    // 20s receipt cap firing on a transaction that is broadcast and STILL
+    // PENDING — the balance has not risen yet, `gasTopUpAmount` returns the full
+    // target again, and the retry broadcasts a SECOND transfer. Each one also
+    // takes a relayer nonce ahead of the settlement queue.
+    //
+    // So the cooldown is the half that actually prevents loss, and the cost of
+    // arming it is bounded and visible: a payer whose transfer genuinely failed
+    // waits a minute. Under-counting hands out ETH nothing accounted for.
+    legs.gas.armCooldown(key, Date.now());
     console.error(
       `faucet CRITICAL: gas top-up of ${formatEther(reserved)} ETH to ${address} has an ` +
-        `UNRESOLVED outcome — reservation kept, nothing re-sent. Check the address on-chain.`,
+        `UNRESOLVED outcome. Reservation kept and cooldown armed, nothing re-sent. ` +
+        `Check the address on-chain before re-granting.`,
       err,
     );
   }

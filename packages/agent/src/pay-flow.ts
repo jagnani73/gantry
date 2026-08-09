@@ -121,9 +121,18 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
   // the failure that looks healthy from both ends, so it must be visible on the
   // terminal that is about to spend money. console.error is outside the LLM's
   // input path, so it cannot be paraphrased away.
+  //
+  // The two branches are NOT cosmetic. On the `agents.at(-1)` fallback nothing
+  // is active, so calling it "the newest active one" would print the one thing
+  // an operator must not believe at that moment: every spend from that wallet is
+  // about to revert PolicyExpired, and the fix is to arm it, not to debug the
+  // payment.
   if (agents.length > 1) {
     console.error(
-      `agent: ${agents.length} wallets list this signer; spending from the newest active one, ${usable.wallet}`,
+      active.length > 0
+        ? `agent: ${agents.length} wallets list this signer; spending from the newest ACTIVE one, ${usable.wallet}`
+        : `agent: ${agents.length} wallets list this signer and NONE has a live policy; ` +
+            `falling back to the newest, ${usable.wallet}. Expect PolicyExpired until it is re-armed.`,
     );
   }
   cachedWallet = usable.wallet;

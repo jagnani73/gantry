@@ -7,15 +7,16 @@ import { cn } from "@/components/primitives";
  * A full-screen step that sits over the tabs — scan, the pay flow, a receipt, a
  * shop, an agent.
  *
- * Drawn at 402px in the design and built here as a normal responsive page. On a
- * wide screen the column stays phone-width and the tone bleeds to the edges, so
- * a green success screen still reads as one surface rather than a card floating
- * on paper.
+ * Drawn at 402px in the design and built here as a normal responsive page: the
+ * tone fills whatever box this is positioned against, and the CONTENT column
+ * stays phone-width inside it. A green success screen therefore reads as one
+ * surface rather than as a card floating on paper.
  *
- * `absolute`, not `fixed`: these are positioned against PayerFrame, so on a
- * desktop viewport they fill the phone mock instead of escaping it to cover the
- * whole window. On a phone the frame IS the viewport, so the two are identical
- * there — nothing about the handset rendering changes.
+ * `absolute`, not `fixed`: these are positioned against PayerFrame, so at `lg`
+ * and up they fill the phone mock instead of escaping it to cover the whole
+ * window. Below `lg` that frame fills the window, so they do too — which is
+ * only true because the frame caps its content rather than itself; see the note
+ * there.
  */
 
 type OverlayTone = "paper" | "ink" | "accent";

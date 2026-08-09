@@ -23,8 +23,11 @@ const EnvSchema = z.object({
   CORS_ORIGIN: z.string().default("*"),
   ADMIN_TOKEN: z.string().min(8),
   /** Not a Gantry setting — the standard Node signal, read here so the demo
-   * affordances have one thing to key off. The backend Dockerfile sets it to
-   * `production`, so a deployed host locks them down without remembering a flag.
+   * affordances have one thing to key off: one standard variable rather than a
+   * Gantry-specific flag per affordance. NOTHING in this repo sets it — there is
+   * no container image (deployment is Render's native Node build), so the
+   * deployed host must set `production` itself, which is exactly why a
+   * misconfiguration is warned about below rather than assumed away.
    *
    * Kept a free string because tooling sets values we do not enumerate (`test`,
    * `staging`), but ANY value other than `production` means "demo host" — so a
@@ -76,7 +79,7 @@ function requireRpcUrls(): string[] {
  * One question — "is this a demo host or a public one?" — behind every affordance
  * that spends the relayer's balances without authenticating anyone. NODE_ENV
  * rather than Gantry-specific flags: there is no identity to check, only a host to
- * classify, and the backend Dockerfile already sets it.
+ * classify, and every deploy target already knows this variable.
  *
  * Exported as a named class, not left implicit in the derived fields. Those fields
  * carry different payloads (a ceiling and a permission) and nothing would stop
@@ -107,8 +110,9 @@ const hostClass = classifyHost(env.NODE_ENV);
 const isDemoHost = hostClass === "demo";
 /** Both faucet ceilings, decided in services/faucet-core.ts — the module that
  * also owns the grant sizes they are five of, and the only place either ceiling
- * is wired to a leg. Restating the numbers here would be two sources for one
- * arithmetic story, and the one a unit test can reach is that one. */
+ * is wired to a leg. No VALUE is re-declared here; faucet-core is the one a unit
+ * test can reach, so it stays the only source. The numbers quoted in the prose
+ * below explain the choice and are not read by anything. */
 const faucetLimits = faucetCeilings(isDemoHost);
 
 const rpcUrls = requireRpcUrls();
@@ -138,12 +142,13 @@ export const config = {
    *
    * The faucet transfers REAL Circle USDC out of the relayer and its cooldown is
    * per-address, so fresh addresses make the grant loop unbounded. A ceiling
-   * rather than an off switch, because burner mode is what lets a judge scan the
-   * deck's QR and pay with no wallet at all — switching it off on the public
-   * host would make the deployed payer page unusable by exactly the people it
-   * needs to impress. 20 USDC is five grants: enough for a Q&A, and a loss the
-   * existing ETH→USDC top-up swap can replace. (That swap spends ETH from this
-   * same key, so it is not free — see MAX_ETH_PER_SWAP in services/funder.ts.)
+   * rather than an off switch, because the pinned demo account is what lets a
+   * judge scan the deck's QR and pay with no wallet of their own — switching it
+   * off on the public host would make the deployed payer page unusable by
+   * exactly the people it needs to impress. 20 USDC is five grants: enough for a
+   * Q&A, and a loss the existing ETH→USDC top-up swap can replace. (That swap
+   * spends ETH from this same key, so it is not free — see MAX_ETH_PER_SWAP in
+   * services/funder.ts.)
    *
    * Unmetered on a demo host: a rehearsal pass alone spends two grants
    * (`e2e:pay` + `x402:buy`), so ten of them would blow any sane ceiling.

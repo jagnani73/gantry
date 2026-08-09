@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import {
   agentStatus,
   basescanAddress,
+  basescanTx,
   formatUnits6,
   shortAddress,
   type AgentStatus,
@@ -13,7 +14,7 @@ import {
 import { CapMeter, Card, Chip, Figure, KeyValue, KeyValueList, Money, Mono } from "@/components/primitives";
 import { api } from "@/lib/api";
 import type { ActivityRow } from "./activity";
-import { useAgentWrites } from "./agent-writes";
+import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
 import { categoryLabels, sgdFromCapUnits } from "./agent-rules";
 import { calendarDate, relativeWhen, sgdUnits } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
@@ -48,7 +49,17 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   const [readError, setReadError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** What the last revoke attempt resolved to. `danger` is a proven failure;
+   * `sunken` is everything we cannot call one — a broadcast we could not
+   * confirm, or a revoke that landed whose read-back did not. */
+  const [notice, setNotice] = useState<{
+    tone: "danger" | "sunken";
+    text: string;
+    txHash?: Hex;
+    /** Offer another read of the wallet. Only for an outcome the chain has yet
+     * to settle — re-reading a proven failure answers nothing. */
+    recheck?: boolean;
+  } | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
@@ -112,19 +123,58 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   const rate = BigInt(agent.rate);
   const status = agentStatus(agent, chainNow());
 
+  /**
+   * Three outcomes, not two.
+   *
+   * The revoke itself either reverted (proven: nothing changed), landed, or was
+   * broadcast and not confirmed in time. The third one must not render red under
+   * a chip still reading "Active" — the same `failed`-vs-`unknown` split the pay
+   * flow draws, for the same reason.
+   *
+   * And the read-back afterwards is a REFRESH, not part of the outcome. It used
+   * to sit inside the same `try`, so a revoke that landed on-chain followed by
+   * one failed GET rendered as a failure and never refreshed — likelier now that
+   * that route answers 503 `AgentReadFailed` where it once 404'd.
+   */
   const onRevoke = async () => {
-    setError(null);
+    setNotice(null);
     setBusy("Revoking on-chain…");
     try {
       await revoke(wallet);
-      setConfirming(false);
-      setFresh(await api.agent(wallet));
-      refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
+      if (err instanceof UnknownOutcomeError) {
+        setConfirming(false);
+        setNotice({
+          tone: "sunken",
+          text: "Your revoke was submitted and we couldn't confirm it in time. It may still be landing. Don't send it again: only the chain can answer this, and the status above is what it last said.",
+          txHash: err.txHash,
+          recheck: true,
+        });
+        // Re-read once now, and offer the payer the same read again: the
+        // transaction may well mine while this is on screen, and a frozen
+        // "Active" chip beside an unresolved revoke is the worst pair of
+        // statements this screen can make.
+        setReloadNonce((n) => n + 1);
+        refresh();
+      } else {
+        setNotice({ tone: "danger", text: err instanceof Error ? err.message : String(err) });
+      }
       setBusy(null);
+      return;
     }
+
+    setConfirming(false);
+    refresh();
+    try {
+      setFresh(await api.agent(wallet));
+    } catch (err) {
+      console.warn(`gantry: agent re-read after a successful revoke failed for ${wallet}`, err);
+      setNotice({
+        tone: "sunken",
+        text: "Revoked on-chain. We couldn't re-read the wallet just afterwards, so the figures above may be a moment old.",
+      });
+    }
+    setBusy(null);
   };
 
   return (
@@ -231,9 +281,37 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           )}
         </Card>
 
-        {error ? (
-          <Card tone="danger" radius="control-m" pad="none" className="px-4.5 py-4">
-            <p className="text-meta">{error}</p>
+        {notice ? (
+          <Card tone={notice.tone} radius="control-m" pad="none" className="px-4.5 py-4">
+            <p className={notice.tone === "sunken" ? "text-meta text-muted" : "text-meta"}>
+              {notice.text}
+            </p>
+            {notice.txHash || notice.recheck ? (
+              <div className="mt-2 flex flex-col items-start gap-1.5">
+                {notice.txHash ? (
+                  <a
+                    href={basescanTx(notice.txHash)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="focus-ring rounded-badge text-meta text-accent underline-offset-2 hover:underline"
+                  >
+                    Check {shortAddress(notice.txHash)} on Basescan
+                  </a>
+                ) : null}
+                {notice.recheck ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReloadNonce((n) => n + 1);
+                      refresh();
+                    }}
+                    className="focus-ring rounded-badge text-meta text-accent underline-offset-2 hover:underline"
+                  >
+                    Read this wallet again
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </Card>
         ) : null}
 

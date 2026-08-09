@@ -404,14 +404,14 @@
   }
 }
 
-/* The empty logo / camera slot. One definition so a shop with no logo looks the
-   same on the merchant profile, the payer's receipt and the merchant page. */
 /**
  * Hides scrollbars on this element and everything inside it.
  *
  * For the payer surface only, and not merely cosmetic. A desktop scrollbar is
- * laid INSIDE the box: measured, it took 15px out of the 402px the phone mock is
- * drawn at, so every screen rendered ~4% narrower than the design — and narrower
+ * laid INSIDE the box: measured once, on a desktop browser that reserves gutter
+ * for it, it took 15px out of the 402px the phone mock is drawn at — the exact
+ * width varies by browser and platform, the fact that it costs width does not —
+ * so every screen rendered ~4% narrower than the design, and narrower
  * than the same screen on a real handset, where the scrollbar is an overlay and
  * costs nothing. Hiding it makes desktop and phone agree, which is the whole
  * point of a mock. The prototypes in the design handoff do the same.
@@ -433,6 +433,8 @@
   }
 }
 
+/* The empty logo / camera slot. One definition so a shop with no logo looks the
+   same on the merchant profile, the payer's receipt and the merchant page. */
 @utility stripe-placeholder {
   background-image: repeating-linear-gradient(
     135deg,

@@ -55,13 +55,17 @@ async function main() {
   app.listen(config.port, "0.0.0.0", () => {
     console.log(`gantry backend on :${config.port} (chain ${config.chainId})`);
     console.log(`relayer: ${relayerAccount.address}`);
-    // Announce it: burner mode dies without the faucet, and "demo host or not"
-    // is otherwise invisible until a payer is already waiting on the funding step.
+    // Announce it: the demo-account payer flow dies without the faucet, and
+    // "demo host or not" is otherwise invisible until a payer is already waiting
+    // on the funding step. BOTH ceilings, because the faucet has two legs that
+    // refuse independently — an unannounced gas ceiling turns "your agent could
+    // not be armed" into a mystery on the one host nobody is watching the logs of.
     console.log(
       config.hostClass === "demo"
-        ? "demo host: payer faucet unmetered, self-service onboarding ON"
-        : `public host: payer faucet capped at ${config.faucetDailyBudget} units/24h across all ` +
-            "addresses; self-service onboarding OFF — only merchants already on-chain are served",
+        ? "demo host: payer faucet unmetered on both legs, self-service onboarding ON"
+        : `public host: payer faucet capped at ${config.faucetDailyBudget} USDC units and ` +
+            `${config.faucetEthDailyBudget} wei/24h across all addresses; self-service ` +
+            "onboarding OFF — only merchants already on-chain are served",
     );
     for (const ip of lanAddresses()) console.log(`  LAN: http://${ip}:${config.port}`);
   });

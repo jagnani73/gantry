@@ -28,8 +28,11 @@ export const DEMO_MERCHANTS: Record<string, { displayName: string; location: str
 /**
  * The canonical demo agent policy — "S$50/day" stored on-chain in the spend
  * token's 6dp units at the pinned 1.3421 rate: ceil(50e6 * 1e6 / DEMO_RATE).
- * Used by DeployPBM.s.sol (mirrored constants) and the admin re-arm endpoint;
- * demo-reset verifies the armed values via GET /api/policy.
+ * Used by DeployPBM.s.sol (mirrored constants) and by `demo-reset`, which arms
+ * the policy with the PAYER's key and reads it back through
+ * `GET /api/agents/:wallet`. There is no admin re-arm endpoint and no
+ * `GET /api/policy` any more: agent wallets are payer-owned, `setPolicy` is
+ * `onlyOwner`, and no server key can write one.
  */
 export const DEMO_POLICY = {
   dailyCap: 37_255_049n,

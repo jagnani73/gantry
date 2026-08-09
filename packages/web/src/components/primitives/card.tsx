@@ -6,7 +6,9 @@ import { cn } from "./cn";
  * green on white — so a Card is a fill plus a radius plus the padding step that
  * goes with it, and carries no border of its own. (Borders do exist elsewhere:
  * hairline rules inside cards, the sidebar edge, the printed standee's frame.
- * The one shadow in the whole system is the transaction drawer's.)
+ * There is exactly one shadow token, `shadow-drawer`, and it is spent only on
+ * things that float above the page: the merchant transaction drawer, the phone
+ * mock the payer app sits in on desktop, and a toast.)
  */
 type CardTone = "surface" | "sunken" | "fill" | "paper" | "accent" | "ink" | "danger";
 type CardRadius = "card" | "panel" | "card-m" | "hero" | "control-m" | "tile";

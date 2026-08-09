@@ -16,10 +16,20 @@ import {AgentPBMWalletFactory} from "../src/AgentPBMWalletFactory.sol";
 ///         calls. Minting the mock would leave the wallet holding a token nothing reads,
 ///         and the rejection beat would then die as `insufficient_funds` at the
 ///         facilitator's balance pre-check instead of reaching `CategoryNotAllowed`.
-/// @dev Safely re-runnable: each run deploys a FRESH factory + wallet (the old one
-///      strands with owner-reclaimable funds), and the one-shot registerMerchant is
-///      guarded by a pre-broadcast existence probe. Rehearsal re-arms are NOT this
-///      script — that's wallet.setPolicy through the relayer (demo-reset).
+/// @dev DO NOT re-run this against the live deployment. It was described here as
+///      "safely re-runnable" on the grounds that each run deploys a fresh factory and
+///      wallet; that is what it does, and it is exactly the danger. Only
+///      registerMerchant is guarded by an existence probe. The factory deployment,
+///      createWallet and setPolicy all run unconditionally, so a re-run mints a NEW
+///      factory that `addresses.ts` does not point at — orphaning every wallet payers
+///      have created through the old one, since agent wallets are enumerated from that
+///      factory's WalletCreated logs.
+///
+///      This script is also the HISTORICAL path: it creates a RELAYER-owned wallet, and
+///      agent wallets are payer-owned now. Provisioning a usable wallet is
+///      `pnpm demo:reset`, which creates one through the already-deployed factory and
+///      arms it with the PAYER's key (setPolicy is onlyOwner, and no server key can
+///      call it any more).
 ///
 ///      Run: forge script script/DeployPBM.s.sol --rpc-url base_sepolia --broadcast --verify
 ///      The wallet deploys inside factory.createWallet (broadcast `additionalContracts`);

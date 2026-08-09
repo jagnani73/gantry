@@ -9,14 +9,17 @@ import { emptyBudget, msUntilReset, release, reserve, type BudgetState } from ".
  * It owns the NUMBERS as well as the rules. The two ceilings and the two grant
  * sizes are one arithmetic story — "five of each per day" — and that story is
  * only checkable if the constants and the code that divides them live somewhere
- * a unit test can import. config.ts re-exports the ceilings for the boot banner;
- * it does not restate them.
+ * a unit test can import. config.ts calls `faucetCeilings` and surfaces both
+ * values on `config` (the boot banner announces both on a public host); it
+ * declares no number of its own. Its doc comments do retell this arithmetic in
+ * prose, so those sentences are the part that can rot — the VALUES cannot
+ * disagree, because there is only one set of them and it is here.
  */
 
 /** Must cover the LARGEST single payment a funded payer makes, because the
- * payer page funds once and then signs: the agent-door order is S$4.50 ≈ 3.36
- * USDC, and the burner amount cap (S$5 ≈ 3.73) is deliberately set just under
- * this so one grant always suffices. */
+ * payer page funds once and then signs: the agent-door order is S$4.50 ≈ 3.35
+ * USDC, and the payer page's S$5 demo-account cap (≈ 3.73 USDC) is deliberately
+ * set just under this grant so one grant always suffices. */
 export const GRANT = 4_000_000n; // 4 USDC
 
 /**

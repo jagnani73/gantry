@@ -309,7 +309,18 @@ export function PayFlow({ handle }: { handle: string }) {
               });
             if ((await readBalance()) < BigInt(intent.amountIn)) {
               setStep({ name: "funding", intent });
-              await api.faucet(account.address);
+              const granted = await api.faucet(account.address);
+              // The grant carries a second leg. A refused gas top-up changes
+              // nothing here — the payer signs, the relayer sends — so it must
+              // not interrupt a payment in progress; but it is the reason an
+              // agent write fails minutes later, so it does not vanish either.
+              // The screen that claims a top-up succeeded is the wallet screen,
+              // and that one reports it.
+              if (granted.gas?.error) {
+                console.warn(
+                  `gantry: gas leg of the faucet grant was refused (${granted.gas.error.name}: ${granted.gas.error.message}). The payment is unaffected; owner transactions may not be.`,
+                );
+              }
               // The transfer is mined, but RPC replicas lag — wait until the
               // balance is actually visible before signing against it.
               for (let i = 0; (await readBalance()) < BigInt(intent.amountIn); i++) {
@@ -350,9 +361,13 @@ export function PayFlow({ handle }: { handle: string }) {
           },
           settleMs: Date.now() - startedAt,
         });
-        // The feed and the balance are both stale the moment this lands.
+        // The feed and the balance are both stale the moment this lands — and
+        // the balance read issued right now is the one most likely to hit a
+        // replica that has not seen the settling block, which is exactly what
+        // `expectChange` re-reads for. Without it this called the poll's
+        // motivating case and then skipped the poll.
         refreshHistory();
-        refreshBalance();
+        refreshBalance({ expectChange: true });
       } catch (err) {
         fail(intent, payer, err, submitted);
       } finally {
