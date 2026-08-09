@@ -128,12 +128,51 @@ const SWEEP_CHUNK = 1_999n;
 let sweeping = false;
 let resetEpoch = 0;
 
+/**
+ * Last head the sweep managed to read, and when. Recorded here so /health can
+ * answer "is the chain reachable, and is the indexer keeping up" without making
+ * an RPC call of its own — the health route is polled by the deploy host, and a
+ * probe that depends on a third party turns a provider's bad minute into a
+ * restart. The sweep already fetches head every 15s; this just remembers it.
+ *
+ * Set as soon as the head read succeeds rather than after a full pass, which
+ * splits one vague "healthy" into two independent signals: a stale `headAt`
+ * means the RPC path is down, while a growing `head - cursor` means the reads
+ * work but the getLogs chunks do not.
+ */
+let lastHead: bigint | null = null;
+let lastHeadAt: number | null = null;
+
+export interface IndexerStatus {
+  /** Persisted sweep cursor — the last block whose logs are definitely in. */
+  cursor: number;
+  /** Chain head as of the last successful read, or null before the first one. */
+  head: number | null;
+  /** Blocks behind. Null until a head is known; never negative. */
+  lag: number | null;
+  /** Unix seconds of that read. Stale ⇒ the RPC path is failing. */
+  headAt: number | null;
+}
+
+export function indexerStatus(): IndexerStatus {
+  const cursor = Number(getCursor() ?? config.deployBlock);
+  const head = lastHead === null ? null : Number(lastHead);
+  return {
+    cursor,
+    head,
+    lag: head === null ? null : Math.max(0, head - cursor),
+    headAt: lastHeadAt,
+  };
+}
+
 async function sweep(): Promise<void> {
   if (sweeping) return;
   sweeping = true;
   const epoch = resetEpoch;
   try {
     const head = await publicClient.getBlockNumber();
+    lastHead = head;
+    lastHeadAt = Math.floor(Date.now() / 1000);
     let from = (getCursor() ?? config.deployBlock - 1n) + 1n;
     while (from <= head) {
       const to = from + SWEEP_CHUNK > head ? head : from + SWEEP_CHUNK;
@@ -202,4 +241,8 @@ export async function resetIndexer(): Promise<void> {
   resetEpoch++;
   clearCache();
   setCursor(head);
+  // Same read the sweep records, so a reset does not leave /health reporting a
+  // lag against a head from before the cursor jumped.
+  lastHead = head;
+  lastHeadAt = Math.floor(Date.now() / 1000);
 }

@@ -571,7 +571,7 @@ let gadgetLine;
  * before going on stage. */
 const mark = (line) => (line.startsWith("⚠") ? line : `✓ ${line}`);
 
-console.log(`${mark(`dashboard cleared, indexer cursor → block ${health.indexerCursor} (chain ${health.chainId})`)}
+console.log(`${mark(`dashboard cleared, indexer cursor → block ${health.indexer.cursor} (chain ${health.chainId})`)}
 ${mark(payerLine)}
 ${mark(profileLine)}
 ${mark(walletLine)}${signerLine ? `\n${signerLine}` : ""}

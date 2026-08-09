@@ -13,12 +13,42 @@ import type { WireSpendAuthorization } from "./agentPolicy";
  * typed-data message, and x402's `exact` scheme carries them as strings.
  */
 
+/**
+ * Liveness, and only liveness: `ok` answers "is this process serving requests",
+ * which is the one question the route can answer without asking anyone else. It
+ * is deliberately not a verdict on the chain or the indexer — the deploy host
+ * polls this path and restarts on a failure, so folding an RPC outage into it
+ * would let a provider's bad minute wipe an instance whose SQLite cache (and
+ * with it every off-chain merchant profile) lives on disk.
+ *
+ * The diagnosis lives in `indexer` instead, where a human or a monitor can read
+ * it without anything acting on it.
+ */
 export interface HealthResponse {
   ok: boolean;
+  /**
+   * ISO-8601, and the one deliberate exception to this file's unix-seconds
+   * convention: every other timestamp here is consumed by a screen, while this
+   * one is read by whoever curls the endpoint. Not a precedent — `headAt` below
+   * follows the convention.
+   */
+  timestamp: string;
+  /** Process seconds. On a host that spins down when idle this is the first
+   * thing worth knowing: a small number means you just paid a cold start. */
+  uptime: number;
+  /** Which affordances this host has open. The backend classifies itself from
+   * NODE_ENV and FAILS OPEN on an unrecognised value, warning only at boot —
+   * so on a long-lived deployment this field is the only way left to check that
+   * `production` actually landed. */
+  hostClass: "demo" | "public";
   chainId: number;
-  block: number;
   relayer: Address;
-  indexerCursor: number;
+  indexer: {
+    cursor: number;
+    head: number | null;
+    lag: number | null;
+    headAt: number | null;
+  };
 }
 
 export interface MerchantResponse {
