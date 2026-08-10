@@ -53,6 +53,39 @@ export function sgdFromCapUnits(units: string | bigint, rate: bigint): string {
 }
 
 /** "Food & Beverage · Retail" — the human reading of a bitmap's decoded names. */
+/**
+ * The four fields `setPolicy` writes, as one comparable string.
+ *
+ * It exists to answer one question after a write: has the read caught up? The
+ * browser holds a MINED receipt for the policy it sent, so any read returning
+ * something else is behind — the backend's RPC provider is not the one the
+ * browser confirmed against, and a read issued a moment after the block is
+ * routinely served by a replica that has not seen it. Comparing fingerprints is
+ * how the screen tells "still catching up" from "this is what the chain holds",
+ * which are otherwise the same stale numbers.
+ *
+ * Only the four stored fields, deliberately: `spentToday` and the balance move
+ * on their own, so folding them in would make the expectation unsatisfiable.
+ */
+export function policyFingerprint(policy: {
+  dailyCap: bigint | string;
+  perTxCap: bigint | string;
+  expiry: number;
+  categoryBitmap: bigint | string;
+}): string {
+  return [policy.dailyCap, policy.perTxCap, policy.expiry, policy.categoryBitmap]
+    .map(String)
+    .join("|");
+}
+
+/** What `revoke()` leaves behind: the policy zeroed, expiry included. */
+export const REVOKED_FINGERPRINT = policyFingerprint({
+  dailyCap: 0n,
+  perTxCap: 0n,
+  expiry: 0,
+  categoryBitmap: 0n,
+});
+
 export function categoryLabels(names: readonly string[]): string {
   if (names.length === 0) return "None";
   const byName = new Map(

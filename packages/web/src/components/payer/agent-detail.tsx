@@ -11,11 +11,26 @@ import {
   type AgentStatus,
   type AgentSummary,
 } from "@gantry/shared";
-import { CapMeter, Card, Chip, Figure, KeyValue, KeyValueList, Money, Mono } from "@/components/primitives";
+import {
+  CapMeter,
+  Card,
+  Chip,
+  Figure,
+  KeyValue,
+  KeyValueList,
+  Money,
+  Mono,
+  useToast,
+} from "@/components/primitives";
 import { api } from "@/lib/api";
 import type { ActivityRow } from "./activity";
 import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
-import { categoryLabels, sgdFromCapUnits } from "./agent-rules";
+import {
+  categoryLabels,
+  policyFingerprint,
+  REVOKED_FINGERPRINT,
+  sgdFromCapUnits,
+} from "./agent-rules";
 import { calendarDate, relativeWhen, sgdUnits } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
@@ -35,9 +50,27 @@ export const STATUS_LABEL: Record<AgentStatus, string> = {
   revoked: "Revoked",
 };
 
+/** Sized like the payer store's balance watch, and for the identical reason: a
+ * replica behind by a block or two catches up in seconds, and anything still
+ * behind after this is not going to be fixed by asking again. */
+const FRESHNESS_ATTEMPTS = 6;
+const FRESHNESS_POLL_MS = 1_200;
+
 export function AgentDetail({ wallet }: { wallet: Address }) {
-  const { agents, agentName, chainNow, rows, refresh, popOverlay, pushOverlay } = usePayer();
+  const {
+    agents,
+    agentName,
+    agentExpectation,
+    settleAgentExpectation,
+    expectAgentPolicy,
+    chainNow,
+    rows,
+    refresh,
+    popOverlay,
+    pushOverlay,
+  } = usePayer();
   const { revoke } = useAgentWrites();
+  const toast = useToast();
 
   const listed = useMemo(
     () => (agents ?? []).find((a) => a.wallet.toLowerCase() === wallet.toLowerCase()),
@@ -62,15 +95,48 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   } | null>(null);
   const [confirming, setConfirming] = useState(false);
 
+  /**
+   * Read the wallet, and keep reading while it still shows the policy the payer
+   * just replaced.
+   *
+   * The plain single read is what made a policy update look like it did nothing:
+   * the browser confirms its own receipt against one provider and then asks the
+   * backend, which uses another, so the read that lands milliseconds later is
+   * routinely served by a replica without the block. The payer is returned to
+   * this screen showing the caps they just changed. Same lag the payer store's
+   * balance watch polls through, and the same discipline — bounded, and it stops
+   * the moment the figures actually move.
+   *
+   * `expected` is only ever set by a write THIS browser made and saw mined, so a
+   * mismatch is a stale read and never a disagreement about the chain.
+   */
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setReadError(null);
-    api
-      .agent(wallet)
-      .then((summary) => {
-        if (!cancelled) setFresh(summary);
-      })
-      .catch((err: unknown) => {
+
+    const read = async (attempt: number) => {
+      try {
+        const summary = await api.agent(wallet);
+        if (cancelled) return;
+        setFresh(summary);
+        setReadError(null);
+        const expected = agentExpectation(wallet);
+        if (!expected || policyFingerprint(summary) === expected) {
+          // Either nothing was pending, or the read caught up. Both end the wait.
+          if (expected) settleAgentExpectation(wallet);
+          return;
+        }
+        if (attempt + 1 >= FRESHNESS_ATTEMPTS) {
+          // Give up waiting, but keep rendering what the chain said — the write
+          // is mined either way, and a screen frozen on a spinner would be a
+          // worse answer than figures that are a moment behind.
+          console.warn(`gantry: ${wallet} still reads the previous policy after a confirmed write`);
+          settleAgentExpectation(wallet);
+          return;
+        }
+        timer = setTimeout(() => void read(attempt + 1), FRESHNESS_POLL_MS);
+      } catch (err) {
         // When the list has an entry this only costs freshness — but right
         // after creating a wallet the list has NOT caught up, and swallowing
         // this left the screen reading "Reading this agent's policy…" forever
@@ -78,10 +144,19 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         if (cancelled) return;
         console.warn(`gantry: agent read failed for ${wallet}`, err);
         setReadError(err instanceof Error ? err.message : String(err));
-      });
+        settleAgentExpectation(wallet);
+      }
+    };
+
+    void read(0);
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
+    // `agentExpectation` is read inside and deliberately NOT a dependency: it
+    // changes identity the moment this effect settles it, which would restart
+    // the very poll that just finished.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet, reloadNonce]);
 
   const agent = fresh ?? listed;
@@ -164,16 +239,16 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     }
 
     setConfirming(false);
+    toast.success("Agent revoked. Every payment it attempts now reverts.");
+    // The revoke is mined, so the zeroed policy is what the chain holds; a read
+    // that still shows the old caps is a replica behind, not a disagreement.
+    // Recorded before the re-read is triggered so the poll below can see it.
+    expectAgentPolicy(wallet, REVOKED_FINGERPRINT);
     refresh();
-    try {
-      setFresh(await api.agent(wallet));
-    } catch (err) {
-      console.warn(`gantry: agent re-read after a successful revoke failed for ${wallet}`, err);
-      setNotice({
-        tone: "sunken",
-        text: "Revoked on-chain. We couldn't re-read the wallet just afterwards, so the figures above may be a moment old.",
-      });
-    }
+    // Through the same effect as every other read, rather than a bare `api.agent`
+    // here: that one-shot read was itself the too-early one, and it landed
+    // beside a status chip that would then keep saying "Active".
+    setReloadNonce((n) => n + 1);
     setBusy(null);
   };
 
@@ -240,6 +315,15 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
                 ? "revoked"
                 : `${status === "lapsed" ? "expired " : ""}${calendarDate(agent.expiry)}`}
             </KeyValue>
+            {/* Absent when the bounded log scan did not reach a policy change —
+                the wallet stores no timestamp, so there is nothing to fall back
+                to and a guess about when someone's spending rules last moved is
+                worse than no line at all. */}
+            {agent.policyUpdatedAt !== null && (
+              <KeyValue label="Rules updated">
+                {relativeWhen(agent.policyUpdatedAt, chainNow())}
+              </KeyValue>
+            )}
             <KeyValue label="Signer" divider={false}>
               {shortAddress(agent.agentSigner)}
             </KeyValue>

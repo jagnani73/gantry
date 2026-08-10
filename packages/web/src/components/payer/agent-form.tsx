@@ -10,10 +10,16 @@ import {
   shortAddress,
   type AgentSummary,
 } from "@gantry/shared";
-import { Card, cn, Mono } from "@/components/primitives";
+import { Card, cn, Mono, useToast } from "@/components/primitives";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { capUnitsFromSgd, categoryBitmapOf, categoryIdsOf, sgdFromCapUnits } from "./agent-rules";
+import {
+  capUnitsFromSgd,
+  categoryBitmapOf,
+  categoryIdsOf,
+  policyFingerprint,
+  sgdFromCapUnits,
+} from "./agent-rules";
 import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
@@ -128,6 +134,7 @@ function AgentFormFields({
   const {
     agentName,
     setAgentName,
+    expectAgentPolicy,
     rate: chainRate,
     chainNow: clock,
     refresh,
@@ -135,6 +142,7 @@ function AgentFormFields({
     replaceOverlay,
   } = usePayer();
   const { createWallet, setPolicy, chainNow } = useAgentWrites();
+  const toast = useToast();
 
   const rate = existing ? BigInt(existing.rate) : chainRate;
 
@@ -214,7 +222,17 @@ function AgentFormFields({
         // for no change AND hand the agent a fresh daily allowance — after
         // editing only the display name, a field this form promises never
         // leaves the browser.
+        // Whether the tap changed anything at all, decided BEFORE the write —
+        // afterwards the stored name is the typed one and the comparison always
+        // says "unchanged".
+        const renamed = name.trim().length > 0 && name.trim() !== agentName(wallet);
         if (name.trim()) setAgentName(wallet, name.trim());
+        // Says which of the two happened. "Saved" over an unchanged policy would
+        // claim a write that deliberately did not happen, and silence over a
+        // rename looks like the form ignored the tap.
+        toast.success(
+          renamed ? "Name saved. It stays in this browser." : "No change — the rules already match.",
+        );
         popOverlay();
         return;
       }
@@ -236,6 +254,12 @@ function AgentFormFields({
         setBusy("Updating the policy on-chain…");
         await setPolicy(wallet, policy);
         if (name.trim()) setAgentName(wallet, name.trim());
+        toast.success("Rules updated on-chain.");
+        // What the chain now holds, recorded before anything re-reads it. The
+        // detail screen this returns to reads through the backend, whose RPC is
+        // not the provider that confirmed the receipt, so its first read can
+        // still answer with the policy that was just replaced.
+        expectAgentPolicy(wallet, policyFingerprint(policy));
         refresh();
         popOverlay();
         return;
@@ -259,6 +283,8 @@ function AgentFormFields({
       setBusy("Arming its spend policy…");
       await setPolicy(target, policy);
       if (name.trim()) setAgentName(target, name.trim());
+      toast.success("Agent created and its rules armed.");
+      expectAgentPolicy(target, policyFingerprint(policy));
       refresh();
       replaceOverlay({ kind: "agent", wallet: target });
     } catch (err) {

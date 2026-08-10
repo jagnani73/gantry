@@ -195,6 +195,116 @@ function factoryWallets(): Promise<CreatedWallet[]> {
   return scanning;
 }
 
+// ------------------------------------------------------- when a policy changed
+
+/**
+ * How far back a FIRST look goes: windows × `SCAN_CHUNK` blocks.
+ *
+ * Six windows is roughly seven hours of Base Sepolia. Deliberately shallow. The
+ * wallet stores no timestamp, so the only source is a log, and walking a wallet's
+ * whole history to date a display line would cost more RPC than every other field
+ * on the screen combined — on the endpoint CLAUDE.md records as the one actually
+ * carrying the correctness path. A policy older than the window reports null and
+ * the screen renders nothing, which is the honest answer: this is the field a
+ * payer would cite as "I changed my rules this morning", so a guess is worse than
+ * a blank.
+ */
+const POLICY_LOOKBACK_WINDOWS = 6;
+
+/** What a previous scan established, per lowercased wallet. */
+interface PolicyStamp {
+  /** Unix seconds of the newest policy log seen, or null if none was in range. */
+  at: number | null;
+  /** The head this was computed against. The next look only has to cover what
+   * has been mined since — which is what makes the write the payer just signed
+   * cheap to notice, and what stops a repeat visit re-walking the same hours. */
+  head: bigint;
+}
+const policyStamps = new Map<string, PolicyStamp>();
+
+/** Both writes count. `revoke()` is a policy change like any other, and dating a
+ * revoked wallet from the setPolicy before it would be actively misleading. */
+const POLICY_EVENTS = agentPbmWalletAbi.filter(
+  (entry): entry is Extract<(typeof agentPbmWalletAbi)[number], { type: "event" }> =>
+    entry.type === "event" && (entry.name === "PolicySet" || entry.name === "PolicyRevoked"),
+);
+
+/** Newest log in a window, by block then position within it. */
+async function newestLogTime(
+  wallet: Address,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<number | null> {
+  const logs = await publicClient.getLogs({ address: wallet, events: POLICY_EVENTS, fromBlock, toBlock });
+  const newest = logs.reduce<(typeof logs)[number] | null>((best, log) => {
+    if (!best) return log;
+    if (log.blockNumber !== best.blockNumber) return log.blockNumber > best.blockNumber ? log : best;
+    return log.logIndex > best.logIndex ? log : best;
+  }, null);
+  if (!newest) return null;
+  const block = await publicClient.getBlock({ blockNumber: newest.blockNumber });
+  return Number(block.timestamp);
+}
+
+/**
+ * When this wallet's policy last changed, or null.
+ *
+ * Two shapes, and the cache is what makes the cheap one the usual one. With no
+ * previous answer it walks BACKWARDS from the head a bounded number of windows
+ * and stops at the first that holds a log — so a wallet armed minutes ago costs
+ * one `getLogs`, and only a wallet whose policy predates the window pays the full
+ * six. With a previous answer it reads forward from that head, which is the few
+ * hundred blocks mined since and keeps a policy the payer just signed from
+ * looking unchanged.
+ *
+ * Never throws. Every other field on the screen is a live read of the policy
+ * itself, and losing the whole card because a log query was rate-limited would
+ * trade the rules for the date they were written.
+ */
+async function policyUpdatedAt(wallet: Address, head: bigint): Promise<number | null> {
+  const key = wallet.toLowerCase();
+  const cached = policyStamps.get(key);
+  try {
+    if (cached && cached.head <= head) {
+      // Forward, over what is new. `cached.head + 1` because that head was
+      // already covered; an unchanged policy costs exactly one empty getLogs.
+      const at = head > cached.head ? await newestLogTime(wallet, cached.head + 1n, head) : null;
+      const stamp: PolicyStamp = { at: at ?? cached.at, head };
+      policyStamps.set(key, stamp);
+      return stamp.at;
+    }
+    for (let i = 0; i < POLICY_LOOKBACK_WINDOWS; i++) {
+      const to = head - BigInt(i) * SCAN_CHUNK;
+      // Walked past the factory. Nothing below this block can hold a log from a
+      // wallet the factory had not deployed yet, and a window whose `from` was
+      // clamped above its `to` is an RPC error rather than an empty answer.
+      if (to < BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK) break;
+      // The factory deploy floors it: no wallet's logs can predate the contract
+      // that deployed it, and asking for negative blocks is an RPC error.
+      const from =
+        to - SCAN_CHUNK + 1n > BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK
+          ? to - SCAN_CHUNK + 1n
+          : BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK;
+      const at = await newestLogTime(wallet, from, to);
+      if (at !== null) {
+        policyStamps.set(key, { at, head });
+        return at;
+      }
+      if (from <= BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK) break;
+    }
+    // Nothing in range. Cached anyway, and as `null`: the answer is "not within
+    // the window", and re-walking those same six windows on every page load is
+    // exactly the cost this bound exists to refuse.
+    policyStamps.set(key, { at: null, head });
+    return null;
+  } catch (err) {
+    // Not cached — a throttled query is not evidence about the wallet, and
+    // remembering it as "no policy log" would make one bad minute permanent.
+    console.warn(`agents: policy-log scan failed for ${wallet}`, err);
+    return cached?.at ?? null;
+  }
+}
+
 // ---------------------------------------------------------------- chain reads
 
 /** A multicall entry, narrow enough to read without re-stating viem's generics. */
@@ -232,8 +342,11 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
   if (wallets.length === 0) return { agents: [], absent: [], unreadable: [] };
   const token = tokenAddress(config.addresses, SPEND_TOKEN);
 
-  const [rate, owners, signers, policies, spent, balances] = await Promise.all([
+  const [rate, head, owners, signers, policies, spent, balances] = await Promise.all([
     readRate(SPEND_TOKEN),
+    // One head for every wallet in this call, so two agents on one screen cannot
+    // be dated against different chain tips.
+    publicClient.getBlockNumber(),
     publicClient.multicall({
       allowFailure: true,
       contracts: wallets.map(
@@ -266,7 +379,7 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
     }),
   ]);
 
-  const agents: AgentSummary[] = [];
+  const readable: { wallet: Address; raw: Omit<RawAgentState, "policyUpdatedAt"> }[] = [];
   const failed: Address[] = [];
   const batches: readonly BatchResult[][] = [owners, signers, policies, spent, balances];
   wallets.forEach((wallet, i) => {
@@ -274,18 +387,30 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
       failed.push(wallet);
       return;
     }
-    const raw: RawAgentState = {
+    readable.push({
       wallet,
-      owner: owners[i]!.result as Address,
-      agentSigner: signers[i]!.result as Address,
-      policy: policies[i]!.result as readonly [bigint, bigint, number, bigint],
-      spentToday: spent[i]!.result as bigint,
-      balance: balances[i]!.result as bigint,
-      token: SPEND_TOKEN,
-      rate,
-    };
-    agents.push(toAgentSummary(raw));
+      raw: {
+        wallet,
+        owner: owners[i]!.result as Address,
+        agentSigner: signers[i]!.result as Address,
+        policy: policies[i]!.result as readonly [bigint, bigint, number, bigint],
+        spentToday: spent[i]!.result as bigint,
+        balance: balances[i]!.result as bigint,
+        token: SPEND_TOKEN,
+        rate,
+      },
+    });
   });
+
+  // Dated only for wallets that actually read. A log scan for a wallet whose
+  // policy could not be read would buy a timestamp for figures we are not going
+  // to render.
+  const stamps = await Promise.all(
+    readable.map((entry) => policyUpdatedAt(entry.wallet, head)),
+  );
+  const agents = readable.map((entry, i) =>
+    toAgentSummary({ ...entry.raw, policyUpdatedAt: stamps[i] ?? null }),
+  );
   return { agents, ...(await classifyFailures(failed)) };
 }
 

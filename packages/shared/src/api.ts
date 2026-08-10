@@ -258,6 +258,17 @@ export interface AgentSummary {
   rate: string;
   /** Derived: always `expiry === 0`. */
   revoked: boolean;
+  /**
+   * Unix seconds of the most recent `PolicySet`/`PolicyRevoked` log, or null.
+   *
+   * The wallet stores NO timestamp — the policy struct is four numbers and none
+   * of them is a clock — so this comes from a bounded backwards log scan and
+   * `null` means "not found within that window", never "never changed". Render
+   * nothing for null: a policy armed before the window is indistinguishable here
+   * from one armed at deploy, and a guess about when someone's spending rules
+   * last moved is worse than an absent line.
+   */
+  policyUpdatedAt: number | null;
 }
 
 /**

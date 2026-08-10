@@ -125,6 +125,27 @@ export interface PayerStore {
   agentName(wallet: Address): string | null;
   setAgentName(wallet: Address, name: string): void;
 
+  /**
+   * The policy fingerprint this browser WROTE and has not yet read back.
+   *
+   * `setPolicy` and `revoke` are confirmed by a mined receipt in the browser,
+   * and then read back through the backend — whose RPC provider is a different
+   * endpoint from the one the receipt was confirmed against. A read issued right
+   * after the block is routinely answered by a replica that has not seen it, so
+   * the payer is returned to a screen still showing the rules they just changed.
+   * That is indistinguishable from the write having done nothing.
+   *
+   * Holding the expectation here rather than in a screen is what lets it survive
+   * the overlay unmounting: the form writes it, and the detail screen that opens
+   * afterwards is a different component instance.
+   */
+  agentExpectation(wallet: Address): string | null;
+  /** Record what was just written. Cleared by `settleAgentExpectation`. */
+  expectAgentPolicy(wallet: Address, fingerprint: string): void;
+  /** Stop waiting: the read matched, or the wait was given up on. Both are
+   * "no longer expecting", and neither is a claim about the chain. */
+  settleAgentExpectation(wallet: Address): void;
+
   /** Re-reads everything, agent enumeration included. For a policy write. */
   refresh(): void;
   /** Re-reads only the settlement and denial pages. For a payment, which cannot
@@ -199,6 +220,7 @@ export function PayerProvider({
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
+  const [expectations, setExpectations] = useState<Record<string, string>>({});
   const [clockOffset, setClockOffset] = useState(0);
   const [nonce, setNonce] = useState(0);
   const [historyNonce, setHistoryNonce] = useState(0);
@@ -599,6 +621,32 @@ export function PayerProvider({
     [names],
   );
 
+  /* ── Freshness after a write the payer signed ───────────────────────────
+     Keyed by lowercased wallet, exactly like the name map: the address arrives
+     from a route segment, a chain read and a form, and only one of those is
+     reliably checksummed. */
+  const agentExpectation = useCallback(
+    (wallet: Address) => expectations[wallet.toLowerCase()] ?? null,
+    [expectations],
+  );
+
+  const expectAgentPolicy = useCallback((wallet: Address, fingerprint: string) => {
+    setExpectations((prev) => ({ ...prev, [wallet.toLowerCase()]: fingerprint }));
+  }, []);
+
+  const settleAgentExpectation = useCallback((wallet: Address) => {
+    setExpectations((prev) => {
+      const key = wallet.toLowerCase();
+      // Returning `prev` unchanged matters: this is called from a fetch effect,
+      // and a fresh object every time would re-run every consumer of the store
+      // on every poll.
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
   const setAgentName = useCallback((wallet: Address, name: string) => {
     setNames((prev) => {
       const next = { ...prev, [wallet.toLowerCase()]: name };
@@ -637,6 +685,9 @@ export function PayerProvider({
       retryMerchant,
       agentName,
       setAgentName,
+      agentExpectation,
+      expectAgentPolicy,
+      settleAgentExpectation,
       refresh,
       refreshHistory,
       refreshBalance,
@@ -668,6 +719,9 @@ export function PayerProvider({
       retryMerchant,
       agentName,
       setAgentName,
+      agentExpectation,
+      expectAgentPolicy,
+      settleAgentExpectation,
       refresh,
       refreshHistory,
       refreshBalance,

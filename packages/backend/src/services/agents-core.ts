@@ -21,6 +21,10 @@ export interface RawAgentState {
   token: TokenId;
   /** XSGD 6dp out per 1e6 token units — the OWNER-SET rate, not a market one. */
   rate: bigint;
+  /** Unix seconds of the last policy log, or null when the bounded scan did not
+   * reach one. Optional so a caller with no scan result is not forced to invent
+   * a value — it means the same thing either way: not known. */
+  policyUpdatedAt?: number | null;
 }
 
 /**
@@ -64,6 +68,10 @@ export function toAgentSummary(raw: RawAgentState): AgentSummary {
     // every spend with this still false, which is why a status badge must come
     // from agentStatus() and not from here.
     revoked: Number(expiry) === 0,
+    // Absent and null are the same answer — not known — and both must reach the
+    // client as null rather than as a missing key, because the field is what a
+    // screen branches on to decide whether to render the line at all.
+    policyUpdatedAt: raw.policyUpdatedAt ?? null,
   };
 }
 

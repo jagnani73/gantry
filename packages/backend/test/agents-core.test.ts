@@ -82,6 +82,19 @@ test("revoked is derived from expiry alone, and is not a status", () => {
   assert.equal(agentStatus(toAgentSummary(raw({ policy: [0n, 0n, 0, 0n] })), 1_700_000_000), "revoked");
 });
 
+test("an undated policy reports null, never a missing key or a guess", () => {
+  // The scan is bounded and allowed to come back empty, so "not known" is a
+  // normal answer. It has to reach the client as an explicit null: the screen
+  // branches on this field to decide whether to render the line at all, and an
+  // absent key would read as a policy that has never been changed.
+  const undated = toAgentSummary(raw());
+  assert.equal(undated.policyUpdatedAt, null);
+  assert.ok("policyUpdatedAt" in undated, "the key must be present even when unknown");
+
+  const dated = toAgentSummary({ ...raw(), policyUpdatedAt: 1_780_000_000 });
+  assert.equal(dated.policyUpdatedAt, 1_780_000_000);
+});
+
 test("expiry is the LAST allowed second, matching authorizeSpend", () => {
   const summary = toAgentSummary(raw({ policy: [1n, 1n, 5_000, FOOD] }));
   assert.equal(agentStatus(summary, 5_000), "active", "now === expiry still spends");
