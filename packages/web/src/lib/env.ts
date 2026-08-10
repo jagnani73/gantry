@@ -44,6 +44,22 @@ export function demoAccountEnabled(): boolean {
   return demoKey() !== undefined;
 }
 
+/**
+ * The key is SET and unusable — as opposed to deliberately absent.
+ *
+ * The two are indistinguishable from `demoKey()`, which returns `undefined` for
+ * both, and they need opposite words: one screen says "connect a wallet", which
+ * is a config error wearing an instruction the payer cannot act on. The console
+ * warning above is not enough on its own — it is one-shot and fires during an
+ * early render, so by the time anyone opens devtools it has usually scrolled
+ * away. And because `NEXT_PUBLIC_*` is inlined at build time, a deployed build
+ * cannot be fixed by fixing the value: it has to be rebuilt.
+ */
+export function demoKeyMalformed(): boolean {
+  const raw = process.env.NEXT_PUBLIC_DEMO_KEY;
+  return Boolean(raw) && raw !== "0" && demoKey() === undefined;
+}
+
 export function walletConnectProjectId(): string {
   return process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "gantry-dev-placeholder";
 }
