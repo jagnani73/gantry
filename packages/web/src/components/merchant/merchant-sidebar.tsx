@@ -31,7 +31,7 @@ export function MerchantSidebar() {
   const now = useNowSeconds();
 
   const today = rowsForToday(feed.rows, now);
-  const status = feedStatusOf(feed.connection, today.length);
+  const status = feedStatusOf(feed.connection);
 
   // Overview is scoped to today, Transactions is the whole book. Two counts,
   // because they answer different questions and a merchant reads both.

@@ -32,7 +32,7 @@ export function OverviewScreen() {
   const now = useNowSeconds();
 
   const today = rowsForToday(feed.rows, now);
-  const status = feedStatusOf(feed.connection, today.length);
+  const status = feedStatusOf(feed.connection);
   const totals = totalsOf(today, CARD_FEE_BPS);
   const partial = todayIsPartial(today.length, feed.rows.length, feed.hasMore);
 

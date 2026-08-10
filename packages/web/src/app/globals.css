@@ -44,7 +44,7 @@
   --color-danger: #9a4632; /* declined, revoke, disconnected */
   --color-danger-tint: #f5e7e2; /* declined chip, revoke button, error panel */
   --color-danger-deep: #7e3626; /* text inside a danger panel */
-  --color-warning: #9a7b2f; /* "Waiting" feed status */
+  --color-warning: #9a7b2f; /* "Connecting…" feed status, unresolved-payment glyph */
 
   /* Beyond the handoff's table: values the prototypes use for hover and idle
      states. They are tokens for the same reason the rest are — a pressed keypad

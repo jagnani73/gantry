@@ -4,7 +4,7 @@ import { cn } from "./cn";
 /**
  * Connection and liveness, as a dot.
  *
- * The three tones map to the merchant feed's three states — live / waiting /
+ * The three tones map to the merchant feed's three states — live / connecting /
  * disconnected — and the dot never travels without its label, because a colour
  * alone cannot say "payments are still settling, this screen just cannot see
  * them".
