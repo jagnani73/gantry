@@ -38,22 +38,15 @@ export const IDEA = [
   { n: "03", text: "One contract consumes both, so a hawker and an API get paid the same way." },
 ] as const;
 
-export const WHY = [
-  {
-    title: "PayNow needs a Singapore bank account",
-    // "Benchmarked here" rather than a flat "cards cost 2.8%": CARD_FEE_BPS is
-    // this project's comparison rate, not a claim about the card industry.
-    body: `The ~16M visitors who arrive each year have none. They fall back to cards (benchmarked here at ${CARD_FEE_LABEL} in merchant fees) or to cash.`,
-  },
-  {
-    title: "AI agents can't open bank accounts at all",
-    body: "x402 gives them a standard way to pay. Gantry gives them somewhere to spend it.",
-  },
-  {
-    title: "Agent spending stays inside on-chain allowances",
-    body: "Daily caps, category allowlists, expiry: Purpose-Bound Money, applied to software. Denials are contract reverts, not backend checks.",
-  },
-] as const;
+/*
+ * `WHY` lived here: three cards headed "Why this, and why here", covering
+ * PayNow's tourist gap, the agent gap, and on-chain spend allowances. It was
+ * removed when the coverage panel landed, because the first two said exactly
+ * what the Euler diagram and the rail list say, about 400px apart on the same
+ * page. The third had no equivalent and survives on the Gantry rail in
+ * `coverage-diagram.tsx`, along with the x402 point from the second. Do not
+ * reinstate this block without checking that the panel does not already say it.
+ */
 
 /**
  * The seams, named individually rather than as one paragraph.

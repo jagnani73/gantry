@@ -20,10 +20,16 @@ export function LandingHeader() {
         <span className="text-card-title-sm">Gantry</span>
       </div>
       <nav className="flex items-center gap-4 sm:gap-6.5">
-        {/* Dropped below 640px: the wordmark plus three links does not fit a 375px
-            phone, and both anchors only jump to a section one scroll away. */}
+        {/* Dropped below 640px: the wordmark plus four links does not fit a 375px
+            phone, and every anchor only jumps to a section one scroll away.
+            Each label is a literal prefix of the heading it lands on — a nav that
+            promises a word the destination never says reads as a broken link
+            even when the scroll works. */}
         <a className={cn(NAV_LINK, "hidden sm:inline")} href="#how-it-works">
           How it works
+        </a>
+        <a className={cn(NAV_LINK, "hidden sm:inline")} href="#who-can-pay">
+          Who can pay
         </a>
         <a className={cn(NAV_LINK, "hidden sm:inline")} href="#contracts">
           Contracts
