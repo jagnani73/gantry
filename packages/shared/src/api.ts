@@ -259,16 +259,25 @@ export interface AgentSummary {
   /** Derived: always `expiry === 0`. */
   revoked: boolean;
   /**
-   * Unix seconds of the most recent `PolicySet`/`PolicyRevoked` log, or null.
+   * Unix seconds at which the policy was last written — by `setPolicy` OR
+   * `revoke`, which share one internal path. `0` means never armed.
    *
-   * The wallet stores NO timestamp — the policy struct is four numbers and none
-   * of them is a clock — so this comes from a bounded backwards log scan and
-   * `null` means "not found within that window", never "never changed". Render
-   * nothing for null: a policy armed before the window is indistinguishable here
-   * from one armed at deploy, and a guess about when someone's spending rules
-   * last moved is worse than an absent line.
+   * A plain storage read since the 10 Aug 2026 factory redeploy. It was briefly
+   * a bounded backwards log scan (the wallet stored no timestamp), which could
+   * only answer for policies inside the window it searched; on-chain it is exact
+   * and free — the `uint40` packs into a slot the wallet already had.
    */
-  policyUpdatedAt: number | null;
+  policyUpdatedAt: number;
+  /**
+   * The owner's display name for the wallet, or "" when unnamed.
+   *
+   * On-chain since 10 Aug 2026, set at creation and changed with `setLabel`.
+   * Display only — nothing enforces or reads it — so it may be empty and every
+   * screen falls back to the short address. Being on-chain, it is PUBLIC and
+   * owner-supplied: treat it as untrusted text wherever a wallet someone else
+   * owns can be rendered.
+   */
+  label: string;
 }
 
 /**

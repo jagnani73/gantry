@@ -40,7 +40,7 @@ funding is capped rather than closed.
 - [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0))
 - [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` via the bridge AND the non-custodial `gantry-pbm` scheme; unmodified `@x402/fetch` still pays end-to-end)
-- [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E))
+- [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents, minted per payer by a [permissionless factory](https://sepolia.basescan.org/address/0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05)
 - [x] Stablecoin-in → XSGD-out atomic FX behind the `IGantrySwap` seam — shipping on `FixedRateSwap`, which accepts any token with an owner-listed rate (USDC today). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
 - [x] Merchant onboarding — one form, live handle availability, on-chain registration, printable QR (`/onboard`)
 - [x] Merchant back-office — an overview with the live feed, transactions, payouts, QR/standee, profile and settings, with a live SSE feed carrying Human/Agent badges and one feed for both doors
@@ -54,10 +54,11 @@ funding is capped rather than closed.
 | [`GantryCore`](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0) | `0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0` |
 | [`FixedRateSwap`](https://sepolia.basescan.org/address/0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713) | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
 | [`MockXSGD`](https://sepolia.basescan.org/address/0xd583FaB0Db5c543f5574780f8b899AEb74463361) | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
-| [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0x172905F26F09b41636854338360315971240c1cf) | `0x172905F26F09b41636854338360315971240c1cf` |
-| [`AgentPBMWallet` (historical demo)](https://sepolia.basescan.org/address/0xDD4bbed78B64715288bf10fabB2b62c659299D3E) | `0xDD4bbed78B64715288bf10fabB2b62c659299D3E` |
+| [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05) | `0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05` |
 
-The factory is permissionless: agent wallets are created *by the payer*, from the payer's own key, so their addresses are not constants. The wallet in the table is the original one the deploy script created with the relayer as owner — kept for reference, not resolved by anything in the read path.
+The factory is permissionless: agent wallets are created *by the payer*, from the payer's own key, so their addresses are not constants — there is no wallet worth pinning here.
+
+It was redeployed on 10 Aug 2026, when `AgentPBMWallet` gained an owner-set `label` and a `policyUpdatedAt` stamp. Wallets from the [previous factory](https://sepolia.basescan.org/address/0x172905F26F09b41636854338360315971240c1cf) still hold their funds and still enforce their policy on-chain; they are simply not enumerated, because the read path finds wallets through the current factory's `WalletCreated` logs.
 
 The pay token is Circle's real testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settled against live, and fork-tested too. Demo merchants `ah-hock-chicken-rice` (food & beverage) and `gadgethub-sg` (electronics — the rejection beat) are registered on-chain.
 

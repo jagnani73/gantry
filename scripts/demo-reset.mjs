@@ -258,6 +258,10 @@ const PAYER_USDC_FLOOR = 4_000_000n;
  * contract deployment) plus a couple of `setPolicy` calls gets tight. */
 const PAYER_ETH_FLOOR = 1_000_000_000_000_000n;
 
+/** The rehearsal wallet's on-chain name. Must fit `AgentPBMWallet`'s 31-BYTE
+ * label bound — 11 ASCII bytes here, with plenty of room. */
+const DEMO_AGENT_LABEL = "Kopi Runner";
+
 async function payerBalances() {
   const [eth, usdc] = await Promise.all([
     publicClient.getBalance({ address: payer.address }),
@@ -377,7 +381,10 @@ let armed = null;
         address: BASE_SEPOLIA_ADDRESSES.agentPbmFactory,
         abi: agentPbmWalletFactoryAbi,
         functionName: "createWallet",
-        args: [agentSigner],
+        // The label is on-chain and set at creation, so the rehearsal wallet
+        // arrives already named — the agents screen reads "Kopi Runner" rather
+        // than a hex address, with no second transaction and nothing to type.
+        args: [agentSigner, DEMO_AGENT_LABEL],
       });
       // The address comes from the LOG, not from the simulation's return value:
       // the factory uses CREATE, so the address depends on the factory's nonce

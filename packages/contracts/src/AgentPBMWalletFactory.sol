@@ -23,8 +23,14 @@ contract AgentPBMWalletFactory {
 
     /// @notice Deploys a wallet owned by the caller. The agentSigner zero-check lives in
     ///         the wallet constructor and bubbles up as the same ZeroAddress selector.
-    function createWallet(address agentSigner) external returns (address wallet) {
-        wallet = address(new AgentPBMWallet(msg.sender, agentSigner, CORE));
+    /// @param label The owner's display name for the wallet; may be empty. Taken here so
+    ///        naming an agent costs no transaction of its own — creating and arming one
+    ///        stays two, and the label rides in the first.
+    /// @dev   Deliberately NOT added to WalletCreated. A label is mutable, so a creation
+    ///        log would be a record of what it was called once; enumeration reads the
+    ///        live `label()` for the same reason it reads live `owner()`/`agentSigner()`.
+    function createWallet(address agentSigner, string calldata label) external returns (address wallet) {
+        wallet = address(new AgentPBMWallet(msg.sender, agentSigner, CORE, label));
         _walletsOf[msg.sender].push(wallet);
         emit WalletCreated(msg.sender, agentSigner, wallet);
     }

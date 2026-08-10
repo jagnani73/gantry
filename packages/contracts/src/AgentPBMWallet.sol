@@ -56,6 +56,25 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
     uint64 private _lastSpendDay;
     uint128 private _spentToday;
 
+    /// @notice When the policy was last written — set by setPolicy AND revoke. 0 means a
+    ///         wallet whose policy has never been armed.
+    /// @dev    Declared HERE rather than beside `policy` so it packs into the slot above:
+    ///         64 + 128 + 40 = 232 bits. A struct member variable owns whole slots, so
+    ///         adding this to Policy would cost a slot AND put a field in the setter's
+    ///         calldata that the contract only overwrites. It exists because the answer
+    ///         has no other cheap source: the client alternative is a backwards getLogs
+    ///         walk per wallet, bounded, on a rate-limited endpoint, that still cannot
+    ///         answer for a policy older than the window it searched.
+    uint40 public policyUpdatedAt;
+
+    /// @notice The owner's private label for this wallet ("Kopi Runner"). Display only —
+    ///         nothing on-chain reads it, and it may be empty, in which case every screen
+    ///         falls back to the short address.
+    /// @dev    NOT called `name`: DOMAIN_SEPARATOR() hashes the literal "AgentPBMWallet",
+    ///         and a name() getter beside it invites someone to wire the two together —
+    ///         at which point every agent signature dies the moment an owner renames.
+    string public label;
+
     bytes32 internal constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     // Canonical EIP-712 encoding — no spaces. The TypeScript builder in packages/shared
@@ -76,12 +95,14 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
     error InsufficientWalletBalance(uint256 balance, uint256 needed);
     error Reentrancy();
     error OwnershipCannotBeRenounced();
+    error LabelTooLong(uint256 length);
 
     // ---------------------------------------------------------------- events
 
     event PolicySet(uint128 dailyCap, uint128 perTxCap, uint40 expiry, uint256 categoryBitmap);
     event PolicyRevoked();
     event AgentSignerUpdated(address agentSigner);
+    event LabelSet(string label);
     /// @dev spentTodayAfter lets the dashboard's cap meter be a dumb read — no client-side
     ///      replication of day-bucket or setPolicy resets.
     event SpendAuthorized(bytes32 indexed intentId, address indexed token, uint256 amount, uint256 spentTodayAfter);
@@ -108,10 +129,14 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
 
     // ---------------------------------------------------------------- setup
 
-    constructor(address owner_, address agentSigner_, address core_) Ownable(owner_) {
+    /// @dev `label_` may be empty — an agent does not need a name to be armed, and
+    ///      requiring one would put a display field in front of the two transactions that
+    ///      actually create and arm the wallet.
+    constructor(address owner_, address agentSigner_, address core_, string memory label_) Ownable(owner_) {
         if (agentSigner_ == address(0) || core_ == address(0)) revert ZeroAddress();
         agentSigner = agentSigner_;
         CORE = core_;
+        _setLabel(label_);
     }
 
     // ---------------------------------------------------------------- spend authorization
@@ -178,6 +203,12 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
         emit PolicyRevoked();
     }
 
+    /// @notice Renames the wallet. Display only — no spend behaviour changes, and the
+    ///         daily counter is untouched (unlike setPolicy, which resets it).
+    function setLabel(string calldata newLabel) external onlyOwner {
+        _setLabel(newLabel);
+    }
+
     /// @notice Rotates the agent's session key. Does not reset the daily spend counter —
     ///         a new key does not buy a fresh budget.
     function setAgentSigner(address newSigner) external onlyOwner {
@@ -223,7 +254,23 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
         // forge-lint: disable-next-line(unsafe-typecast)
         _lastSpendDay = uint64(block.timestamp / 1 days);
         _spentToday = 0;
+        // The one choke point both setPolicy and revoke pass through, which is what makes
+        // this the whole answer: a revoked wallet dates from its revoke, not from the
+        // arming before it.
+        // casting to 'uint40' is safe: uint40 seconds overflows in the year 36812
+        // forge-lint: disable-next-line(unsafe-typecast)
+        policyUpdatedAt = uint40(block.timestamp);
         emit PolicySet(newPolicy.dailyCap, newPolicy.perTxCap, newPolicy.expiry, newPolicy.categoryBitmap);
+    }
+
+    /// @dev 31 BYTES, not 31 characters — the contract counts bytes, so a label of emoji
+    ///      runs out four times faster than one of ASCII and any client-side counter must
+    ///      count the same way. 31 is where a Solidity string still lives inline in its
+    ///      own slot; this is a nickname, not a bio.
+    function _setLabel(string memory newLabel) private {
+        if (bytes(newLabel).length > 31) revert LabelTooLong(bytes(newLabel).length);
+        label = newLabel;
+        emit LabelSet(newLabel);
     }
 
     function _verifySignature(address signer, bytes32 structHash, uint8 v, bytes32 r, bytes32 s) internal view {

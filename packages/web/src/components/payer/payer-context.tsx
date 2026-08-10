@@ -122,8 +122,16 @@ export interface PayerStore {
    * pay a shop whose DISPLAY record it could not read. */
   retryMerchant(handle: string): void;
 
+  /**
+   * The wallet's on-chain label, or null when it has none.
+   *
+   * It was a localStorage map until 10 Aug 2026, which meant a name typed on the
+   * laptop was invisible on the phone — and on a build where every visitor shares
+   * one demo key, that is the same payer looking at the same wallet under two
+   * different names. `AgentPBMWallet.label` is the single source now; renaming is
+   * an owner transaction like every other change to a wallet.
+   */
   agentName(wallet: Address): string | null;
-  setAgentName(wallet: Address, name: string): void;
 
   /**
    * The policy fingerprint this browser WROTE and has not yet read back.
@@ -174,8 +182,6 @@ export function usePayer(): PayerStore {
   return store;
 }
 
-const AGENT_NAMES_KEY = "gantry.agent.names";
-
 /** Newest page only. The design has no "load older" control, and 100 rows is
  * well past what a demo wallet accumulates — paging is an easy addition later,
  * every row already carries the cursor it would need. */
@@ -219,7 +225,6 @@ export function PayerProvider({
   const [balanceWatch, setBalanceWatch] = useState<BalanceWatch>("idle");
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
-  const [names, setNames] = useState<Record<string, string>>({});
   const [expectations, setExpectations] = useState<Record<string, string>>({});
   const [clockOffset, setClockOffset] = useState(0);
   const [nonce, setNonce] = useState(0);
@@ -604,27 +609,23 @@ export function PayerProvider({
   );
 
   /* ── Agent display names ────────────────────────────────────────────────
-     "Kopi Runner" is the payer's private label for a wallet they own, so it is
-     kept in this browser and nowhere else — no table, no endpoint, and no
-     question about who is allowed to rename someone's agent. */
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(AGENT_NAMES_KEY);
-      if (raw) setNames(JSON.parse(raw) as Record<string, string>);
-    } catch {
-      // A corrupted or unreadable map costs a nickname, nothing more.
-    }
-  }, []);
+     Read off the wallet itself. It used to be a localStorage map, which put the
+     name in the one place the wallet is not: a rename on the laptop never
+     reached the phone, and on a build where every visitor shares one demo key
+     that is the same payer seeing one wallet under two names.
 
+     Empty is not a name. The contract lets a label be "", so `||` and not `??` —
+     otherwise an unnamed wallet renders as a blank row rather than falling back
+     to its address. */
   const agentName = useCallback(
-    (wallet: Address) => names[wallet.toLowerCase()] ?? null,
-    [names],
+    (wallet: Address) =>
+      (agents ?? []).find((a) => a.wallet.toLowerCase() === wallet.toLowerCase())?.label || null,
+    [agents],
   );
 
   /* ── Freshness after a write the payer signed ───────────────────────────
-     Keyed by lowercased wallet, exactly like the name map: the address arrives
-     from a route segment, a chain read and a form, and only one of those is
-     reliably checksummed. */
+     Keyed by lowercased wallet: the address arrives from a route segment, a
+     chain read and a form, and only one of those is reliably checksummed. */
   const agentExpectation = useCallback(
     (wallet: Address) => expectations[wallet.toLowerCase()] ?? null,
     [expectations],
@@ -643,21 +644,6 @@ export function PayerProvider({
       if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
       const next = { ...prev };
       delete next[key];
-      return next;
-    });
-  }, []);
-
-  const setAgentName = useCallback((wallet: Address, name: string) => {
-    setNames((prev) => {
-      const next = { ...prev, [wallet.toLowerCase()]: name };
-      try {
-        // Written inside the updater so the stored map and the rendered one can
-        // never disagree. Idempotent, which is what makes that safe under
-        // StrictMode's double invocation.
-        window.localStorage.setItem(AGENT_NAMES_KEY, JSON.stringify(next));
-      } catch {
-        // Private mode: the name lives for this session and that is fine.
-      }
       return next;
     });
   }, []);
@@ -684,7 +670,6 @@ export function PayerProvider({
       merchantError,
       retryMerchant,
       agentName,
-      setAgentName,
       agentExpectation,
       expectAgentPolicy,
       settleAgentExpectation,
@@ -718,7 +703,6 @@ export function PayerProvider({
       merchantError,
       retryMerchant,
       agentName,
-      setAgentName,
       agentExpectation,
       expectAgentPolicy,
       settleAgentExpectation,

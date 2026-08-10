@@ -26,7 +26,7 @@ contract AgentPBMWalletFactoryTest is Test {
         vm.expectEmit(true, true, true, true, address(factory));
         emit AgentPBMWalletFactory.WalletCreated(alice, agent, predicted);
         vm.prank(alice);
-        address wallet = factory.createWallet(agent);
+        address wallet = factory.createWallet(agent, "");
 
         assertEq(wallet, predicted);
         assertEq(AgentPBMWallet(wallet).owner(), alice);
@@ -36,9 +36,9 @@ contract AgentPBMWalletFactoryTest is Test {
 
     function test_createWallet_indexesByOwner() public {
         vm.prank(alice);
-        address w1 = factory.createWallet(agent);
+        address w1 = factory.createWallet(agent, "");
         vm.prank(alice);
-        address w2 = factory.createWallet(makeAddr("agent2"));
+        address w2 = factory.createWallet(makeAddr("agent2"), "");
 
         address[] memory wallets = factory.walletsOf(alice);
         assertEq(wallets.length, 2);
@@ -49,7 +49,7 @@ contract AgentPBMWalletFactoryTest is Test {
 
     function test_factoryWallet_ownerIsCallerNotFactory() public {
         vm.prank(alice);
-        AgentPBMWallet wallet = AgentPBMWallet(factory.createWallet(agent));
+        AgentPBMWallet wallet = AgentPBMWallet(factory.createWallet(agent, ""));
         // Ownable must wire to the human caller — a factory-owned wallet would strand
         // every owner operation behind a contract with no admin surface.
         assertEq(wallet.owner(), alice);
@@ -60,7 +60,7 @@ contract AgentPBMWalletFactoryTest is Test {
         // Bubbles from the wallet constructor — same ZeroAddress selector either way.
         vm.expectRevert(AgentPBMWallet.ZeroAddress.selector);
         vm.prank(alice);
-        factory.createWallet(address(0));
+        factory.createWallet(address(0), "");
     }
 
     function test_revert_constructor_zeroCore() public {

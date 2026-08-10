@@ -32,6 +32,11 @@ export const agentPbmWalletFactoryAbi = [
         "name": "agentSigner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "label",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [

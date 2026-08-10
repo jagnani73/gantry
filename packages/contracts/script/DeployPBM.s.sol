@@ -71,7 +71,7 @@ contract DeployPBM is Script {
 
         vm.startBroadcast(pk);
         AgentPBMWalletFactory factory = new AgentPBMWalletFactory(address(core));
-        AgentPBMWallet wallet = AgentPBMWallet(factory.createWallet(agentSigner)); // owner = deployer = relayer key
+        AgentPBMWallet wallet = AgentPBMWallet(factory.createWallet(agentSigner, "")); // owner = deployer = relayer key
         wallet.setPolicy(
             AgentPBMWallet.Policy({
                 dailyCap: DAILY_CAP_USDC,

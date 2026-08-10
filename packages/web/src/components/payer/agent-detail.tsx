@@ -25,12 +25,7 @@ import {
 import { api } from "@/lib/api";
 import type { ActivityRow } from "./activity";
 import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
-import {
-  categoryLabels,
-  policyFingerprint,
-  REVOKED_FINGERPRINT,
-  sgdFromCapUnits,
-} from "./agent-rules";
+import { categoryLabels, policyFingerprint, revokedFingerprint, sgdFromCapUnits } from "./agent-rules";
 import { calendarDate, relativeWhen, sgdUnits } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
@@ -160,7 +155,10 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   }, [wallet, reloadNonce]);
 
   const agent = fresh ?? listed;
-  const name = agentName(wallet) ?? shortAddress(wallet);
+  // The wallet's own label wins over the list's: this screen's read is the newer
+  // of the two. `||` and not `??` — the contract lets a label be "", and an empty
+  // string is not a name.
+  const name = agent?.label || agentName(wallet) || shortAddress(wallet);
 
   /**
    * The rules on screen are the ones the payer just replaced.
@@ -270,7 +268,9 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     // The revoke is mined, so the zeroed policy is what the chain holds; a read
     // that still shows the old caps is a replica behind, not a disagreement.
     // Recorded before the re-read is triggered so the poll below can see it.
-    expectAgentPolicy(wallet, REVOKED_FINGERPRINT);
+    // The wallet keeps its label through a revoke, so the expectation carries the
+    // one already on-chain rather than claiming the name went too.
+    expectAgentPolicy(wallet, revokedFingerprint(agent.label));
     refresh();
     // Through the same effect as every other read, rather than a bare `api.agent`
     // here: that one-shot read was itself the too-early one, and it landed
@@ -342,11 +342,10 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
                 ? "revoked"
                 : `${status === "lapsed" ? "expired " : ""}${calendarDate(agent.expiry)}`}
             </KeyValue>
-            {/* Absent when the bounded log scan did not reach a policy change —
-                the wallet stores no timestamp, so there is nothing to fall back
-                to and a guess about when someone's spending rules last moved is
-                worse than no line at all. */}
-            {agent.policyUpdatedAt !== null && (
+            {/* 0 is a wallet whose policy has never been armed — and also what a
+                wallet from the pre-10-Aug factory reports, since it has no such
+                getter. Neither has a date to show, so neither gets a line. */}
+            {agent.policyUpdatedAt > 0 && (
               <KeyValue label="Rules updated">
                 {relativeWhen(agent.policyUpdatedAt, chainNow())}
               </KeyValue>

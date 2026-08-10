@@ -63,7 +63,7 @@ contract PbmWalletForkTest is Test {
         merchantId = core.registerMerchant("ah-hock-chicken-rice", payout, 1);
 
         factory = new AgentPBMWalletFactory(address(core));
-        wallet = AgentPBMWallet(factory.createWallet(agent)); // this test contract owns it
+        wallet = AgentPBMWallet(factory.createWallet(agent, "")); // this test contract owns it
         wallet.setPolicy(
             AgentPBMWallet.Policy({
                 dailyCap: DEMO_CAP_USDC,

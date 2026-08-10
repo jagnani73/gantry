@@ -222,9 +222,17 @@ function rethrowWithWriteContext(
 
 export interface AgentWrites {
   /** Creates the wallet through the permissionless factory and returns the
-   * address the `WalletCreated` log reports — never the simulated one. */
-  createWallet(agentSigner: Address): Promise<{ wallet: Address; txHash: Hex }>;
+   * address the `WalletCreated` log reports — never the simulated one.
+   *
+   * `label` rides in this transaction rather than a `setLabel` after it, so
+   * naming an agent at creation costs nothing: creating and arming stay two
+   * transactions. It may be empty. */
+  createWallet(agentSigner: Address, label: string): Promise<{ wallet: Address; txHash: Hex }>;
   setPolicy(wallet: Address, policy: WalletPolicy): Promise<Hex>;
+  /** Renames an EXISTING wallet — its own transaction, since the label lives
+   * on-chain and `setPolicy` deliberately does not carry it (that call resets
+   * the daily counter, and a rename must never cost the agent its budget). */
+  setLabel(wallet: Address, label: string): Promise<Hex>;
   revoke(wallet: Address): Promise<Hex>;
   /** Chain seconds. `setPolicy` expiries and status badges both need it. */
   chainNow(): Promise<number>;
@@ -386,24 +394,25 @@ export function useAgentWrites(): AgentWrites {
   );
 
   const createWallet = useCallback(
-    async (agentSigner: Address) => {
+    async (agentSigner: Address, label: string) => {
       const { client, gasRefusal } = await signer();
       if (!publicClient) throw new Error(RPC_MISSING);
       try {
+        const args = [agentSigner, label] as const;
         // Simulate first, as everything that sends in this repo does: a policy or
         // wiring revert surfaces as a decodable error instead of a burnt tx.
         await publicClient.simulateContract({
           address: BASE_SEPOLIA_ADDRESSES.agentPbmFactory,
           abi: agentPbmWalletFactoryAbi,
           functionName: "createWallet",
-          args: [agentSigner],
+          args,
           account: client.account,
         });
         const txHash = await client.writeContract({
           address: BASE_SEPOLIA_ADDRESSES.agentPbmFactory,
           abi: agentPbmWalletFactoryAbi,
           functionName: "createWallet",
-          args: [agentSigner],
+          args,
           account: client.account,
           chain: baseSepolia,
         });
@@ -480,6 +489,36 @@ export function useAgentWrites(): AgentWrites {
     [confirm, publicClient, signer],
   );
 
+  const setLabel = useCallback(
+    async (wallet: Address, label: string) => {
+      const { client, gasRefusal } = await signer();
+      if (!publicClient) throw new Error(RPC_MISSING);
+      try {
+        const args = [label] as const;
+        await publicClient.simulateContract({
+          address: wallet,
+          abi: agentPbmWalletAbi,
+          functionName: "setLabel",
+          args,
+          account: client.account,
+        });
+        const txHash = await client.writeContract({
+          address: wallet,
+          abi: agentPbmWalletAbi,
+          functionName: "setLabel",
+          args,
+          account: client.account,
+          chain: baseSepolia,
+        });
+        await confirm("setLabel", txHash);
+        return txHash;
+      } catch (err) {
+        rethrowWithWriteContext(err, gasRefusal, client.account.type === "local");
+      }
+    },
+    [confirm, publicClient, signer],
+  );
+
   const revoke = useCallback(
     async (wallet: Address) => {
       const { client, gasRefusal } = await signer();
@@ -507,5 +546,5 @@ export function useAgentWrites(): AgentWrites {
     [confirm, publicClient, signer],
   );
 
-  return { createWallet, setPolicy, revoke, chainNow };
+  return { createWallet, setPolicy, setLabel, revoke, chainNow };
 }

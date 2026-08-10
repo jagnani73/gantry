@@ -17,6 +17,8 @@ import {
   capUnitsFromSgd,
   categoryBitmapOf,
   categoryIdsOf,
+  labelByteLength,
+  LABEL_MAX_BYTES,
   policyFingerprint,
   sgdFromCapUnits,
 } from "./agent-rules";
@@ -132,8 +134,6 @@ function AgentFormFields({
   existing: AgentSummary | undefined;
 }) {
   const {
-    agentName,
-    setAgentName,
     expectAgentPolicy,
     rate: chainRate,
     chainNow: clock,
@@ -141,7 +141,7 @@ function AgentFormFields({
     popOverlay,
     replaceOverlay,
   } = usePayer();
-  const { createWallet, setPolicy, chainNow } = useAgentWrites();
+  const { createWallet, setPolicy, setLabel, chainNow } = useAgentWrites();
   const toast = useToast();
 
   const rate = existing ? BigInt(existing.rate) : chainRate;
@@ -156,7 +156,9 @@ function AgentFormFields({
    * the form to add a category cannot quietly move the date. */
   const preservedExpiry = existing && existing.expiry > openedAt ? existing.expiry : null;
 
-  const [name, setName] = useState(() => (wallet ? (agentName(wallet) ?? "") : ""));
+  // From the wallet, not from this browser: the label is on-chain, so the form
+  // must prefill from the same place `setLabel` will write.
+  const [name, setName] = useState(() => existing?.label ?? "");
   const [signer, setSigner] = useState(existing?.agentSigner ?? "");
   const [dailyCap, setDailyCap] = useState(() =>
     existing && rate ? sgdFromCapUnits(existing.dailyCap, rate) : "50.00",
@@ -186,13 +188,19 @@ function AgentFormFields({
    * see `UnknownOutcomeError`. */
   const [unresolved, setUnresolved] = useState<{ text: string; txHash: Hex } | null>(null);
 
-  const problem = validate({ wallet, signer, dailyCap, perTxCap, categories, days, rate });
+  const problem = validate({ wallet, signer, name, dailyCap, perTxCap, categories, days, rate });
 
   const expiryUnchanged = preservedExpiry !== null && days === initialDays;
-  /** Every field the CONTRACT stores is identical to what it already holds, so
-   * there is nothing to write. Compared in contract units, not in S$, because
-   * that is what `setPolicy` will be handed. */
-  const writesNothing =
+  /** Every field of the POLICY is identical to what the wallet already holds, so
+   * `setPolicy` has nothing to write. Compared in contract units, not in S$,
+   * because that is what it will be handed.
+   *
+   * The label is NOT part of this. It is a separate transaction (`setLabel`
+   * does not touch the policy, and `setPolicy` deliberately does not carry the
+   * name — that call resets the daily counter, and a rename must never cost the
+   * agent its budget), so the two "did anything change" questions are separate
+   * and a save may send one, both, or neither. */
+  const policyUnchanged =
     existing !== undefined &&
     problem === null &&
     rate !== null &&
@@ -201,11 +209,15 @@ function AgentFormFields({
     capUnitsFromSgd(perTxCap.trim(), rate) === BigInt(existing.perTxCap) &&
     categoryBitmapOf(categories) === BigInt(existing.categoryBitmap);
 
+  const labelUnchanged = existing !== undefined && name.trim() === existing.label;
+  const writesNothing = policyUnchanged && labelUnchanged;
+
   // `setPolicy` zeroes `_spentToday`. That is deliberate — it is what makes the
   // rehearsal re-arm work — but it is also an allowance the agent gets back, so
   // it is stated BEFORE the payer taps Save rather than discovered afterwards.
+  // Keyed on the POLICY write specifically: a rename alone leaves it standing.
   const resetsCounter =
-    existing !== undefined && !writesNothing && BigInt(existing.spentToday) > 0n && rate !== null;
+    existing !== undefined && !policyUnchanged && BigInt(existing.spentToday) > 0n && rate !== null;
 
   const submit = async () => {
     if (problem || !rate) return;
@@ -217,22 +229,13 @@ function AgentFormFields({
     // deployed one.
     let target: Address | null = createdWallet;
     try {
+      const label = name.trim();
+
       if (wallet && writesNothing) {
-        // No transaction: nothing on-chain differs. Saving anyway would cost gas
-        // for no change AND hand the agent a fresh daily allowance — after
-        // editing only the display name, a field this form promises never
-        // leaves the browser.
-        // Whether the tap changed anything at all, decided BEFORE the write —
-        // afterwards the stored name is the typed one and the comparison always
-        // says "unchanged".
-        const renamed = name.trim().length > 0 && name.trim() !== agentName(wallet);
-        if (name.trim()) setAgentName(wallet, name.trim());
-        // Says which of the two happened. "Saved" over an unchanged policy would
-        // claim a write that deliberately did not happen, and silence over a
-        // rename looks like the form ignored the tap.
-        toast.success(
-          renamed ? "Name saved. It stays in this browser." : "No change — the rules already match.",
-        );
+        // No transaction at all: neither the policy nor the label differs from
+        // what the wallet already holds. Sending anyway would cost gas for no
+        // change AND hand the agent a fresh daily allowance.
+        toast.success("No change — the wallet already holds these rules.");
         popOverlay();
         return;
       }
@@ -251,15 +254,29 @@ function AgentFormFields({
       };
 
       if (wallet) {
-        setBusy("Updating the policy on-chain…");
-        await setPolicy(wallet, policy);
-        if (name.trim()) setAgentName(wallet, name.trim());
-        toast.success("Rules updated on-chain.");
+        // Up to two transactions, and only the ones that change something. The
+        // policy goes first: it is the write with consequences, so if the payer
+        // rejects the second prompt or it fails, what landed is the rules —
+        // never a rename over rules that stayed as they were.
+        if (!policyUnchanged) {
+          setBusy("Updating the policy on-chain…");
+          await setPolicy(wallet, policy);
+        }
+        if (!labelUnchanged) {
+          setBusy("Saving the name on-chain…");
+          await setLabel(wallet, label);
+        }
+        toast.success(
+          policyUnchanged ? "Name saved on-chain." : "Rules updated on-chain.",
+        );
         // What the chain now holds, recorded before anything re-reads it. The
         // detail screen this returns to reads through the backend, whose RPC is
         // not the provider that confirmed the receipt, so its first read can
-        // still answer with the policy that was just replaced.
-        expectAgentPolicy(wallet, policyFingerprint(policy));
+        // still answer with the state that was just replaced.
+        expectAgentPolicy(
+          wallet,
+          policyFingerprint({ ...(policyUnchanged ? existing! : policy), label }),
+        );
         refresh();
         popOverlay();
         return;
@@ -270,21 +287,20 @@ function AgentFormFields({
       // signer.
       if (!target) {
         setBusy("Creating the wallet on-chain…");
-        target = (await createWallet(getAddress(signer.trim()))).wallet;
+        // The label rides in the deploy, so naming an agent costs no transaction
+        // of its own and creating one stays two.
+        target = (await createWallet(getAddress(signer.trim()), label)).wallet;
         setCreatedWallet(target);
-        // Recorded before the second transaction can fail. The name is this
-        // browser's only note of the wallet, and `refresh()` puts it in the
-        // agents list — otherwise a deployed wallet exists with nothing at all
-        // pointing at it.
-        if (name.trim()) setAgentName(target, name.trim());
+        // `refresh()` puts the wallet in the agents list before the second
+        // transaction can fail — otherwise a deployed wallet exists with nothing
+        // on screen pointing at it.
         refresh();
       }
 
       setBusy("Arming its spend policy…");
       await setPolicy(target, policy);
-      if (name.trim()) setAgentName(target, name.trim());
       toast.success("Agent created and its rules armed.");
-      expectAgentPolicy(target, policyFingerprint(policy));
+      expectAgentPolicy(target, policyFingerprint({ ...policy, label }));
       refresh();
       replaceOverlay({ kind: "agent", wallet: target });
     } catch (err) {
@@ -565,6 +581,7 @@ function capUnits(input: string, rate: bigint): bigint | null {
 function validate(input: {
   wallet: Address | null;
   signer: string;
+  name: string;
   dailyCap: string;
   perTxCap: string;
   categories: number[];
@@ -574,6 +591,14 @@ function validate(input: {
   if (!input.rate) return "The swap's rate could not be read, so caps cannot be converted yet.";
   if (!input.wallet && !isAddress(input.signer.trim())) {
     return "The agent signer must be a wallet address.";
+  }
+  // Checked here rather than left to the chain: `_setLabel` reverts LabelTooLong,
+  // and on a create that revert would burn the deploy transaction with it. Bytes,
+  // not characters — the contract counts bytes, so this refuses exactly what it
+  // refuses (eight 4-byte emoji are already over).
+  const labelBytes = labelByteLength(input.name.trim());
+  if (labelBytes > LABEL_MAX_BYTES) {
+    return `The name is ${labelBytes} bytes and the wallet stores at most ${LABEL_MAX_BYTES}. Emoji cost four bytes each.`;
   }
   const daily = capUnits(input.dailyCap, input.rate);
   if (daily === null) {

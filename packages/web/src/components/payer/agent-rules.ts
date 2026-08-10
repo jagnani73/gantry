@@ -54,37 +54,58 @@ export function sgdFromCapUnits(units: string | bigint, rate: bigint): string {
 
 /** "Food & Beverage · Retail" — the human reading of a bitmap's decoded names. */
 /**
- * The four fields `setPolicy` writes, as one comparable string.
+ * Everything an owner write can change, as one comparable string.
  *
  * It exists to answer one question after a write: has the read caught up? The
- * browser holds a MINED receipt for the policy it sent, so any read returning
+ * browser holds a MINED receipt for what it sent, so any read returning
  * something else is behind — the backend's RPC provider is not the one the
  * browser confirmed against, and a read issued a moment after the block is
  * routinely served by a replica that has not seen it. Comparing fingerprints is
  * how the screen tells "still catching up" from "this is what the chain holds",
  * which are otherwise the same stale numbers.
  *
- * Only the four stored fields, deliberately: `spentToday` and the balance move
- * on their own, so folding them in would make the expectation unsatisfiable.
+ * The label is in it because renaming is its own transaction now: a save that
+ * changes ONLY the name would otherwise match the fingerprint immediately and
+ * paint the old name as though it were current.
+ *
+ * `spentToday` and the balance are deliberately out: they move on their own, so
+ * folding them in would make the expectation unsatisfiable.
  */
-export function policyFingerprint(policy: {
+export function policyFingerprint(state: {
   dailyCap: bigint | string;
   perTxCap: bigint | string;
   expiry: number;
   categoryBitmap: bigint | string;
+  label: string;
 }): string {
-  return [policy.dailyCap, policy.perTxCap, policy.expiry, policy.categoryBitmap]
+  return [state.dailyCap, state.perTxCap, state.expiry, state.categoryBitmap]
     .map(String)
+    .concat(state.label)
     .join("|");
 }
 
-/** What `revoke()` leaves behind: the policy zeroed, expiry included. */
-export const REVOKED_FINGERPRINT = policyFingerprint({
-  dailyCap: 0n,
-  perTxCap: 0n,
-  expiry: 0,
-  categoryBitmap: 0n,
-});
+/** What `revoke()` leaves behind: the policy zeroed, expiry included. The label
+ * survives a revoke untouched, so the caller supplies the one already on-chain
+ * rather than assuming the wallet also lost its name. */
+export function revokedFingerprint(label: string): string {
+  return policyFingerprint({
+    dailyCap: 0n,
+    perTxCap: 0n,
+    expiry: 0,
+    categoryBitmap: 0n,
+    label,
+  });
+}
+
+/** Bytes, not characters — `AgentPBMWallet._setLabel` counts `bytes(label).length`,
+ * so eight 4-byte emoji are already over a limit that fits 31 ASCII characters.
+ * A counter that measured codepoints (as the merchant profile limits deliberately
+ * do) would offer a label the contract refuses. */
+export const LABEL_MAX_BYTES = 31;
+
+export function labelByteLength(label: string): number {
+  return new TextEncoder().encode(label).length;
+}
 
 export function categoryLabels(names: readonly string[]): string {
   if (names.length === 0) return "None";

@@ -14,17 +14,26 @@ export interface GantryAddresses {
   mockXsgd: Address;
   realUsdc: Address;
   agentPbmFactory: Address;
-  demoAgentPbmWallet: Address;
 }
 
-/** Review-hardened redeploy, 5 Aug 2026; PBM contracts 7 Aug 2026. Basescan-verified. */
+/**
+ * Review-hardened redeploy, 5 Aug 2026; PBM contracts 7 Aug 2026; agent factory
+ * redeployed 10 Aug 2026 for the on-chain `label` and `policyUpdatedAt`.
+ * Basescan-verified.
+ *
+ * `demoAgentPbmWallet` used to sit here and is GONE, not merely stale. It was a
+ * relayer-owned wallet from `DeployPBM.s.sol`, already labelled historical when
+ * agents became payer-owned; the factory redeploy finished it off twice over —
+ * it is invisible to enumeration (a different factory's logs) and predates the
+ * wallet ABI everything now reads. Provisioning a usable wallet is
+ * `pnpm demo:reset`.
+ */
 export const BASE_SEPOLIA_ADDRESSES: GantryAddresses = {
   gantryCore: "0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0",
   fixedRateSwap: "0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713",
   mockXsgd: "0xd583FaB0Db5c543f5574780f8b899AEb74463361",
   realUsdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-  agentPbmFactory: "0x172905F26F09b41636854338360315971240c1cf",
-  demoAgentPbmWallet: "0xDD4bbed78B64715288bf10fabB2b62c659299D3E",
+  agentPbmFactory: "0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05",
 };
 
 /** GantryCore deploy block — indexer backfill floor. */
@@ -33,14 +42,18 @@ export const BASE_SEPOLIA_DEPLOY_BLOCK = 45065094n;
 /**
  * AgentPBMWalletFactory deploy block — the floor for enumerating `WalletCreated`.
  *
- * Verified by binary-searching `eth_getCode`, not by taking the block of the
- * oldest event a scan happened to find: a floor derived from an observation is
- * only as old as the observation, and one set too high silently loses wallets
- * rather than failing. Starting from GantryCore's block instead would scan ~68k
- * blocks in which this contract did not exist — nearly half the range, and every
- * chunk is a round trip.
+ * Taken from the deploy receipt of the 10 Aug 2026 redeploy — the exact block,
+ * not an inference. (The previous factory's floor was binary-searched with
+ * `eth_getCode`, because a floor derived from the oldest event a scan happened
+ * to find is only as old as that observation, and one set too high loses wallets
+ * silently rather than failing.) Starting from GantryCore's block instead would
+ * scan ~229k blocks in which this contract did not exist, and every chunk is a
+ * round trip.
+ *
+ * MOVE THIS WITH THE ADDRESS. A redeployed factory left on the old floor sends
+ * every cold scan back over blocks that cannot hold one of its logs.
  */
-export const BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK = 45133047n;
+export const BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK = 45293974n;
 
 export const BASE_SEPOLIA_RELAYER: Address = "0x82513007C7eB93b54dC555Bdb74341b3084FC47B";
 

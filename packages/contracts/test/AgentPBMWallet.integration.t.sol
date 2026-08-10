@@ -40,7 +40,7 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
 
         factory = new AgentPBMWalletFactory(address(core));
         vm.prank(relayer); // owner = relayer key, matching the demo deployment
-        wallet = AgentPBMWallet(factory.createWallet(agent));
+        wallet = AgentPBMWallet(factory.createWallet(agent, ""));
 
         vm.prank(relayer);
         wallet.setPolicy(_demoPolicy());

@@ -91,9 +91,11 @@ export interface ContractRow {
 }
 
 /**
- * The factory, not the demo wallet. `demoAgentPbmWallet` is one wallet with one
- * owner and it is being superseded by payer-created wallets; the factory is what
- * mints every one of them and does not go stale.
+ * The factory, not a wallet. Any single wallet has one owner and is superseded
+ * the moment a payer creates their own; the factory is what mints every one of
+ * them. (The pinned `demoAgentPbmWallet` this note used to name is gone — the
+ * 10 Aug 2026 redeploy left it enumerable by nothing and older than the wallet
+ * ABI every screen reads.)
  */
 export const CONTRACTS: ContractRow[] = [
   {

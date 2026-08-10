@@ -17,6 +17,11 @@ export const agentPbmWalletAbi = [
         "name": "core_",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "label_",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "stateMutability": "nonpayable"
@@ -115,6 +120,19 @@ export const agentPbmWalletAbi = [
   },
   {
     "type": "function",
+    "name": "label",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -169,6 +187,19 @@ export const agentPbmWalletAbi = [
   },
   {
     "type": "function",
+    "name": "policyUpdatedAt",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint40",
+        "internalType": "uint40"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -189,6 +220,19 @@ export const agentPbmWalletAbi = [
         "name": "newSigner",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setLabel",
+    "inputs": [
+      {
+        "name": "newLabel",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [],
@@ -287,6 +331,19 @@ export const agentPbmWalletAbi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LabelSet",
+    "inputs": [
+      {
+        "name": "label",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -469,6 +526,17 @@ export const agentPbmWalletAbi = [
     "type": "error",
     "name": "InvalidAgentSignature",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LabelTooLong",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",

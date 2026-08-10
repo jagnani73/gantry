@@ -31,6 +31,8 @@ function raw(over: Partial<RawAgentState> = {}): RawAgentState {
     owner: OWNER,
     agentSigner: SIGNER,
     policy: [37_255_049n, 37_255_049n, 1_780_000_000, FOOD],
+    policyUpdatedAt: 0,
+    label: "",
     spentToday: 3_352_955n,
     balance: 10_000_000n,
     token: "USDC",
@@ -82,17 +84,19 @@ test("revoked is derived from expiry alone, and is not a status", () => {
   assert.equal(agentStatus(toAgentSummary(raw({ policy: [0n, 0n, 0, 0n] })), 1_700_000_000), "revoked");
 });
 
-test("an undated policy reports null, never a missing key or a guess", () => {
-  // The scan is bounded and allowed to come back empty, so "not known" is a
-  // normal answer. It has to reach the client as an explicit null: the screen
-  // branches on this field to decide whether to render the line at all, and an
-  // absent key would read as a policy that has never been changed.
-  const undated = toAgentSummary(raw());
-  assert.equal(undated.policyUpdatedAt, null);
-  assert.ok("policyUpdatedAt" in undated, "the key must be present even when unknown");
+test("a never-armed wallet dates from 0, and a label may be empty", () => {
+  // Both come straight off the wallet now. 0 and "" are the values the contract
+  // itself reports for a wallet that has never been armed or named — and they are
+  // also what the reader substitutes for a wallet from the previous factory,
+  // which has neither getter. A screen must treat both as "nothing to show"
+  // rather than as a fact.
+  const bare = toAgentSummary(raw());
+  assert.equal(bare.policyUpdatedAt, 0);
+  assert.equal(bare.label, "");
 
-  const dated = toAgentSummary({ ...raw(), policyUpdatedAt: 1_780_000_000 });
-  assert.equal(dated.policyUpdatedAt, 1_780_000_000);
+  const named = toAgentSummary({ ...raw(), policyUpdatedAt: 1_780_000_000, label: "Kopi Runner" });
+  assert.equal(named.policyUpdatedAt, 1_780_000_000);
+  assert.equal(named.label, "Kopi Runner");
 });
 
 test("expiry is the LAST allowed second, matching authorizeSpend", () => {

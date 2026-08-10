@@ -35,7 +35,7 @@ contract AgentPBMWalletTest is Test {
         coreAddr = makeAddr("core");
 
         usdc = new MockUSDC();
-        wallet = new AgentPBMWallet(owner, agent, coreAddr);
+        wallet = new AgentPBMWallet(owner, agent, coreAddr, "");
         usdc.mint(address(wallet), 1_000e6);
 
         vm.prank(owner);
@@ -70,17 +70,17 @@ contract AgentPBMWalletTest is Test {
 
     function test_revert_constructor_zeroOwner() public {
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-        new AgentPBMWallet(address(0), agent, coreAddr);
+        new AgentPBMWallet(address(0), agent, coreAddr, "");
     }
 
     function test_revert_constructor_zeroAgentSigner() public {
         vm.expectRevert(AgentPBMWallet.ZeroAddress.selector);
-        new AgentPBMWallet(owner, address(0), coreAddr);
+        new AgentPBMWallet(owner, address(0), coreAddr, "");
     }
 
     function test_revert_constructor_zeroCore() public {
         vm.expectRevert(AgentPBMWallet.ZeroAddress.selector);
-        new AgentPBMWallet(owner, agent, address(0));
+        new AgentPBMWallet(owner, agent, address(0), "");
     }
 
     // ---------------------------------------------------------------- policy admin
@@ -348,13 +348,109 @@ contract AgentPBMWalletTest is Test {
 
     function test_revert_unsetPolicy_policyExpired() public {
         // A fresh wallet with no policy is safe-by-default: expiry 0 = expired.
-        AgentPBMWallet fresh = new AgentPBMWallet(owner, agent, coreAddr);
+        AgentPBMWallet fresh = new AgentPBMWallet(owner, agent, coreAddr, "");
         usdc.mint(address(fresh), 100e6);
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(AGENT_PK, PbmDigest.spendDigest(address(fresh), INTENT_ID, address(usdc), 1e6));
         vm.expectRevert(AgentPBMWallet.PolicyExpired.selector);
         vm.prank(coreAddr);
         fresh.authorizeSpend(INTENT_ID, CATEGORY, address(usdc), 1e6, abi.encodePacked(r, s, v));
+    }
+
+    // ---------------------------------------------------------------- policyUpdatedAt
+
+    function test_policyUpdatedAt_stampsSetPolicyAndRevoke() public {
+        AgentPBMWallet fresh = new AgentPBMWallet(owner, agent, coreAddr, "");
+        // A wallet that has never been armed has no date to report, and 0 is how a client
+        // tells that apart from one armed at the epoch.
+        assertEq(fresh.policyUpdatedAt(), 0);
+
+        vm.warp(1_800_000_000);
+        vm.prank(owner);
+        fresh.setPolicy(AgentPBMWallet.Policy({dailyCap: 1e6, perTxCap: 1e6, expiry: 1_900_000_000, categoryBitmap: 2}));
+        assertEq(fresh.policyUpdatedAt(), 1_800_000_000);
+
+        // Revoke is a policy change like any other. Dating a revoked wallet from the
+        // setPolicy before it would put the wrong day on the one action a payer would
+        // most want to prove they took.
+        vm.warp(1_800_000_600);
+        vm.prank(owner);
+        fresh.revoke();
+        assertEq(fresh.policyUpdatedAt(), 1_800_000_600);
+    }
+
+    function test_policyUpdatedAt_isNotMovedBySpending() public {
+        uint40 armed = wallet.policyUpdatedAt();
+        vm.warp(block.timestamp + 3600);
+        bytes memory sig = _sig(INTENT_ID, address(usdc), 1e6);
+        vm.prank(coreAddr);
+        wallet.authorizeSpend(INTENT_ID, CATEGORY, address(usdc), 1e6, sig);
+        // It dates the RULES, not the wallet's activity — a screen showing "rules updated"
+        // beside a wallet that merely paid for coffee would be claiming a change that
+        // nobody made.
+        assertEq(wallet.policyUpdatedAt(), armed);
+    }
+
+    // ---------------------------------------------------------------- label
+
+    function test_label_setAtConstructionAndRenamed() public {
+        AgentPBMWallet named = new AgentPBMWallet(owner, agent, coreAddr, "Kopi Runner");
+        assertEq(named.label(), "Kopi Runner");
+
+        vm.expectEmit(false, false, false, true);
+        emit AgentPBMWallet.LabelSet("Lunch Runner");
+        vm.prank(owner);
+        named.setLabel("Lunch Runner");
+        assertEq(named.label(), "Lunch Runner");
+    }
+
+    function test_label_emptyIsLegal() public {
+        // Naming an agent must never be a precondition for arming one.
+        assertEq(wallet.label(), "");
+        vm.prank(owner);
+        wallet.setLabel("");
+        assertEq(wallet.label(), "");
+    }
+
+    function test_revert_label_tooLong() public {
+        // 31 BYTES is the bound, so this is the first refused length, and the error
+        // carries what was actually counted.
+        string memory tooLong = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; // 32
+        vm.expectRevert(abi.encodeWithSelector(AgentPBMWallet.LabelTooLong.selector, uint256(32)));
+        vm.prank(owner);
+        wallet.setLabel(tooLong);
+
+        vm.prank(owner);
+        wallet.setLabel("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); // 31 fits
+        assertEq(bytes(wallet.label()).length, 31);
+    }
+
+    function test_revert_label_bytesNotCharacters() public {
+        // Eight 4-byte emoji are 8 characters and 32 bytes. Any client-side counter that
+        // counts codepoints — as the merchant profile limits deliberately do — would offer
+        // a label this contract refuses.
+        string memory eightEmoji = unicode"🍜🍜🍜🍜🍜🍜🍜🍜";
+        assertEq(bytes(eightEmoji).length, 32);
+        vm.expectRevert(abi.encodeWithSelector(AgentPBMWallet.LabelTooLong.selector, uint256(32)));
+        vm.prank(owner);
+        wallet.setLabel(eightEmoji);
+    }
+
+    function test_revert_label_onlyOwner() public {
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, agent));
+        vm.prank(agent);
+        wallet.setLabel("not yours");
+    }
+
+    function test_label_doesNotResetTheDailyCounter() public {
+        bytes memory sig = _sig(INTENT_ID, address(usdc), 1e6);
+        vm.prank(coreAddr);
+        wallet.authorizeSpend(INTENT_ID, CATEGORY, address(usdc), 1e6, sig);
+        assertEq(wallet.spentToday(), 1e6);
+        // Unlike setPolicy, which deliberately zeroes it. A rename is not a fresh budget.
+        vm.prank(owner);
+        wallet.setLabel("Renamed mid-day");
+        assertEq(wallet.spentToday(), 1e6);
     }
 
     // ---------------------------------------------------------------- authorizeSpend: category
@@ -564,7 +660,7 @@ contract AgentPBMWalletTest is Test {
         // EIP-712 encoding drifts a byte, one of the two pins goes red instead of
         // every signature silently dying on-chain as InvalidAgentSignature.
         address vectorWallet = 0xDD4bbed78B64715288bf10fabB2b62c659299D3E;
-        deployCodeTo("AgentPBMWallet.sol:AgentPBMWallet", abi.encode(owner, agent, coreAddr), vectorWallet);
+        deployCodeTo("AgentPBMWallet.sol:AgentPBMWallet", abi.encode(owner, agent, coreAddr, ""), vectorWallet);
         vm.chainId(84532);
 
         bytes32 digest = PbmDigest.spendDigest(
