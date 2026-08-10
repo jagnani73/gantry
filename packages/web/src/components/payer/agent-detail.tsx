@@ -162,18 +162,45 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   const agent = fresh ?? listed;
   const name = agentName(wallet) ?? shortAddress(wallet);
 
+  /**
+   * The rules on screen are the ones the payer just replaced.
+   *
+   * Two sources feed this screen and the fallback is what exposes it: `listed`
+   * comes from the store's agent list, which is fetched but not yet back, so the
+   * first paint after a save is the OLD policy — and it stays up until the poll
+   * above lands, at which point the numbers change under the payer with no
+   * explanation. Being shown the caps you just changed, then watching them
+   * silently become the ones you asked for, is worse than a wait: the first
+   * frame is a claim about the chain, and it is wrong.
+   *
+   * So known-superseded data is not rendered at all. `expected` is only ever set
+   * from a write this browser made and saw MINED, so this is never a
+   * disagreement about the chain — it is one source being behind the other.
+   */
+  const expected = agentExpectation(wallet);
+  const superseded = agent !== undefined && expected !== null && policyFingerprint(agent) !== expected;
+
   const history = useMemo(
     () => rows.filter((row) => belongsToWallet(row, wallet)),
     [rows, wallet],
   );
 
-  if (!agent) {
+  if (!agent || superseded) {
     return (
       <OverlayScreen>
         <OverlayHeader onBack={popOverlay} backLabel="Back" title={name} />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
           {readError === null ? (
-            <p className="text-body text-muted">Reading this agent&apos;s policy from the chain…</p>
+            <p className="text-body text-muted">
+              {expected !== null
+                ? // Named for what it is actually waiting on. The change is
+                  // already mined; what has not happened is the read catching
+                  // up. Keyed on the expectation rather than on `superseded` so
+                  // a freshly created wallet — which has no previous policy to
+                  // be superseded — says the same true thing.
+                  "Your change is on-chain. Reading it back…"
+                : "Reading this agent's policy from the chain…"}
+            </p>
           ) : (
             <>
               <p className="text-body text-muted">
