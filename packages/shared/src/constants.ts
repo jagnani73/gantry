@@ -14,14 +14,21 @@ export const CARD_FEE_BPS = 280;
 export const DEMO_MERCHANT_HANDLE = "ah-hock-chicken-rice";
 
 /** Off-chain display facts for demo merchants (chain stores only handle/payout/category). */
-export const DEMO_MERCHANTS: Record<string, { displayName: string; location: string }> = {
+export const DEMO_MERCHANTS: Record<
+  string,
+  { displayName: string; location: string; blurb: string; categoryId: number }
+> = {
   "ah-hock-chicken-rice": {
     displayName: "Ah Hock Chicken Rice",
     location: "Maxwell Food Centre",
+    blurb: "Hainanese chicken rice, kopi and iced tea since 1987.",
+    categoryId: 1, // food_beverage — the door the agent policy allows
   },
   "gadgethub-sg": {
     displayName: "GadgetHub SG",
     location: "Sim Lim Square",
+    blurb: "Cables, chargers and power banks.",
+    categoryId: 2, // electronics — the category the rejection beat is refused on
   },
 };
 

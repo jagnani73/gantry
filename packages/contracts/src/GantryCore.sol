@@ -20,10 +20,21 @@ contract GantryCore is Ownable2Step {
 
     /// @dev Merchants are never deleted (only the payout rotates), so a non-zero payout
     ///      is a permanent existence proof — _settle relies on this when it pays out.
+    /// @dev The display fields live HERE, on-chain, rather than in a backend table.
+    ///      They were off-chain until 11 Aug 2026, which made the cache the only source
+    ///      for something the chain could not re-supply: two hosts indexing the same
+    ///      chain rendered different shop names, and the edit route had to be
+    ///      unauthenticated and gated by host class. On-chain they are self-attested but
+    ///      identical everywhere, and the backend's SQLite becomes a pure cache with no
+    ///      exception. Empty is legal — every surface falls back to the handle — because
+    ///      requiring them here would put a display rule inside the settlement contract.
     struct Merchant {
         address payout;
         uint16 categoryId;
         string handle;
+        string displayName;
+        string location;
+        string blurb;
     }
 
     /// @dev None MUST stay the first member (zero value = "intent does not exist");
@@ -74,6 +85,10 @@ contract GantryCore is Ownable2Step {
     // ---------------------------------------------------------------- errors
 
     error InvalidHandle();
+    /// @dev `field` is the JSON name the clients already use ("displayName", "location",
+    ///      "blurb"), so a revert names the input a form can point at without a lookup
+    ///      table that could drift from the struct.
+    error ProfileTooLong(string field, uint256 length);
     error HandleTaken(bytes32 merchantId);
     error InvalidCategory(uint16 categoryId);
     error ZeroAddress();
@@ -99,6 +114,7 @@ contract GantryCore is Ownable2Step {
 
     event MerchantRegistered(bytes32 indexed merchantId, string handle, address payout, uint16 categoryId);
     event MerchantPayoutUpdated(bytes32 indexed merchantId, address payout);
+    event MerchantProfileUpdated(bytes32 indexed merchantId, string displayName, string location, string blurb);
     event IntentCreated(
         bytes32 indexed intentId,
         bytes32 indexed merchantId,
@@ -152,19 +168,59 @@ contract GantryCore is Ownable2Step {
     /// @notice Permissionless single-tx onboarding: a merchant is live once this mines.
     /// @dev Categories are capped at 256 so a future PBM policy can hold the whole
     ///      allowlist as one uint256 bitmap (bit = categoryId).
-    function registerMerchant(string calldata handle, address payout, uint16 categoryId)
-        external
-        returns (bytes32 merchantId)
-    {
+    function registerMerchant(
+        string calldata handle,
+        address payout,
+        uint16 categoryId,
+        string calldata displayName,
+        string calldata location,
+        string calldata blurb
+    ) external returns (bytes32 merchantId) {
         if (payout == address(0)) revert ZeroAddress();
         if (categoryId >= 256) revert InvalidCategory(categoryId);
         _validateHandle(handle);
+        _validateProfile(displayName, location, blurb);
 
         merchantId = keccak256(bytes(handle));
         if (merchants[merchantId].payout != address(0)) revert HandleTaken(merchantId);
 
-        merchants[merchantId] = Merchant({payout: payout, categoryId: categoryId, handle: handle});
+        merchants[merchantId] = Merchant({
+            payout: payout,
+            categoryId: categoryId,
+            handle: handle,
+            displayName: displayName,
+            location: location,
+            blurb: blurb
+        });
         emit MerchantRegistered(merchantId, handle, payout, categoryId);
+        // Emitted separately rather than widened into MerchantRegistered: the profile is
+        // the one part of a merchant record that changes, so an indexer that wants the
+        // current text follows ONE event either way instead of special-casing creation.
+        emit MerchantProfileUpdated(merchantId, displayName, location, blurb);
+    }
+
+    /// @notice Rewrites a merchant's display record. Relayer-only, deliberately: the
+    ///         back-office has no login and no wallet, so a merchant-signed write would
+    ///         need both, and a permissionless one would let anyone rename any shop.
+    ///         Operator-editable is therefore the honest description — the UI says
+    ///         "contact the operator" rather than offering a form that cannot write.
+    /// @dev    Handle, payout and category are NOT touched here. The handle is permanent,
+    ///         the payout rotates only through `setMerchantPayout` (gated on the payout
+    ///         itself, so this relayer power cannot redirect anyone's money), and the
+    ///         category has no setter at all.
+    function setMerchantProfile(
+        bytes32 merchantId,
+        string calldata displayName,
+        string calldata location,
+        string calldata blurb
+    ) external onlyRelayer {
+        Merchant storage merchant = merchants[merchantId];
+        if (merchant.payout == address(0)) revert MerchantNotFound(merchantId);
+        _validateProfile(displayName, location, blurb);
+        merchant.displayName = displayName;
+        merchant.location = location;
+        merchant.blurb = blurb;
+        emit MerchantProfileUpdated(merchantId, displayName, location, blurb);
     }
 
     /// @notice merchantId is derived from the URL handle, so clients never need a lookup.
@@ -374,6 +430,31 @@ contract GantryCore is Ownable2Step {
         emit IntentSettled(
             intentId, intent.merchantId, payer, intent.tokenIn, intent.amountIn, xsgdOut, feeXsgd, intent.door
         );
+    }
+
+    /**
+     * @dev Length only, in BYTES, and deliberately four times the clients' limits
+     *      (60/80/140 CODEPOINTS in the shared package's PROFILE_LIMITS).
+     *
+     *      That factor is the point. A UTF-8 codepoint is at most 4 bytes, so a string
+     *      the shared validator accepts can never exceed the bound here — the client rule
+     *      is always the binding one and this is a pure anti-abuse ceiling. Matching the
+     *      numbers instead would create the drift trap the agent label already documents:
+     *      the contract counting bytes while the form counts codepoints means a form that
+     *      says 60/60 submitting a transaction that reverts.
+     *
+     *      Everything else the shared validator enforces — trimming, blank rejection,
+     *      bidi overrides, zero-width padding — stays off-chain on purpose. Those are
+     *      rendering rules; they belong where the rendering is, not in the contract that
+     *      settles payments.
+     */
+    function _validateProfile(string calldata displayName, string calldata location, string calldata blurb)
+        internal
+        pure
+    {
+        if (bytes(displayName).length > 240) revert ProfileTooLong("displayName", bytes(displayName).length);
+        if (bytes(location).length > 320) revert ProfileTooLong("location", bytes(location).length);
+        if (bytes(blurb).length > 560) revert ProfileTooLong("blurb", bytes(blurb).length);
     }
 
     /// @dev Handles are URL path segments (`/pay/<handle>`): 1-32 bytes of [a-z0-9-],

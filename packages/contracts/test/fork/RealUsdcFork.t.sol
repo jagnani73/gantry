@@ -57,7 +57,7 @@ contract RealUsdcForkTest is Test {
         xsgd.mint(address(swap), 1_000_000e6);
         core = new GantryCore(IERC20(address(xsgd)), relayer);
         core.setSwap(swap);
-        merchantId = core.registerMerchant("ah-hock-chicken-rice", payout, 1);
+        merchantId = core.registerMerchant("ah-hock-chicken-rice", payout, 1, "", "", "");
 
         // FiatTokenV2_2 packs a blacklist flag into the top bit of the balance slot;
         // deal() writes the plain amount (top bit 0), which is a valid unblacklisted

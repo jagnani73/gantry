@@ -1,6 +1,7 @@
 import type { Address, Hex } from "viem";
 import {
   LOG_CHUNK_SPAN,
+  agentPbmWalletFactoryAbi,
   gantryCoreAbi,
   tokenIdByAddress,
   type SettlementEvent,
@@ -12,6 +13,7 @@ import {
   setCursor,
   getIntentRow,
   setIntentStatus,
+  insertAgentWallet,
   insertSettlementRow,
   clearCache,
   type SettlementRow,
@@ -56,12 +58,14 @@ async function resolveHandle(merchantId: Hex): Promise<string> {
   const key = merchantId.toLowerCase();
   const cached = handleCache.get(key);
   if (cached) return cached;
+  // payout, categoryId, handle, displayName, location, blurb — only the handle is
+  // wanted here. The display fields joined this tuple when they moved on-chain.
   const [, , handle] = (await publicClient.readContract({
     address: config.addresses.gantryCore,
     abi: gantryCoreAbi,
     functionName: "merchants",
     args: [merchantId],
-  })) as readonly [Address, number, string];
+  })) as readonly [Address, number, string, string, string, string];
   handleCache.set(key, handle);
   return handle;
 }
@@ -106,6 +110,33 @@ async function processLog(log: CoreLog): Promise<void> {
     const args = log.args as { intentId: Hex };
     const row = getIntentRow(args.intentId);
     if (row && row.status === "pending") setIntentStatus(args.intentId, "cancelled");
+    return;
+  }
+
+  // From the FACTORY, not the core — the sweep now covers both addresses in one
+  // pass. This replaced a separate chunked scanner in services/agents.ts that
+  // re-walked the same block range on every cold process, grew ~22 windows a day,
+  // and fell over on Render's shared egress IP. `getLogs` takes an address array,
+  // so folding it in costs no extra RPC calls at all.
+  if (log.eventName === "WalletCreated") {
+    const args = log.args as { owner?: Address; agentSigner?: Address; wallet?: Address };
+    // Checked, not trusted. `getLogs` with `events` decodes NON-STRICTLY, so a
+    // log that matches topic0 but whose data does not decode arrives with
+    // undefined fields — and `insertAgentWallet` would throw on `.toLowerCase()`,
+    // escape processLog, and leave `setCursor` unreached. That wedges the cursor
+    // for good: every later pass retries the same log and no settlement past that
+    // block is ever indexed. One bad log must not be able to stop the feed.
+    if (!args.wallet || !args.owner || !args.agentSigner) {
+      console.warn(`indexer: undecodable WalletCreated in ${log.transactionHash}, skipped`);
+      return;
+    }
+    insertAgentWallet({
+      wallet: args.wallet,
+      owner: args.owner,
+      agent_signer: args.agentSigner,
+      block_number: Number(log.blockNumber),
+      factory: config.addresses.agentPbmFactory,
+    });
   }
 }
 
@@ -124,8 +155,97 @@ export function settlementEventOf(row: SettlementRow): SettlementEvent {
 // provider facts (including why the paid primary serves none of these calls).
 const SWEEP_CHUNK = LOG_CHUNK_SPAN;
 
-let sweeping = false;
+/**
+ * Exactly the events the sweep acts on, from both contracts.
+ *
+ * Narrowed rather than passing whole ABIs: `getLogs` turns this into one topic0
+ * OR-filter, so anything not listed here is never transferred, decoded, or
+ * handed to `processLog` for it to ignore. Adding an event to a contract does
+ * not silently start costing bandwidth — it has to be named here first.
+ */
+const SWEPT_EVENTS = [
+  ...gantryCoreAbi.filter(
+    (entry): entry is Extract<(typeof gantryCoreAbi)[number], { type: "event" }> =>
+      entry.type === "event" && (entry.name === "IntentSettled" || entry.name === "IntentCancelled"),
+  ),
+  ...agentPbmWalletFactoryAbi.filter(
+    (entry): entry is Extract<(typeof agentPbmWalletFactoryAbi)[number], { type: "event" }> =>
+      entry.type === "event" && entry.name === "WalletCreated",
+  ),
+] as const;
+
+/**
+ * Three, always. `pnpm abis` regenerates these ABIs from the contracts, so a
+ * renamed or removed event silently yields a shorter array — the sweep would
+ * stop indexing it while the cursor kept advancing, which is unrecoverable
+ * without a manual rewind. The live settlement feed is the one thing CLAUDE.md
+ * says is never cut, so it fails at boot instead. Same shape as the accepts[0]
+ * assertion in routes/order.ts.
+ */
+if (SWEPT_EVENTS.length !== 3) {
+  throw new Error(
+    `indexer: expected 3 swept events (IntentSettled, IntentCancelled, WalletCreated), got ${SWEPT_EVENTS.length}`,
+  );
+}
+
+let inFlight: Promise<void> | null = null;
 let resetEpoch = 0;
+
+/**
+ * Why the last sweep failed, or null if it succeeded.
+ *
+ * The sweep swallows its own errors so a bad minute cannot kill the process —
+ * but a caller that needs to say "this payer owns no wallets" has to know the
+ * difference between an index that is current and one that never ran. Answering
+ * an empty list on a failed sweep is the outcome that makes an agent CLI mint a
+ * DUPLICATE wallet, which is what the deleted scanner's `AgentScanFailed` 503
+ * existed to prevent.
+ */
+let lastSweepError: string | null = null;
+
+/** Bound on how long an HTTP request will wait for an on-demand sweep. A cold
+ * process has no cursor, so the pass it joins can be a full backfill — ~89
+ * getLogs windows on the rate-limited public node. The deleted scanner carried
+ * the same 15s deadline, tuned under the web client's 20s abort. Past this the
+ * sweep keeps running; only the waiting stops. */
+const ON_DEMAND_SWEEP_MS = 12_000;
+
+function runSweep(): Promise<void> {
+  inFlight ??= sweep().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+/**
+ * Bring the index up to date and report whether it actually is.
+ *
+ * Joining an in-flight pass is NOT enough, and the previous version of this
+ * claimed otherwise: that pass read its head before this call, so it can say
+ * nothing about a block mined since — precisely the case that matters, an agent
+ * asking about a wallet it created a second ago. So it waits the running pass
+ * out and then starts a fresh one whose head read happens after the caller
+ * arrived.
+ *
+ * Returns false when the sweep failed OR the wait ran out, because both mean the
+ * same thing to a caller: the index cannot be trusted to be current, so "nothing
+ * found" is not an answer.
+ */
+export async function sweepNow(): Promise<boolean> {
+  const running = inFlight;
+  if (running) await running;
+  let timedOut = false;
+  await Promise.race([
+    runSweep(),
+    new Promise<void>((resolve) =>
+      setTimeout(() => {
+        timedOut = true;
+        resolve();
+      }, ON_DEMAND_SWEEP_MS).unref(),
+    ),
+  ]);
+  return !timedOut && lastSweepError === null;
+}
 
 /**
  * Last head the sweep managed to read, and when. Recorded here so /health can
@@ -165,8 +285,6 @@ export function indexerStatus(): IndexerStatus {
 }
 
 async function sweep(): Promise<void> {
-  if (sweeping) return;
-  sweeping = true;
   const epoch = resetEpoch;
   try {
     const head = await publicClient.getBlockNumber();
@@ -175,9 +293,14 @@ async function sweep(): Promise<void> {
     let from = (getCursor() ?? config.deployBlock - 1n) + 1n;
     while (from <= head) {
       const to = from + SWEEP_CHUNK > head ? head : from + SWEEP_CHUNK;
-      const logs = await publicClient.getContractEvents({
-        address: config.addresses.gantryCore,
-        abi: gantryCoreAbi,
+      // Both contracts, one window. They share a deploy block now, so there is no
+      // range where only one of them can have logs — which is the whole reason the
+      // single `BASE_SEPOLIA_DEPLOY_BLOCK` was worth a redeploy. viem builds an OR
+      // topic filter across the two ABIs; the signatures do not collide, so a core
+      // log can never decode as a factory one.
+      const logs = await publicClient.getLogs({
+        address: [config.addresses.gantryCore, config.addresses.agentPbmFactory],
+        events: SWEPT_EVENTS,
         fromBlock: from,
         toBlock: to,
       });
@@ -189,10 +312,10 @@ async function sweep(): Promise<void> {
       setCursor(to);
       from = to + 1n;
     }
+    lastSweepError = null;
   } catch (err) {
-    console.error("indexer sweep failed:", err instanceof Error ? err.message : err);
-  } finally {
-    sweeping = false;
+    lastSweepError = err instanceof Error ? err.message : String(err);
+    console.error("indexer sweep failed:", lastSweepError);
   }
 }
 
@@ -224,9 +347,11 @@ function startWatch(): void {
 }
 
 export async function startIndexer(): Promise<void> {
-  await sweep(); // startup backfill from persisted cursor
+  await runSweep(); // startup backfill from persisted cursor
   startWatch();
-  setInterval(() => void sweep(), 15_000).unref();
+  // `runSweep`, not `sweepNow`: the timer wants the coalescing (skip if a pass is
+  // already running) and has no interest in a fresh head read.
+  setInterval(() => void runSweep(), 15_000).unref();
   console.log(`indexer running (cursor ${getCursor() ?? config.deployBlock})`);
 }
 

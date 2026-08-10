@@ -24,7 +24,7 @@ contract GantryCoreIntentsTest is Test {
         usdc = new MockUSDC();
         xsgd = new MockXSGD();
         core = new GantryCore(IERC20(address(xsgd)), relayer);
-        merchantId = core.registerMerchant("ah-hock-chicken-rice", makeAddr("payout"), 1);
+        merchantId = core.registerMerchant("ah-hock-chicken-rice", makeAddr("payout"), 1, "", "", "");
     }
 
     function _expiry() internal view returns (uint40) {

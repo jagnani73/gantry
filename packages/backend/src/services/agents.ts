@@ -1,7 +1,5 @@
 import { erc20Abi, type Address } from "viem";
 import {
-  BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK,
-  LOG_CHUNK_SPAN,
   agentPbmWalletAbi,
   agentPbmWalletFactoryAbi,
   tokenAddress,
@@ -12,17 +10,9 @@ import {
 import { publicClient } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
-import {
-  advanceCursor,
-  completeThrough,
-  foldWalletCreated,
-  runScan,
-  sameAddress,
-  tileRanges,
-  toAgentSummary,
-  type CreatedWallet,
-  type RawAgentState,
-} from "./agents-core";
+import { agentWalletsBySigner } from "../db";
+import { sweepNow } from "../indexer";
+import { sameAddress, toAgentSummary, type RawAgentState } from "./agents-core";
 import { readRate } from "./intents";
 
 /**
@@ -42,157 +32,74 @@ import { readRate } from "./intents";
 const SPEND_TOKEN: TokenId = "USDC";
 
 // ---------------------------------------------------------------- enumeration
+//
+// Two lookups, because the two questions have different cheapest answers.
+//
+// BY OWNER — `walletsOf` is a view on the factory, so this is ONE eth_call and it
+// is always current: a wallet the payer created a second ago is in it before any
+// indexer has seen the block. That matters, because the payer app calls this
+// immediately after creating one.
+//
+// BY SIGNER — the factory indexes only by owner, so this reads the wallets the
+// indexer swept into `agent_wallets` from `WalletCreated`. It replaced a chunked
+// scanner that re-walked the whole block range on every cold process, grew ~22
+// windows a day, and died on Render's shared egress IP; folding those logs into
+// the sweep the indexer already runs made all of that machinery redundant.
+//
+// Both return CANDIDATES. Ownership is `Ownable2Step` and the signer rotates, so
+// neither source knows who controls a wallet now — the live reads below decide.
 
-/** Must fit EVERY transport in the fallback chain. Not merely the public node's
- * 2,000-block cap: the configured Alchemy endpoint refuses these ranges too (its
- * free tier caps eth_getLogs at TEN blocks), so every window is rejected by the
- * primary and served by the public node — two RPC calls per window, with the
- * rate-limited node carrying the work. Same constant and same measurement as the
- * indexer's sweep. */
-const SCAN_CHUNK = LOG_CHUNK_SPAN;
-/**
- * Windows in flight on the first pass. The scan spans every block since the
- * factory deploy (54 windows on 9 Aug 2026, growing ~22 a day), so serialised it
- * is a page load measured in tens of seconds.
- *
- * Four was measured from a laptop against the real fallback chain: 4 finishes in
- * ~5.8s with no failures and 2 takes ~11s. That measurement does NOT transfer to
- * the deployed host, and the reason is the useful part: the rate limit belongs to
- * the EGRESS IP, not to the endpoint. Re-measured 9 Aug 2026 — this same 54-window
- * scan ran against sepolia.base.org from a laptop with zero failures, and died on
- * Render after ~48 windows in 1.8s with "over rate limit" from that same endpoint.
- * So this number is a throughput choice and never the safety mechanism; the retry
- * passes and the deadline are.
- */
-const SCAN_CONCURRENCY = 4;
-/** Fewer in flight while a throttled bucket is refilling. */
-const RETRY_CONCURRENCY = 2;
-/**
- * Delay BEFORE each retry pass — three delays, four passes, since nothing
- * precedes pass 0.
- *
- * Not a second copy of viem's retry. viem already retries a 429 three times
- * (`fallback` pins its children to retryCount 0 and retries the chain itself),
- * and it loses anyway: its backoff is 150/300/600ms and it runs while the rest of
- * the batch keeps firing, which is exactly when a token bucket cannot refill.
- * These waits are 5x longer and the whole scan is idle through them, which is the
- * condition the node is actually waiting for. Retrying only the failed windows is
- * what keeps that affordable.
- */
-const RETRY_BACKOFF_MS = [750, 1_500, 3_000];
-/**
- * Wall-clock budget for one scan, deliberately under the payer app's 20s abort
- * (`web/src/lib/api.ts`). Past that the browser has already given up, so every
- * further request buys nothing and deepens the throttle it is trying to escape.
- *
- * A floor under the damage, not a fix. A clean pass 0 is ~5.8s at 54 windows
- * today and grows ~22 windows a day, so it crosses this budget well before the
- * finals — the real fix is folding WalletCreated into the indexer's persisted
- * sweep so a page load does no getLogs at all.
- */
-const SCAN_DEADLINE_MS = 15_000;
-/** How far behind the cursor each pass re-reads. The cache only ever moves
- * forward, so without this a wallet created in a block that later reorganised
- * out and back in would be missing from it permanently. */
-const REORG_SLACK = 64n;
-
-/** Lowercased wallet address to creation record. WalletCreated logs are
- * append-only history, which is what makes them safe to remember: the scan is
- * paid once per process instead of once per page load. */
-const known = new Map<string, CreatedWallet>();
-/**
- * Highest block through which `known` is COMPLETE, INCLUSIVE — never merely the
- * highest block some window reached. A partial scan advances it to the last block
- * before the lowest window that failed; a full scan advances it to the head that
- * scan read. Anything looser hides the wallets in a skipped window for the life
- * of the process.
- */
-let scannedTo: bigint | null = null;
-let scanning: Promise<CreatedWallet[]> | null = null;
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-async function scanFactory(): Promise<CreatedWallet[]> {
-  const head = await publicClient.getBlockNumber();
-  // The FACTORY's deploy block, not the core's. `WalletCreated` cannot predate
-  // the contract that emits it, and the two are ~68k blocks apart — starting from
-  // the core would scan ~34 extra windows per cold process, each costing two RPC
-  // calls. The floor was verified by binary-searching eth_getCode, not taken from
-  // the oldest event a scan happened to find.
-  const from =
-    scannedTo === null
-      ? BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK
-      : scannedTo > REORG_SLACK
-        ? scannedTo - REORG_SLACK
-        : 0n;
-
-  const ranges = tileRanges(from, head, SCAN_CHUNK);
-  const outcome = await runScan(
-    ranges,
-    {
-      fetchRange: ({ fromBlock, toBlock }) =>
-        publicClient.getContractEvents({
-          address: config.addresses.agentPbmFactory,
-          abi: agentPbmWalletFactoryAbi,
-          eventName: "WalletCreated",
-          fromBlock,
-          toBlock,
-        }),
-      fold: (logs) => foldWalletCreated(logs, known),
-      sleep,
-      now: () => Date.now(),
-      warn: (message) => console.warn(`agents: ${message}`),
-    },
-    {
-      concurrency: SCAN_CONCURRENCY,
-      retryConcurrency: RETRY_CONCURRENCY,
-      backoffsMs: RETRY_BACKOFF_MS,
-      deadlineMs: SCAN_DEADLINE_MS,
-    },
-  );
-
-  // Keep the ground that WAS covered, so the next attempt finishes the tail
-  // instead of paying for the whole span again. Without this a throttled scan is
-  // self-sustaining: it discards every window that succeeded, and the payer's
-  // natural retry re-fires all of them into a bucket that is still empty — which
-  // is how a page that should merely be slow becomes permanently broken. This
-  // helps a TAIL failure most: a failure early in the span still parks the cursor
-  // near the start, and the next call re-reads windows already folded in.
-  scannedTo = advanceCursor(scannedTo, completeThrough(outcome.pending, from, head));
-
-  if (outcome.pending.length > 0) {
-    const unread = outcome.pending.length;
-    // The viem error goes to the operator and never to the payer. It carries the
-    // full RPC URL, and an Alchemy key lives in that URL's PATH — which viem's
-    // own redaction does not strip, because it only removes user:password.
-    // `errorMiddleware` echoes `err.message` into the response body, so throwing
-    // this raw would publish the key on a public route the moment the key-bearing
-    // transport is the last one to fail.
-    console.error(
-      `agents: factory scan incomplete (${outcome.stoppedBy}) — ${unread}/${ranges.length} windows unread in ${from}..${head}, cursor now ${scannedTo ?? "unset"}:`,
-      outcome.error,
-    );
-    // 503, matching `getAgent` below: the read failed, the wallets are not
-    // missing, and retry is the true advice. A 500 invites the payer to believe
-    // an empty list, and their next move on one is a duplicate wallet.
-    throw new ApiError(
-      503,
-      "AgentScanFailed",
-      `could not read ${unread} of ${ranges.length} block ranges from the chain, so this list would be incomplete. Retry in a moment.`,
-    );
-  }
-  return [...known.values()];
+async function walletsOwnedBy(owner: Address): Promise<Address[]> {
+  return (await publicClient.readContract({
+    address: config.addresses.agentPbmFactory,
+    abi: agentPbmWalletFactoryAbi,
+    functionName: "walletsOf",
+    args: [owner],
+  })) as Address[];
 }
 
-/** One scan at a time: the agents screen is a page load, and two concurrent
- * requests on a cold process would otherwise each pay the full backfill.
+/**
+ * Candidate wallets for a filter, before any of them are read.
  *
- * Safe with a partial scan because `scanFactory` writes the cursor BEFORE it
- * throws, and `.finally` clears this only once the promise has settled — so the
- * next caller always reads a written cursor and resumes rather than restarting. */
-function factoryWallets(): Promise<CreatedWallet[]> {
-  if (!scanning) scanning = scanFactory().finally(() => (scanning = null));
-  return scanning;
+ * A signer filter can be answered only from the swept table, which lags the chain
+ * by up to one sweep. `sweepNow` closes that: the CLI creating a wallet and
+ * immediately asking which wallets it acts for is the normal case, not an edge
+ * one, and a sweep from a cursor seconds old costs a single getLogs window.
+ */
+async function candidates(filter: AgentFilter): Promise<Address[]> {
+  // OWNER FIRST whenever we have it, even alongside a signer filter. `walletsOf`
+  // is a view: one eth_call, and never behind — a wallet created a second ago is
+  // in it before any sweep has seen the block. The signer narrowing costs
+  // nothing here because `listAgents` re-filters on the LIVE `agentSigner()`
+  // reads anyway. Taking the swept table for `?owner=&agentSigner=` — which is
+  // exactly what demo-reset asks — would answer a fresh wallet with "none", and
+  // that answer is what makes a caller mint a second wallet for one signer.
+  if (filter.owner) return walletsOwnedBy(filter.owner);
+
+  if (filter.agentSigner) {
+    let rows = agentWalletsBySigner(filter.agentSigner, config.addresses.agentPbmFactory);
+    if (rows.length === 0) {
+      // Nothing known for this signer, and the factory indexes only by owner, so
+      // there is no view to fall back on. Make the index current before
+      // answering — and find out whether it actually became current.
+      const current = await sweepNow();
+      rows = agentWalletsBySigner(filter.agentSigner, config.addresses.agentPbmFactory);
+      if (rows.length === 0 && !current) {
+        // NOT an empty list. The sweep failed or ran out of time, so this is a
+        // non-answer, and rendering it as "you own no wallets" is the outcome
+        // that makes an agent CLI deploy a duplicate. The deleted scanner
+        // carried a 503 for exactly this and it had to come with it.
+        throw new ApiError(
+          503,
+          "AgentIndexUnavailable",
+          "the wallet index could not be brought up to date, so this is not an answer about " +
+            "your agents. Do not create a wallet on the strength of it — retry in a moment.",
+        );
+      }
+    }
+    return rows.map((row) => row.wallet as Address);
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------- chain reads
@@ -430,13 +337,7 @@ export interface AgentListBody extends AgentListResponse {
  * current owner.
  */
 export async function listAgents(filter: AgentFilter): Promise<AgentListBody> {
-  const created = await factoryWallets();
-  const candidates = created
-    .filter((c) => !filter.owner || sameAddress(c.owner, filter.owner))
-    .filter((c) => !filter.agentSigner || sameAddress(c.agentSigner, filter.agentSigner))
-    .map((c) => c.wallet);
-
-  const { agents, absent, unreadable } = await readAgents(candidates);
+  const { agents, absent, unreadable } = await readAgents(await candidates(filter));
   if (absent.length > 0) {
     // Nothing is deployed there, so there is nothing to report and no action to
     // offer. Logged because a factory candidate with no code means a reorg.

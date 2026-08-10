@@ -181,23 +181,45 @@ test("a filter that names nobody is refused, never widened to every row", () => 
   assert.equal(store.countSettlements({}), 5);
 });
 
-test("merchant profiles upsert in place and survive a cache clear", () => {
-  store.upsertMerchantProfile({
-    handle: "Ah-Hock-Chicken-Rice",
-    display_name: "Ah Hock Chicken Rice",
-    location: "Maxwell Food Centre #01-32",
-    blurb: "Hainanese chicken rice since 1987.",
-    updated_at: 1_785_900_000,
+test("agent wallets are keyed by wallet, scoped to a factory, and never rewritten", () => {
+  const FACTORY = "0xFacT0000000000000000000000000000000000A1";
+  store.insertAgentWallet({
+    wallet: "0xAaA0000000000000000000000000000000000001",
+    owner: "0xOwNeR000000000000000000000000000000000A",
+    agent_signer: "0xSiGnEr00000000000000000000000000000000B",
+    block_number: 45_300_000,
+    factory: FACTORY,
   });
-  store.upsertMerchantProfile({
-    handle: "ah-hock-chicken-rice",
-    display_name: "Ah Hock Chicken Rice",
-    location: "Maxwell Food Centre #01-33",
-    blurb: "Hainanese chicken rice since 1987.",
-    updated_at: 1_785_900_100,
+  // The same log seen again by the other delivery path. INSERT OR IGNORE, because
+  // a WalletCreated log is immutable history — a re-sweep must be a no-op, not a
+  // rewrite that could clobber a row with a stale re-decode.
+  store.insertAgentWallet({
+    wallet: "0xaaa0000000000000000000000000000000000001",
+    owner: "0x0000000000000000000000000000000000000bad",
+    agent_signer: "0x0000000000000000000000000000000000000bad",
+    block_number: 99_999_999,
+    factory: FACTORY,
   });
-  const got = store.getMerchantProfile("ah-hock-chicken-rice");
-  assert.equal(got?.location, "Maxwell Food Centre #01-33");
+  const rows = store.agentWalletsBySigner("0xsigner00000000000000000000000000000000b", FACTORY);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.wallet, "0xaaa0000000000000000000000000000000000001");
+  assert.equal(rows[0]?.block_number, 45_300_000, "the first sighting wins");
+
+  // A wallet from a RETIRED factory is not a candidate. It still answers
+  // owner()/policy() perfectly, so it would list as healthy — while its immutable
+  // CORE is the dead core and every payment through it reverts.
+  store.insertAgentWallet({
+    wallet: "0xB0B0000000000000000000000000000000000002",
+    owner: "0xOwNeR000000000000000000000000000000000A",
+    agent_signer: "0xSiGnEr00000000000000000000000000000000B",
+    block_number: 45_100_000,
+    factory: "0xDeAd000000000000000000000000000000000009",
+  });
+  assert.equal(
+    store.agentWalletsBySigner("0xsigner00000000000000000000000000000000b", FACTORY).length,
+    1,
+    "the retired factory's wallet is not offered",
+  );
 });
 
 test("denials record the cancel tx, never a reverted one", () => {
@@ -230,7 +252,14 @@ test("clearCache empties transaction tables but keeps merchant identity", () => 
   assert.equal(store.getIntentRow("0xabcdef"), undefined);
   assert.equal(store.countDenials("0xpbmwallet"), 0);
   assert.equal(store.getCursor(), 45_065_094n);
-  // Identity is the one thing here the chain cannot re-supply, so a reset that
-  // erased it would lose a shop that onboarded live.
-  assert.equal(store.getMerchantProfile("ah-hock-chicken-rice")?.display_name, "Ah Hock Chicken Rice");
+  // Kept: WalletCreated logs are append-only history, and a reset jumps the
+  // cursor to head — so clearing them would lose wallets no later sweep looks
+  // for again. Everything else here is re-swept from the chain.
+  assert.equal(
+    store.agentWalletsBySigner(
+      "0xsigner00000000000000000000000000000000b",
+      "0xFacT0000000000000000000000000000000000A1",
+    ).length,
+    1,
+  );
 });

@@ -6,7 +6,7 @@
 //   1. tops the FUNDER up — this can execute a real three-transaction Uniswap v3
 //      ETH→USDC swap, so this script spends real balances, not just state
 //   2. funds the demo PAYER (USDC to pay with, ETH to sign its own owner txs)
-//   3. seeds the two canonical merchant profiles
+//   3. registers the two canonical merchant shops on-chain, display text included
 //   4. finds or CREATES the payer's agent wallet (a real contract deployment)
 //   5. tops that wallet up (a real USDC transfer)
 //   6. re-arms its policy on-chain (setPolicy, resets spentToday)
@@ -27,9 +27,10 @@
 //     key. A key with no ETH cannot send them, so the payer must be funded
 //     before the wallet exists, and the wallet must exist before it can be
 //     topped up or armed.
-// Merchant seeding sits between the two halves because it depends on neither:
-// it is HTTP and SQLite only, and doing it early means the cheat sheet names the
-// right shops even if a chain step degrades.
+// Merchant registration sits between the two halves because it depends on
+// neither — it is the relayer's own transaction, funded by step 1 — and doing it
+// early means the cheat sheet names the right shops even if a later step
+// degrades. It is a no-op on every run but the first against a fresh core.
 //
 // Usage: pnpm demo:reset
 import { existsSync } from "node:fs";
@@ -62,6 +63,7 @@ const { BASE_SEPOLIA_ADDRESSES, BASE_SEPOLIA_RELAYER } = await import(
 const { DEMO_MERCHANTS, DEMO_MERCHANT_HANDLE, DEMO_POLICY } = await import(
   "../packages/shared/src/constants.ts"
 );
+const { gantryCoreAbi } = await import("../packages/shared/src/abis/gantryCore.ts");
 const { agentPbmWalletAbi } = await import("../packages/shared/src/abis/agentPbmWallet.ts");
 const { agentPbmWalletFactoryAbi } = await import(
   "../packages/shared/src/abis/agentPbmWalletFactory.ts"
@@ -86,7 +88,9 @@ const {
   formatEther,
   formatUnits,
   http,
+  keccak256,
   parseEventLogs,
+  toHex,
 } = await importFromBackend("viem");
 const { privateKeyToAccount } = await importFromBackend("viem/accounts");
 const { baseSepolia } = await importFromBackend("viem/chains");
@@ -143,6 +147,13 @@ const publicClient = createPublicClient({
   pollingInterval: 500,
 });
 const payerClient = createWalletClient({ chain: baseSepolia, account: payer, transport: transport() });
+/** The demo shops' payout address. Derived rather than hardcoded so it cannot
+ * drift from whichever relayer key this machine actually holds — but the key
+ * itself never signs here: every relayer write goes through the backend's queue,
+ * which owns the nonce. */
+const relayerAddress = privateKeyToAccount(
+  requireKey("RELAYER_PRIVATE_KEY", "packages/backend/.env"),
+).address;
 
 /** Matches the relayer's own 20s cap. A timeout does NOT prove the transaction
  * did not land (the repo's compensation invariant), so every caller reports it
@@ -308,39 +319,66 @@ let payerLine;
   }
 }
 
-// 3. Merchant profiles: the display facts the chain does not store. The admin
-//    token bypasses the host gate and the per-IP cooldown, which is exactly why
-//    it exists — this is an operator seeding canonical shops, not a stranger
-//    renaming one. Names and locations come from shared's DEMO_MERCHANTS so the
-//    seeded row can never disagree with the fallback the backend renders when
-//    the row is missing; only the blurbs, which that constant has no field for,
-//    live here.
-const DEMO_BLURBS = {
-  "ah-hock-chicken-rice": "Hainanese chicken rice, kopi and iced tea since 1987.",
-  "gadgethub-sg": "Cables, chargers and power banks.",
-};
-
+// 3. The demo shops, registered ON-CHAIN with their display text. Since 11 Aug
+//    2026 the name, location and blurb live in the merchant record, so this is
+//    one transaction per shop instead of a registration followed by a PATCH —
+//    and a shop can no longer exist unnamed, because there is no second write to
+//    fail after the handle is claimed.
+//
+//    Posted THROUGH the backend, with the admin token. It is tempting to sign
+//    this here — the script already holds the relayer key — and that is exactly
+//    what must not happen: `relayer.ts` keeps the nonce in module state, so a
+//    second signer on that key picks a nonce from a lagging `pending` count and
+//    the transaction that loses the replacement race is a settlement. The 30s
+//    per-IP cooldown that made direct signing tempting is waived for an operator.
 let profileLine;
 {
-  // In parallel: both are HTTP + one SQLite row, and each waits on the same
-  // registration-date scan pass, so serialising them pays that wait twice.
-  const seeded = await Promise.all(
-    Object.entries(DEMO_BLURBS).map(async ([handle, blurb]) => {
-      const { res, body } = await call("PATCH", `/api/merchants/${handle}`, {
-        ...DEMO_MERCHANTS[handle],
-        blurb,
+  const done = [];
+  const failed = [];
+  for (const [handle, shop] of Object.entries(DEMO_MERCHANTS)) {
+    const id = keccak256(toHex(handle));
+    const registered = async () => {
+      const [payout] = await publicClient.readContract({
+        address: BASE_SEPOLIA_ADDRESSES.gantryCore,
+        abi: gantryCoreAbi,
+        functionName: "merchants",
+        args: [id],
       });
-      return { handle, ok: res?.ok === true, name: res?.ok ? body?.displayName : null, detail: why(res, body) };
-    }),
-  );
-  const failed = seeded.filter((entry) => !entry.ok);
+      return payout !== "0x0000000000000000000000000000000000000000";
+    };
+    try {
+      if (await registered()) {
+        done.push(shop.displayName);
+        continue;
+      }
+      const { res, body } = await call("POST", "/api/merchants", {
+        handle,
+        payout: relayerAddress,
+        categoryId: shop.categoryId,
+        displayName: shop.displayName,
+        location: shop.location,
+        blurb: shop.blurb,
+      });
+      if (res?.ok) {
+        done.push(`${shop.displayName} (registered)`);
+        continue;
+      }
+      // A refusal is not proof it did not land: the route waits on a receipt and
+      // the relayer caps that at 20s. Ask the chain before saying so.
+      if (await registered()) {
+        done.push(`${shop.displayName} (registered, slow receipt)`);
+      } else {
+        failed.push(`${handle} (${why(res, body)})`);
+      }
+    } catch (err) {
+      failed.push(`${handle} (${brief(err instanceof Error ? err.message : String(err))})`);
+    }
+  }
   if (failed.length === 0) {
-    profileLine = `profiles ${seeded.map((entry) => entry.name ?? entry.handle).join(" · ")}`;
+    profileLine = `merchants ${done.join(" · ")}`;
   } else {
     degraded = true;
-    profileLine =
-      `⚠ profile seeding failed for ${failed.map((entry) => `${entry.handle} (${entry.detail})`).join(", ")}; ` +
-      `the shop renders under its fallback name, with no blurb`;
+    profileLine = `⚠ merchant registration failed for ${failed.join(", ")}; those shops will not resolve`;
   }
 }
 

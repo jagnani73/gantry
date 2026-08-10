@@ -38,7 +38,13 @@ merchantsRouter.post("/api/merchants", async (req, res) => {
   const body = RegisterMerchantSchema.parse(req.body);
   res
     .status(201)
-    .json(await registerMerchant({ ...body, payout: body.payout as Address }, req.ip));
+    .json(
+      await registerMerchant(
+        { ...body, payout: body.payout as Address },
+        req.ip,
+        req.get("x-admin-token"),
+      ),
+    );
 });
 
 /**

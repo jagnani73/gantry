@@ -60,7 +60,7 @@ contract PbmWalletForkTest is Test {
         xsgd.mint(address(swap), 1_000_000e6);
         core = new GantryCore(IERC20(address(xsgd)), relayer);
         core.setSwap(swap);
-        merchantId = core.registerMerchant("ah-hock-chicken-rice", payout, 1);
+        merchantId = core.registerMerchant("ah-hock-chicken-rice", payout, 1, "", "", "");
 
         factory = new AgentPBMWalletFactory(address(core));
         wallet = AgentPBMWallet(factory.createWallet(agent, "")); // this test contract owns it

@@ -47,7 +47,7 @@ contract AgentPBMWalletIntegrationTest is GantryTestBase {
         usdc.mint(address(wallet), 1_000e6);
 
         gadgetPayout = makeAddr("gadgetPayout");
-        gadgetMerchantId = core.registerMerchant("gadgethub-sg", gadgetPayout, 2);
+        gadgetMerchantId = core.registerMerchant("gadgethub-sg", gadgetPayout, 2, "", "", "");
     }
 
     function _demoPolicy() internal view returns (AgentPBMWallet.Policy memory) {

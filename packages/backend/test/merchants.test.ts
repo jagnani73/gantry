@@ -1,13 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEMO_MERCHANTS } from "@gantry/shared";
+
 import {
   PROFILE_LIMITS,
   normalizeProfile,
   resolveProfile,
   type MerchantProfile,
 } from "../src/services/merchants-core";
-import type { MerchantProfileRow } from "../src/db-core";
 
 /**
  * Pure-module tests (errors.test.ts precedent — the suite runs with no env, so
@@ -25,17 +24,6 @@ function profile(overrides: Partial<MerchantProfile> = {}): MerchantProfile {
     displayName: "Ah Hock Chicken Rice",
     location: "Maxwell Food Centre",
     blurb: "Hainanese chicken rice, kopi and iced tea since 1987.",
-    ...overrides,
-  };
-}
-
-function row(overrides: Partial<MerchantProfileRow> = {}): MerchantProfileRow {
-  return {
-    handle: "ah-hock-chicken-rice",
-    display_name: "Ah Hock Chicken Rice (Stall 32)",
-    location: "Maxwell Food Centre #01-32",
-    blurb: "Hainanese chicken rice since 1987.",
-    updated_at: 1_785_900_000,
     ...overrides,
   };
 }
@@ -106,29 +94,60 @@ test("ZWJ emoji sequences survive — the filter targets deception, not glyphs",
   assert.ok(result.ok);
 });
 
-test("a stored profile wins over the demo seed data", () => {
-  const resolved = resolveProfile("ah-hock-chicken-rice", row());
+test("the chain's text is the profile, whole", () => {
+  const resolved = resolveProfile({
+    displayName: "Ah Hock Chicken Rice (Stall 32)",
+    location: "Maxwell Food Centre #01-32",
+    blurb: "Hainanese chicken rice since 1987.",
+  });
   assert.equal(resolved.displayName, "Ah Hock Chicken Rice (Stall 32)");
   assert.equal(resolved.location, "Maxwell Food Centre #01-32");
   assert.equal(resolved.blurb, "Hainanese chicken rice since 1987.");
 });
 
-test("DEMO_MERCHANTS is the fallback, and carries no blurb", () => {
-  const resolved = resolveProfile("ah-hock-chicken-rice", undefined);
-  assert.equal(resolved.displayName, DEMO_MERCHANTS["ah-hock-chicken-rice"]?.displayName);
-  assert.equal(resolved.location, "Maxwell Food Centre");
-  // The seed data has no blurb, and the key must be ABSENT rather than
-  // undefined — JSON.stringify keeps `undefined` out, but `"blurb" in row` is
-  // how a caller asks whether a shop has written one.
+test("an empty field is ABSENT, not an empty string", () => {
+  // `""` is what the contract stores for a field nobody set, and the two must not
+  // be conflated: JSON.stringify keeps `undefined` out either way, but
+  // `"blurb" in row` is how a caller asks whether a shop has written one.
+  const resolved = resolveProfile({ displayName: "Ah Hock", location: "", blurb: "" });
+  assert.equal(resolved.displayName, "Ah Hock");
+  assert.equal("location" in resolved, false);
   assert.equal("blurb" in resolved, false);
 });
 
-test("the demo fallback matches a handle case-insensitively", () => {
-  assert.equal(resolveProfile("Ah-Hock-Chicken-Rice", undefined).displayName, "Ah Hock Chicken Rice");
+test("text that lies about itself is dropped, not forwarded", () => {
+  // The chokepoint MOVED here when the record went on-chain. registerMerchant is
+  // permissionless and the contract checks length only, so these reach the read
+  // path without ever passing normalizeProfile — and the honest rendering of a
+  // name designed to deceive is the shop's own handle.
+  assert.deepEqual(
+    resolveProfile({ displayName: "Ah Hock\u202EeciR nekcihC", location: "", blurb: "" }),
+    {},
+  );
+  assert.equal(
+    "location" in resolveProfile({ displayName: "", location: "Maxwell\u200B\u200BFood", blurb: "" }),
+    false,
+  );
+  // Whitespace is the quiet one: legal on-chain, TRUTHY, and forwarded raw it
+  // renders as a blank name while the handle fallback never fires.
+  assert.deepEqual(resolveProfile({ displayName: "   ", location: "\t", blurb: "" }), {});
+  // Trimmed, not rejected, when the interior is fine.
+  assert.equal(
+    resolveProfile({ displayName: "  Ah Hock  ", location: "", blurb: "" }).displayName,
+    "Ah Hock",
+  );
+  // Emoji are not deception — the filter targets intent, not glyphs.
+  assert.equal(
+    resolveProfile({ displayName: "Ah Hock \u{1F468}\u200D\u{1F373}", location: "", blurb: "" })
+      .displayName,
+    "Ah Hock \u{1F468}\u200D\u{1F373}",
+  );
 });
 
-test("a merchant with neither gets no display fields at all", () => {
-  // Absence is the contract: an unnamed merchant renders as its handle, which
-  // is true, where an invented name is not.
-  assert.deepEqual(resolveProfile("kopi-corner-sg", undefined), {});
+test("a merchant with nothing on-chain gets no display fields at all", () => {
+  // Absence is the contract: an unnamed merchant renders as its handle, which is
+  // true, where an invented name is not. There is deliberately no seed-data
+  // fallback any more — inventing a name for an empty record is exactly what
+  // "the chain is the only source" forbids, and it would hide an unnamed shop.
+  assert.deepEqual(resolveProfile({ displayName: "", location: "", blurb: "" }), {});
 });

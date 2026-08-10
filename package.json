@@ -13,7 +13,8 @@
     "typecheck": "pnpm -r typecheck",
     "abis": "forge build --root packages/contracts && node packages/shared/scripts/gen-abis.mjs",
     "demo:reset": "node scripts/demo-reset.mjs",
-    "dev": "concurrently -n backend,web -c blue,green \"pnpm --filter @gantry/backend dev\" \"pnpm --filter @gantry/web dev\""
+    "dev": "concurrently -n backend,web -c blue,green \"pnpm --filter @gantry/backend dev\" \"pnpm --filter @gantry/web dev\"",
+    "contracts:fresh": "node scripts/contracts-fresh.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

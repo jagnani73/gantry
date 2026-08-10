@@ -119,11 +119,17 @@ export const api = {
       body: JSON.stringify({ address }),
     }),
 
+  // 45s, matching registerMerchant and for the identical reason: this waits on a
+  // real receipt and the relayer caps that at 20s, behind a FIFO queue it shares
+  // with settlements. The old 12s was a READ-path timeout left in place when this
+  // became a chain write, so exceeding it was the normal outcome under any queue
+  // contention — aborting client-side on a write that then landed, which is
+  // precisely the false "failed" the screen's own copy warns about.
   updateMerchantProfile: (handle: string, req: UpdateMerchantProfileRequest) =>
     call<MerchantResponse>(`/api/merchants/${handle}`, {
       method: "PATCH",
       body: JSON.stringify(req),
-      timeoutMs: 12_000,
+      timeoutMs: 45_000,
     }),
 
   /**

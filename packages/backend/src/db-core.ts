@@ -40,17 +40,20 @@ export interface SettlementRow {
 }
 
 /**
- * A merchant's off-chain display record. The chain stores only handle/payout/
- * category, so name, location and blurb live here — the first thing in this
- * file that is NOT rebuildable from chain, which is why `clearCache` leaves it
- * alone and `demo-reset` re-seeds the canonical demo shops.
+ * One `WalletCreated` log from the agent factory, as swept.
+ *
+ * A candidate, never a verdict: ownership is `Ownable2Step` and the agent signer
+ * rotates, so this records who created a wallet and not who controls it now. The
+ * live reads in `services/agents.ts` decide, which is also why nothing here is
+ * ever rendered directly.
  */
-export interface MerchantProfileRow {
-  handle: string;
-  display_name: string;
-  location: string;
-  blurb: string;
-  updated_at: number;
+export interface AgentWalletRow {
+  wallet: string;
+  owner: string;
+  agent_signer: string;
+  block_number: number;
+  /** The factory that emitted the log. Reads filter on the current one. */
+  factory: string;
 }
 
 /**
@@ -135,12 +138,30 @@ export function createDatabase(path: string) {
       PRIMARY KEY (tx_hash, log_index)
     );
 
-    CREATE TABLE IF NOT EXISTS merchant_profiles (
-      handle       TEXT PRIMARY KEY,
-      display_name TEXT NOT NULL,
-      location     TEXT NOT NULL,
-      blurb        TEXT NOT NULL,
-      updated_at   INTEGER NOT NULL
+    /*
+     * Agent wallets, as the factory's WalletCreated logs report them.
+     *
+     * Swept by the indexer alongside the core's own events — one getLogs pass over
+     * two addresses — which replaced a separate chunked scanner that re-walked the
+     * same block range on every cold process and died on a shared egress IP.
+     *
+     * Candidates ONLY. Ownership is Ownable2Step and the signer rotates, so a
+     * creation log records who made a wallet, never who controls it now; the live
+     * multicall in services/agents.ts decides. Kept across a cache clear (see
+     * clearCache) because these logs are append-only history: re-sweeping them buys
+     * nothing and losing them blinds the agent CLI until the next sweep.
+     */
+    CREATE TABLE IF NOT EXISTS agent_wallets (
+      wallet       TEXT PRIMARY KEY,
+      owner        TEXT NOT NULL,
+      agent_signer TEXT NOT NULL,
+      block_number INTEGER NOT NULL,
+      -- Which factory minted it. Every read filters on the CURRENT one, because a
+      -- redeploy makes older rows actively dangerous rather than merely stale: an
+      -- old wallet answers owner()/policy() perfectly, so it lists as healthy, and
+      -- its immutable CORE is the retired core — every payment through it reverts.
+      -- Without this the only guard was remembering to delete the database.
+      factory      TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS denials (
@@ -168,6 +189,9 @@ export function createDatabase(path: string) {
     CREATE INDEX IF NOT EXISTS idx_settlements_agent_payer
       ON settlements (agent_payer, block_number DESC, log_index DESC);
     CREATE INDEX IF NOT EXISTS idx_denials_wallet ON denials (wallet, created_at DESC);
+    -- The agent CLI knows only its own session key, so this is the lookup that
+    -- lets it find the wallets it acts for.
+    CREATE INDEX IF NOT EXISTS idx_agent_wallets_signer ON agent_wallets (agent_signer);
   `);
 
   // The cache is disposable, but ALTER beats deleting a db mid-demo: bring
@@ -176,6 +200,15 @@ export function createDatabase(path: string) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === "agent_payer")) {
       db.exec(`ALTER TABLE ${table} ADD COLUMN agent_payer TEXT`);
+    }
+  }
+  {
+    const cols = db.prepare("PRAGMA table_info(agent_wallets)").all() as { name: string }[];
+    if (cols.length > 0 && !cols.some((c) => c.name === "factory")) {
+      // Rows written before this column existed have unknown provenance, and the
+      // default `''` matches no factory — so they stop being offered as candidates
+      // rather than being trusted. The sweep re-adds any that are still current.
+      db.exec("ALTER TABLE agent_wallets ADD COLUMN factory TEXT NOT NULL DEFAULT ''");
     }
   }
 
@@ -212,17 +245,15 @@ export function createDatabase(path: string) {
   const settlementsAfterStmt = db.prepare<[number, number, number], SettlementRow>(
     "SELECT * FROM settlements WHERE (block_number > ?) OR (block_number = ? AND log_index > ?) ORDER BY block_number ASC, log_index ASC",
   );
-  const upsertMerchantProfileStmt = db.prepare(`
-    INSERT INTO merchant_profiles (handle, display_name, location, blurb, updated_at)
-    VALUES (@handle, @display_name, @location, @blurb, @updated_at)
-    ON CONFLICT(handle) DO UPDATE SET
-      display_name = excluded.display_name,
-      location     = excluded.location,
-      blurb        = excluded.blurb,
-      updated_at   = excluded.updated_at
+  // `OR IGNORE`, not `OR REPLACE`: a WalletCreated log is immutable history, so a
+  // re-sweep of the same block must be a no-op rather than a rewrite. The watch and
+  // the sweep overlap by design — the same reason settlements dedup on their PK.
+  const insertAgentWalletStmt = db.prepare(`
+    INSERT OR IGNORE INTO agent_wallets (wallet, owner, agent_signer, block_number, factory)
+    VALUES (@wallet, @owner, @agent_signer, @block_number, @factory)
   `);
-  const getMerchantProfileStmt = db.prepare<[string], MerchantProfileRow>(
-    "SELECT * FROM merchant_profiles WHERE handle = ?",
+  const agentWalletsBySignerStmt = db.prepare<[string, string], AgentWalletRow>(
+    "SELECT * FROM agent_wallets WHERE agent_signer = ? AND factory = ? ORDER BY block_number ASC",
   );
   const insertDenialStmt = db.prepare(`
     INSERT OR REPLACE INTO denials (
@@ -375,12 +406,23 @@ export function createDatabase(path: string) {
       return row.n;
     },
 
-    getMerchantProfile(handle: string): MerchantProfileRow | undefined {
-      return getMerchantProfileStmt.get(handle.toLowerCase());
+    /** Lowercased on write, exactly like every other address column: these arrive
+     * from a decoded log, a query string and a chain read, and only the last is
+     * reliably checksummed. */
+    insertAgentWallet(row: AgentWalletRow): void {
+      insertAgentWalletStmt.run({
+        wallet: row.wallet.toLowerCase(),
+        owner: row.owner.toLowerCase(),
+        agent_signer: row.agent_signer.toLowerCase(),
+        block_number: row.block_number,
+        factory: row.factory.toLowerCase(),
+      });
     },
 
-    upsertMerchantProfile(row: MerchantProfileRow): void {
-      upsertMerchantProfileStmt.run({ ...row, handle: row.handle.toLowerCase() });
+    /** Scoped to a factory, always. An unscoped read would hand a caller wallets
+     * pinned to a retired core, which look healthy and revert on every payment. */
+    agentWalletsBySigner(signer: string, factory: string): AgentWalletRow[] {
+      return agentWalletsBySignerStmt.all(signer.toLowerCase(), factory.toLowerCase());
     },
 
     /** Keyed by intent — a denied intent is cancelled and never retried, so a
@@ -404,10 +446,15 @@ export function createDatabase(path: string) {
     },
 
     /**
-     * Admin reset: transaction cache only — chain state is untouched and
-     * rebuildable. `merchant_profiles` is deliberately NOT cleared: it is the
-     * one table holding facts the chain does not have, so wiping it would erase
-     * a shop that onboarded live rather than just replaying what it can re-sweep.
+     * Admin reset: transaction cache only — chain state is untouched, and every
+     * table in this file is rebuildable from it. That became true on 11 Aug 2026,
+     * when the merchant display record moved on-chain and `merchant_profiles`
+     * went with it; before that, one table held facts the chain did not have and
+     * this method had to carve out an exception. There is nothing left to carve.
+     *
+     * `agent_wallets` is deliberately NOT cleared: WalletCreated logs are
+     * append-only history, and the reset jumps the cursor to head, so clearing
+     * them would lose wallets no later sweep will look for again.
      */
     clearCache(): void {
       db.exec("DELETE FROM settlements; DELETE FROM intents; DELETE FROM denials;");

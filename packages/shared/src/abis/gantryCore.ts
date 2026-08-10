@@ -232,6 +232,21 @@ export const gantryCoreAbi = [
         "name": "handle",
         "type": "string",
         "internalType": "string"
+      },
+      {
+        "name": "displayName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "location",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "blurb",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "stateMutability": "view"
@@ -280,6 +295,21 @@ export const gantryCoreAbi = [
         "name": "categoryId",
         "type": "uint16",
         "internalType": "uint16"
+      },
+      {
+        "name": "displayName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "location",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "blurb",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [
@@ -365,6 +395,34 @@ export const gantryCoreAbi = [
         "name": "newPayout",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMerchantProfile",
+    "inputs": [
+      {
+        "name": "merchantId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "displayName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "location",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "blurb",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [],
@@ -639,6 +697,37 @@ export const gantryCoreAbi = [
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MerchantProfileUpdated",
+    "inputs": [
+      {
+        "name": "merchantId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "displayName",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "location",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "blurb",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -942,6 +1031,22 @@ export const gantryCoreAbi = [
       },
       {
         "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ProfileTooLong",
+    "inputs": [
+      {
+        "name": "field",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "length",
         "type": "uint256",
         "internalType": "uint256"
       }

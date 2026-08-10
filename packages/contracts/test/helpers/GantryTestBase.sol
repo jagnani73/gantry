@@ -43,7 +43,7 @@ abstract contract GantryTestBase is Test {
 
         core = new GantryCore(IERC20(address(xsgd)), relayer);
         core.setSwap(swap);
-        merchantId = core.registerMerchant("ah-hock-chicken-rice", payout, CATEGORY_FOOD_BEVERAGE);
+        merchantId = core.registerMerchant("ah-hock-chicken-rice", payout, CATEGORY_FOOD_BEVERAGE, "", "", "");
 
         usdc.mint(payer, 1_000e6);
         xsgd.mint(payer, 1_000e6);

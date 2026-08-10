@@ -17,43 +17,64 @@ export interface GantryAddresses {
 }
 
 /**
- * Review-hardened redeploy, 5 Aug 2026; PBM contracts 7 Aug 2026; agent factory
- * redeployed 10 Aug 2026 for the on-chain `label` and `policyUpdatedAt`.
- * Basescan-verified.
+ * Deployed together by `pnpm contracts:fresh`, 11 Aug 2026. Basescan-verified.
  *
- * `demoAgentPbmWallet` used to sit here and is GONE, not merely stale. It was a
- * relayer-owned wallet from `DeployPBM.s.sol`, already labelled historical when
- * agents became payer-owned; the factory redeploy finished it off twice over —
- * it is invisible to enumeration (a different factory's logs) and predates the
- * wallet ABI everything now reads. Provisioning a usable wallet is
- * `pnpm demo:reset`.
+ * TOGETHER is the invariant. `AgentPBMWallet.CORE` is immutable and the factory
+ * pins the core it was constructed with, so a core deployed without its factory
+ * is a pair that can never be made coherent again — and one deploy block only
+ * means anything if nothing here predates it. Change any contract and they all
+ * ship again; there is no partial redeploy of this table.
+ *
+ * `realUsdc` is the exception and is not ours: Circle's testnet USDC, fixed.
+ *
+ * No wallet address belongs here. Agent wallets are minted per payer by the
+ * permissionless factory, so any one of them is a sample rather than a constant
+ * — `pnpm demo:reset` provisions the rehearsal one.
  */
 export const BASE_SEPOLIA_ADDRESSES: GantryAddresses = {
-  gantryCore: "0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0",
-  fixedRateSwap: "0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713",
-  mockXsgd: "0xd583FaB0Db5c543f5574780f8b899AEb74463361",
+  gantryCore: "0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61",
+  fixedRateSwap: "0x2590C808C08819Fa47129e02bE3460d3165Ad14c",
+  mockXsgd: "0xDD922ede4103467449B3626Ff97b674c84761ab7",
   realUsdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-  agentPbmFactory: "0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05",
+  agentPbmFactory: "0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a",
 };
 
-/** GantryCore deploy block — indexer backfill floor. */
-export const BASE_SEPOLIA_DEPLOY_BLOCK = 45065094n;
+/**
+ * THE deploy block. Singular, and that is the point.
+ *
+ * Every contract above ships in one `pnpm contracts:fresh` run, so one floor
+ * serves the indexer's sweep and the agent-wallet lookup alike. There used to be
+ * two — GantryCore's and the factory's, ~229k blocks apart because they were
+ * deployed months apart in project time — and the gap is what forced a second
+ * chunked scanner over a range the indexer already walked. Collapsing them is
+ * what let `WalletCreated` fold into the same `getLogs` pass.
+ *
+ * Taken from the deploy receipt, never inferred. It may UNDER-state (the script
+ * reads `block.number` before broadcasting), which costs a few empty windows;
+ * over-stating would silently lose logs, and a scan floor must never do that.
+ *
+ * MOVE IT WITH THE ADDRESSES. A redeploy left on an old floor sends every cold
+ * backfill over blocks that cannot hold one of these contracts' logs.
+ */
+export const BASE_SEPOLIA_DEPLOY_BLOCK = 45307715n;
 
 /**
- * AgentPBMWalletFactory deploy block — the floor for enumerating `WalletCreated`.
+ * Factories this project has retired, oldest first.
  *
- * Taken from the deploy receipt of the 10 Aug 2026 redeploy — the exact block,
- * not an inference. (The previous factory's floor was binary-searched with
- * `eth_getCode`, because a floor derived from the oldest event a scan happened
- * to find is only as old as that observation, and one set too high loses wallets
- * silently rather than failing.) Starting from GantryCore's block instead would
- * scan ~229k blocks in which this contract did not exist, and every chunk is a
- * round trip.
+ * Kept because `walletsOf` only answers for the factory you ask, so a wallet
+ * minted by a superseded one is reachable by address and by nothing else — and
+ * they hold real USDC. `pnpm contracts:fresh` sweeps every entry here as well as
+ * the live factory, and appends the outgoing address when it repoints the table,
+ * so the list maintains itself rather than depending on someone remembering.
  *
- * MOVE THIS WITH THE ADDRESS. A redeployed factory left on the old floor sends
- * every cold scan back over blocks that cannot hold one of its logs.
+ * Nothing in the running app reads this: enumeration is scoped to the CURRENT
+ * factory on purpose, because a wallet from a retired one is pinned to a retired
+ * core and reverts on every payment. This is a recovery list, not a registry.
  */
-export const BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK = 45293974n;
+export const BASE_SEPOLIA_RETIRED_FACTORIES: readonly Address[] = [
+  "0x172905F26F09b41636854338360315971240c1cf", // M3, 7 Aug 2026
+  "0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05", // 10 Aug 2026, on-chain label + policyUpdatedAt
+];
 
 export const BASE_SEPOLIA_RELAYER: Address = "0x82513007C7eB93b54dC555Bdb74341b3084FC47B";
 
@@ -64,11 +85,11 @@ export const BASESCAN_BASE_URL = "https://sepolia.basescan.org";
  * `from .. from + LOG_CHUNK_SPAN`, so it covers 2,000 blocks and fits the public
  * Base Sepolia node's documented 2,000-block ceiling exactly.
  *
- * One constant because one measured fact governs all three chunked walks (the
- * indexer sweep, the merchant registration-date walk, the agent factory scan),
- * and it used to be written out three times with three copies of the reasoning.
- * When the provider ceiling changes, three places had to change and the third
- * would have been found by a wedged cursor.
+ * One constant because one measured fact governs both remaining chunked walks
+ * (the indexer sweep and the merchant registration-date walk), and it used to be
+ * written out once per walk with a copy of the reasoning each time. A third
+ * consumer, the agent factory scan, was deleted outright when `WalletCreated`
+ * folded into the sweep.
  *
  * Do not raise it: a larger range is refused outright and the sweep stops
  * advancing. Do not lower it to satisfy the paid provider either — Alchemy's free

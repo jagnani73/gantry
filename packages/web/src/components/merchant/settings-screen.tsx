@@ -134,7 +134,9 @@ export function SettingsScreen() {
       // The toast carries WHY it matters, not just that it happened — that half
       // of the old inline line is the only part a merchant could not work out
       // from the form resetting itself.
-      toast.success("Shop profile saved. Every payer surface reads this record.");
+      // Names the WRITE, because it is a chain write now: a merchant who sees
+      // "saved" over a several-second wait should know what they waited for.
+      toast.success("Shop profile saved on-chain. Every payer surface reads this record.");
     } catch (err) {
       // Logged with the handle, matching every other failure path in this app.
       // Without it a merchant reporting "it said Failed to fetch" leaves no
@@ -152,9 +154,18 @@ export function SettingsScreen() {
       //
       // Deliberately NOT re-read automatically: `reload()` flips the provider to
       // `loading`, which swaps this screen for the gate and destroys the draft.
+      // Three names, and the server owns the third. `RequestTimeout`/`NetworkError`
+      // are minted by this app's own transport when IT gives up; `ProfileWriteUnresolved`
+      // is the backend saying the transaction was broadcast and it could not confirm
+      // it — which is the LIKELIEST unknown outcome, since the relayer caps its
+      // receipt wait at 20s behind a queue shared with settlements. That case used
+      // to arrive as `InternalError` and match nothing here, so the one failure most
+      // likely to have actually landed was the one presented as definite.
       const unresolved =
         err instanceof ApiClientError &&
-        (err.errorName === "RequestTimeout" || err.errorName === "NetworkError");
+        (err.errorName === "RequestTimeout" ||
+          err.errorName === "NetworkError" ||
+          err.errorName === "ProfileWriteUnresolved");
       setSave({
         kind: "error",
         message: unresolved
@@ -333,16 +344,18 @@ export function SettingsScreen() {
             ) : null}
           </Card>
           {/* The chip is a claim about the HANDLE, and the name sitting above it
-              is not covered by it. Only handle, payout and category are written
-              to GantryCore; everything on this form is display text this shop
-              typed about itself, stored off-chain, checked by nobody. Saying so
-              here is the honest-labels rule applied to the one screen that puts
-              self-attested text under an on-chain badge. */}
+              is not covered by it. These fields went ON-CHAIN on 11 Aug 2026 —
+              which changes where they are stored and changes nothing about
+              whether they are true. Self-attested text in a contract is still
+              self-attested; the honest-labels rule is what stops "on-chain" from
+              quietly reading as "verified" on the one screen that puts the two
+              next to each other. */}
           <p className="mt-3.5 text-fine text-quiet">
-            The name, location and one-liner are yours to write. They live in Gantry&apos;s
-            database, not on-chain, and nobody verifies them. Only the handle, payout address and
-            category are on the chain, and &ldquo;registered&rdquo; there means a contract call
-            anyone can make, not a check anyone ran.
+            The name, location and one-liner are yours to write. They live in GantryCore now, so
+            every payer surface reads the same record — but nobody verifies them, and
+            &ldquo;registered&rdquo; means a contract call anyone can make, not a check anyone
+            ran. The handle and category cannot change at all: the handle is claimed permanently
+            and the contract ships no setter for the category.
           </p>
           <p className="mt-2.5 text-fine text-quiet">
             Payers reach this from a receipt or from a shop they have paid before. It carries
