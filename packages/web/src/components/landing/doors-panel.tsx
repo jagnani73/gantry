@@ -40,7 +40,12 @@ function DoorCard({
 export function DoorsPanel() {
   return (
     <section id="how-it-works" className={cn("pb-20", GUTTER_X)}>
-      <Card tone="accent" radius="hero" pad="none" className="p-7 md:px-14 md:py-13">
+      {/* The header's "How it works" link lands here, so the section has to be
+          titled the words the nav promised — otherwise the page jumps and
+          nothing confirms the reader arrived. The eyebrow below is pitch copy
+          for the card, not a heading; it is not a duplicate of this. */}
+      <h2 className="text-section">How it works</h2>
+      <Card tone="accent" radius="hero" pad="none" className="mt-6.5 p-7 md:px-14 md:py-13">
         <Label tone="on-accent-muted">Two doors, one settlement</Label>
         <div className="mt-8.5 grid grid-cols-1 gap-6 md:grid-cols-3">
           <DoorCard
