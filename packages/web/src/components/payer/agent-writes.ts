@@ -117,7 +117,10 @@ async function gasBalance(
  */
 export class UnknownOutcomeError extends Error {
   readonly txHash: Hex;
-  /** "revoke", "setPolicy", "createWallet" — what was being sent. */
+  /** "revoke", "setPolicy", "setLabel", "createWallet" — what was being sent.
+   * Screens branch on this, so a new write MUST be added to their branches too:
+   * `unresolvedText` fell through to the policy sentence when `setLabel` arrived,
+   * and told the payer the wrong transaction was unresolved. */
   readonly what: string;
 
   constructor(what: string, txHash: Hex, cause: string) {

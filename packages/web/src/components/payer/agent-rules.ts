@@ -52,7 +52,6 @@ export function sgdFromCapUnits(units: string | bigint, rate: bigint): string {
   return formatUnits6((value * rate) / 1_000_000n, 2);
 }
 
-/** "Food & Beverage · Retail" — the human reading of a bitmap's decoded names. */
 /**
  * Everything an owner write can change, as one comparable string.
  *
@@ -107,6 +106,7 @@ export function labelByteLength(label: string): number {
   return new TextEncoder().encode(label).length;
 }
 
+/** "Food & Beverage · Retail" — the human reading of a bitmap's decoded names. */
 export function categoryLabels(names: readonly string[]): string {
   if (names.length === 0) return "None";
   const byName = new Map(

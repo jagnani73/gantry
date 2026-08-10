@@ -228,6 +228,18 @@ function AgentFormFields({
     // down there would report "no wallet was deployed" about the run that just
     // deployed one.
     let target: Address | null = createdWallet;
+    /**
+     * Which writes of this save are MINED, in order.
+     *
+     * A save can send two transactions, and the failure of the second says
+     * nothing about the first. Without this the payer read a bare "User rejected
+     * the request" over figures that looked unchanged and reasonably concluded
+     * nothing had happened — while `setPolicy` was already on-chain, and tapping
+     * Save again re-sent it, paying gas and re-zeroing `spentToday` a second
+     * time. Hoisted out of the `try` for the same reason `target` is: the catch
+     * needs it.
+     */
+    const landed: string[] = [];
     try {
       const label = name.trim();
 
@@ -235,7 +247,13 @@ function AgentFormFields({
         // No transaction at all: neither the policy nor the label differs from
         // what the wallet already holds. Sending anyway would cost gas for no
         // change AND hand the agent a fresh daily allowance.
-        toast.success("No change — the wallet already holds these rules.");
+        //
+        // Worded as a claim about the READ, not about the chain. `existing` is
+        // the snapshot this form opened with, and `demo:reset` re-arms a policy
+        // while the app is open — as can another visitor, since a deployed build
+        // signs with one shared key — so "the wallet already holds these" is a
+        // stronger statement than anything here can support.
+        toast.success("No change — this matches what we read off the wallet.");
         popOverlay();
         return;
       }
@@ -261,18 +279,29 @@ function AgentFormFields({
         if (!policyUnchanged) {
           setBusy("Updating the policy on-chain…");
           await setPolicy(wallet, policy);
+          // Recorded the instant it mines, NOT after both writes. A rename that
+          // then fails used to leave this unset, so the very next read was the
+          // ungated too-early one this whole mechanism exists to catch — and the
+          // payer was returned to the caps they had just replaced.
+          landed.push("policy");
+          expectAgentPolicy(wallet, policyFingerprint({ ...policy, label: existing!.label }));
         }
         if (!labelUnchanged) {
           setBusy("Saving the name on-chain…");
           await setLabel(wallet, label);
+          landed.push("name");
         }
         toast.success(
-          policyUnchanged ? "Name saved on-chain." : "Rules updated on-chain.",
+          landed.length === 2
+            ? "Rules and name updated on-chain."
+            : policyUnchanged
+              ? "Name saved on-chain."
+              : "Rules updated on-chain.",
         );
-        // What the chain now holds, recorded before anything re-reads it. The
-        // detail screen this returns to reads through the backend, whose RPC is
-        // not the provider that confirmed the receipt, so its first read can
-        // still answer with the state that was just replaced.
+        // Both writes are in, so the expectation covers both. The detail screen
+        // this returns to reads through the backend, whose RPC is not the
+        // provider that confirmed the receipts, so its first read can still
+        // answer with the state that was just replaced.
         expectAgentPolicy(
           wallet,
           policyFingerprint({ ...(policyUnchanged ? existing! : policy), label }),
@@ -308,12 +337,20 @@ function AgentFormFields({
         // Broadcast, outcome unknown. Never a red failure, and never a blind
         // retry: a second `createWallet` deploys a duplicate, and a second
         // `setPolicy` is at best pointless gas.
-        setUnresolved({ text: unresolvedText(err, target), txHash: err.txHash });
+        setUnresolved({ text: unresolvedText(err, target, landed), txHash: err.txHash });
         // The agents list is where a deploy that did land will appear.
         refresh();
       } else {
-        setError(err instanceof Error ? err.message : String(err));
+        // Whatever already mined is reported FIRST. The wallet's own words for a
+        // rejected second prompt are "User rejected the request", which says
+        // nothing about the write that succeeded a moment earlier.
+        const failure = err instanceof Error ? err.message : String(err);
+        setError(landed.length > 0 ? `${landedText(landed)} ${failure}` : failure);
       }
+      // A partial save moved the chain, so the list this form was prefilled from
+      // is now wrong — and `existing` is the frozen open-time snapshot, so
+      // without this a second Save re-sends a `setPolicy` that already mined.
+      if (landed.length > 0) refresh();
     } finally {
       setBusy(null);
     }
@@ -333,12 +370,30 @@ function AgentFormFields({
       />
       <div className="flex flex-col gap-3.5 px-5 pt-6 pb-11">
         <Card radius="card-m" pad="none" className="flex flex-col gap-4 px-5 py-5">
-          <Field label="Name" hint="Yours alone. It stays in this browser and never leaves it.">
+          {/* The hint here read "Yours alone. It stays in this browser and never
+              leaves it." That was true of the localStorage map this replaced and
+              is now the opposite of true: the name is stored on the wallet, so it
+              is public, permanent and — on a build where every visitor shares one
+              demo key — written by an account that is not just yours. Collecting
+              it under the old promise is the kind of label this project treats as
+              a bug. The transaction cost belongs here too: a payer told the name
+              stays local has no reason to expect a second wallet prompt. */}
+          <Field
+            label="Name"
+            hint={
+              wallet
+                ? "Stored on the wallet, so it's public. Renaming costs a transaction."
+                : "Stored on the wallet, so it's public. Set here, it costs no extra transaction."
+            }
+          >
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Kopi Runner"
-              maxLength={40}
+              // Matches the contract's bound for the ASCII case. A multi-byte
+              // name can still exceed 31 BYTES inside 31 characters, which
+              // `validate` catches — the contract counts bytes.
+              maxLength={31}
             />
           </Field>
 
@@ -493,7 +548,9 @@ function AgentFormFields({
         <p className="px-1 text-center text-fine text-faint">
           {problem ??
             (writesNothing
-              ? "Nothing here differs from the wallet, so no transaction is sent. Only the name is stored."
+              // Both halves of "Only the name is stored" died with the
+              // localStorage map: on this branch nothing is written anywhere.
+              ? "Nothing here differs from what we read off the wallet, so no transaction is sent."
               : "You sign this yourself. No server can set or raise an agent's limits. Gas for it comes from the demo faucet.")}
         </p>
         {wallet ? null : (
@@ -513,14 +570,36 @@ function AgentFormFields({
  * makes it worse. For a deploy that is creating a duplicate wallet; for an
  * arming it is assuming the agent is either live or dead without looking.
  */
-function unresolvedText(err: UnknownOutcomeError, created: Address | null): string {
+function unresolvedText(
+  err: UnknownOutcomeError,
+  created: Address | null,
+  landed: readonly string[],
+): string {
   if (err.what === "createWallet") {
     return "The wallet deploy was submitted and we couldn't confirm it in time. It may still land. Check your agents list before trying again. Creating another would deploy a second wallet for the same signer.";
+  }
+  // Its own branch, because falling through to the policy sentence below said
+  // the wrong thing twice at once: it reported a write that had ALREADY been
+  // confirmed as unresolved, and never mentioned the rename that actually was —
+  // then advised re-sending, which would reset the daily counter for a stalled
+  // rename. In edit mode `created` is null, so this is the branch it hit.
+  if (err.what === "setLabel") {
+    return `${landedText(landed)} The rename was submitted and we couldn't confirm it in time. It only changes the display name — the spend rules are unaffected either way — so open the agent and see which name the chain holds before sending it again.`;
   }
   if (created) {
     return `The wallet is deployed at ${shortAddress(created)} and the policy write was submitted without being confirmed in time. An unarmed wallet can't spend anything, because every authorization reverts, so open it and see what the chain says before sending another.`;
   }
   return "The policy write was submitted and we couldn't confirm it in time. Open the agent to see what the chain holds before sending it again.";
+}
+
+/** What already mined, as a sentence to lead an error with. Empty when nothing
+ * did, so callers can prepend it unconditionally. */
+function landedText(landed: readonly string[]): string {
+  if (landed.length === 0) return "";
+  if (landed.includes("policy") && landed.includes("name")) {
+    return "Your rules and name are on-chain.";
+  }
+  return landed.includes("policy") ? "Your rules are on-chain." : "Your name is on-chain.";
 }
 
 /**

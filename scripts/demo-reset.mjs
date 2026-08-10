@@ -384,6 +384,11 @@ let armed = null;
         // The label is on-chain and set at creation, so the rehearsal wallet
         // arrives already named — the agents screen reads "Kopi Runner" rather
         // than a hex address, with no second transaction and nothing to type.
+        //
+        // Only on THIS branch, deliberately. A wallet that already exists keeps
+        // whatever its owner named it: renaming is a separate `setLabel`
+        // transaction, and a reset that quietly overwrote a payer's own name for
+        // their agent would be doing something no step here is allowed to do.
         args: [agentSigner, DEMO_AGENT_LABEL],
       });
       // The address comes from the LOG, not from the simulation's return value:
@@ -522,10 +527,13 @@ const walletLine =
 
 // 6b. Which wallet will the agent ACTUALLY use? The CLI knows only its session
 //     key: it asks for every wallet listing that signer and takes the NEWEST
-//     ACTIVE one (packages/agent/src/pay-flow.ts). Several wallets list this
-//     signer and always will — the factory is permissionless, nothing deletes a
-//     wallet, and this demo migrated from a relayer-owned one to a payer-owned
-//     one. This check must mirror that selection EXACTLY: if the two rules ever
+//     ACTIVE one (packages/agent/src/pay-flow.ts). Several wallets can list this
+//     signer — the factory is permissionless and nothing deletes a wallet, so
+//     any payer creating a second agent for the same key adds one. (The older
+//     reason, a migration from a relayer-owned wallet to a payer-owned one, no
+//     longer applies: the 10 Aug 2026 factory redeploy left those wallets
+//     unenumerable, so they cannot be candidates. The check stands on the first
+//     reason alone.) This check must mirror that selection EXACTLY: if the two rules ever
 //     drift, the script blesses a wallet the agent will not spend from, which is
 //     worse than not checking at all. Checked rather than assumed because the
 //     mismatch looks healthy from both ends — the CLI spends from a wallet this

@@ -76,6 +76,17 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   const [fresh, setFresh] = useState<AgentSummary | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
+  /**
+   * The freshness poll ran out with the read still behind.
+   *
+   * It is what lets the screen stop waiting WITHOUT pretending the figures are
+   * confirmed. Without it the give-up path settled the expectation and fell
+   * straight through to the full detail screen — cap meter, expiry and a status
+   * chip — rendering the policy the payer had just replaced as current. After a
+   * revoke that produced the exact pair of statements this file exists to
+   * prevent: a chip reading "Active" over a wallet that reverts every spend.
+   */
+  const [waitedOut, setWaitedOut] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   /** What the last revoke attempt resolved to. `danger` is a proven failure;
    * `sunken` is everything we cannot call one — a broadcast we could not
@@ -109,6 +120,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setReadError(null);
+    setWaitedOut(false);
 
     const read = async (attempt: number) => {
       try {
@@ -123,11 +135,17 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           return;
         }
         if (attempt + 1 >= FRESHNESS_ATTEMPTS) {
-          // Give up waiting, but keep rendering what the chain said — the write
-          // is mined either way, and a screen frozen on a spinner would be a
-          // worse answer than figures that are a moment behind.
+          // Stop waiting, and SAY so. The write is mined, so the figures below
+          // are behind rather than wrong — but rendering them silently as
+          // current is what put an "Active" chip over a revoked wallet.
           console.warn(`gantry: ${wallet} still reads the previous policy after a confirmed write`);
           settleAgentExpectation(wallet);
+          setWaitedOut(true);
+          setNotice({
+            tone: "sunken",
+            text: "Your change is on-chain, but we couldn't read it back just now, so the figures below may be a moment old.",
+            recheck: true,
+          });
           return;
         }
         timer = setTimeout(() => void read(attempt + 1), FRESHNESS_POLL_MS);
@@ -139,7 +157,11 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         if (cancelled) return;
         console.warn(`gantry: agent read failed for ${wallet}`, err);
         setReadError(err instanceof Error ? err.message : String(err));
-        settleAgentExpectation(wallet);
+        // The expectation is deliberately NOT settled. A failed read is not an
+        // answer to "did the write land", and settling it here dropped the only
+        // signal that the rendered policy is superseded — so one flaky GET fell
+        // through to the pre-write caps, with `readError` set but unreachable,
+        // since its card only renders inside the wait guard below.
       }
     };
 
@@ -172,8 +194,13 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
    * frame is a claim about the chain, and it is wrong.
    *
    * So known-superseded data is not rendered at all. `expected` is only ever set
-   * from a write this browser made and saw MINED, so this is never a
-   * disagreement about the chain — it is one source being behind the other.
+   * from a write this browser made and saw MINED, so a mismatch is almost always
+   * one source being behind the other rather than a disagreement about the
+   * chain. Not ALWAYS: a deployed build signs with one shared demo key and
+   * `demo:reset` re-arms wallets, so a concurrent write makes the mismatch
+   * genuine and this hides the newer truth for the length of the poll. That is
+   * why the poll is bounded and why giving up is visible — do not read this as a
+   * licence to wait indefinitely.
    */
   const expected = agentExpectation(wallet);
   const superseded = agent !== undefined && expected !== null && policyFingerprint(agent) !== expected;
@@ -183,7 +210,11 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     [rows, wallet],
   );
 
-  if (!agent || superseded) {
+  // `waitedOut` is what ends the wait, not the absence of an expectation: the
+  // poll settles the expectation as it gives up, so gating on `superseded` alone
+  // would let the give-up path render superseded figures as confirmed. Past that
+  // point the screen renders, carrying the notice the poll set.
+  if (!agent || (superseded && !waitedOut)) {
     return (
       <OverlayScreen>
         <OverlayHeader onBack={popOverlay} backLabel="Back" title={name} />
@@ -264,6 +295,9 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     }
 
     setConfirming(false);
+    // Cleared before the re-read so the poll's own notice is the one that stands.
+    // The read-back is a REFRESH, not part of the outcome: the revoke is mined.
+    setNotice(null);
     toast.success("Agent revoked. Every payment it attempts now reverts.");
     // The revoke is mined, so the zeroed policy is what the chain holds; a read
     // that still shows the old caps is a replica behind, not a disagreement.

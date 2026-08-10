@@ -264,18 +264,36 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
         (wallet) => ({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [wallet] }) as const,
       ),
     }),
-    publicClient.multicall({
-      allowFailure: true,
-      contracts: wallets.map(
-        (address) => ({ address, abi: agentPbmWalletAbi, functionName: "policyUpdatedAt" }) as const,
-      ),
-    }),
-    publicClient.multicall({
-      allowFailure: true,
-      contracts: wallets.map(
-        (address) => ({ address, abi: agentPbmWalletAbi, functionName: "label" }) as const,
-      ),
-    }),
+    // These two are DISPLAY reads, and the `.catch` is what keeps them that way.
+    // Everything above shares one `Promise.all`, so a transport-level rejection
+    // — a 429 from the rate-limited public node, a timeout — rejects the whole
+    // read and turns into a 503 over the entire agents surface. Two fields the
+    // code declares non-essential must not hold that veto, and adding them took
+    // the round trips that can trigger it from six to eight. An empty array
+    // reads back as "not successful" through the optional chaining below, which
+    // is the same degradation a per-entry failure already gets.
+    publicClient
+      .multicall({
+        allowFailure: true,
+        contracts: wallets.map(
+          (address) => ({ address, abi: agentPbmWalletAbi, functionName: "policyUpdatedAt" }) as const,
+        ),
+      })
+      .catch((err: unknown) => {
+        console.warn("agents: policyUpdatedAt batch failed, dates degraded to 0", err);
+        return [] as BatchResult[];
+      }),
+    publicClient
+      .multicall({
+        allowFailure: true,
+        contracts: wallets.map(
+          (address) => ({ address, abi: agentPbmWalletAbi, functionName: "label" }) as const,
+        ),
+      })
+      .catch((err: unknown) => {
+        console.warn("agents: label batch failed, names degraded to empty", err);
+        return [] as BatchResult[];
+      }),
   ]);
 
   const agents: AgentSummary[] = [];
@@ -305,6 +323,19 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
       policyUpdatedAt: stamps[i]?.status === "success" ? (stamps[i]!.result as number) : 0,
       label: labels[i]?.status === "success" ? (labels[i]!.result as string) : "",
     };
+    // Both degraded values COLLIDE with real ones — "" is a legitimately unnamed
+    // wallet and 0 a legitimately unarmed one — so the substitution is invisible
+    // in the response and has to be visible in the log. A degraded label is the
+    // costly one: the web's freshness fingerprint includes it, so a wallet whose
+    // name failed to read can never match the expectation and every write against
+    // it stalls for the full poll before giving up.
+    if (stamps[i]?.status !== "success" || labels[i]?.status !== "success") {
+      console.warn(
+        `agents: ${wallet} did not answer ${stamps[i]?.status !== "success" ? "policyUpdatedAt " : ""}` +
+          `${labels[i]?.status !== "success" ? "label" : ""}`.trim() +
+          " — degraded to 0/empty (expected only for a pre-10-Aug-2026 wallet)",
+      );
+    }
     agents.push(toAgentSummary(raw));
   });
   return { agents, ...(await classifyFailures(failed)) };
@@ -336,7 +367,15 @@ async function classifyFailures(
     wallets.map((address) =>
       publicClient.getCode({ address }).then(
         (code) => ({ read: true, code }),
-        () => ({ read: false, code: undefined }),
+        (err: unknown) => {
+          // Logged, not dropped. Both outcomes end up reported as "holds code but
+          // did not read", and an operator otherwise cannot tell a failed
+          // multicall entry from a failed getCode — different providers, different
+          // fixes. This was the one bare swallow in a file built around the
+          // failed-vs-unknown distinction.
+          console.warn(`agents: getCode failed for ${address}, classified unreadable`, err);
+          return { read: false, code: undefined };
+        },
       ),
     ),
   );
