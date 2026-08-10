@@ -102,7 +102,7 @@ Basescan links for all five contracts · the live merchant back-office URL
 (<https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview>,
 backed by <https://gantry-backend.onrender.com>) · 162
 Foundry tests (157 run in CI; the 5 real-USDC and PBM fork tests skip themselves
-without a fork RPC URL and are run locally) plus 236 TypeScript tests (99 shared,
+without a fork RPC URL and are run locally) plus 247 TypeScript tests (110 shared,
 137 backend) · the commit graph with `m1`/`m2`/`m3`/`m4` tags. Screening risk this
 counters: "solo builder, will never ship."
 
@@ -165,6 +165,6 @@ These have all drifted at least once. Check them before export.
 | Agent demo amount | 3 iced teas S$4.50 → 3.352955 USDC |
 | Rejection | GadgetHub SG, S$4 phone cable, `CategoryNotAllowed(2)` |
 | Fee comparison | 0.5% vs ~2.8% — quote the monthly figures (S$10 vs S$56), not the S$6 day |
-| Overview tiles | net S$5.97 ("Collected today") and S$0.13 ("Saved vs cards") — the S$0.13 is the SAVING, not Gantry's cut |
+| Overview tiles | net S$5.97 ("Collected, **last 7 days**") and S$0.13 ("Saved vs cards") — the S$0.13 is the SAVING, not Gantry's cut. The middle tile is "Paid by", an agent/human split bar, **not** a money figure |
 | Agent wallet owner | the **payer**, on-chain. `setPolicy`/`revoke` are `onlyOwner`; revoke is in the payer app at `/app/agents`, not on the merchant screens |
 | Surfaces | merchant back-office `/merchant/[handle]/…` and payer app `/app/…`. There is no `/dashboard` screen any more — the path redirects |

@@ -134,9 +134,11 @@ been wrong in a draft at least once.
   **S$4**. The old S$19.50 lunch / S$29 powerbank figures survive only as
   arithmetic fixtures in the test suites — never quote them.
 - The fee story runs on the demo day's **S$6.00**: Gantry S$0.03, cards S$0.168.
-  The Overview screen renders net **S$5.97** ("Collected today") and
+  The Overview screen renders net **S$5.97** ("Collected, last 7 days") and
   **S$0.13** ("Saved vs cards") — the S$0.13 is the *saving*, not our cut. Never
-  say "we took thirteen cents".
+  say "we took thirteen cents". The tiles were day-scoped until 10 Aug 2026 and
+  now cover a rolling 7-day window; the demo figures are unchanged, because
+  every payment in a run lands the same day.
 - **Agent PBM wallets are owned on-chain by the payer.** `setPolicy` and
   `revoke` are `onlyOwner`, signed in the payer's browser; Gantry holds no key
   that can change a policy. Revoke lives in the payer app (`/app/agents`), not on
@@ -158,7 +160,7 @@ been wrong in a draft at least once.
 - Contracts are named `GantryCore` and `AgentPBMWallet`. `SettlementRouter` and
   `PolicyGuard` appear in old planning notes and never existed in code.
 - **Test counts are quoted on deck slide 8, so re-measure before quoting them.**
-  As of 9 Aug 2026: **99 shared + 137 backend = 236 TypeScript tests**, plus 162
+  As of 10 Aug 2026: **110 shared + 137 backend = 247 TypeScript tests**, plus 162
   Foundry of which **157 run in CI** — the 5 fork tests `vm.skip` without a fork
   RPC URL, so never cite them as something a screener can reproduce by cloning. They had drifted to "97 / 105 / 202" and nothing caught it, because
   the only place they appear is prose. `pnpm --filter @gantry/shared test` and

@@ -14,12 +14,12 @@
  * reader infer a number we never measured.
  *
  * Emphasis form: Gantry in the accent hue, the comparison in the de-emphasis
- * gray. `scripts/validate_palette.js` FAILs that pair on "lightness band" and
- * "chroma floor"; both are categorical-scope checks (the script says so) and
- * both are wrong here by construction — a de-emphasis gray is SUPPOSED to read
- * gray, and one mark is supposed to outshout the other. The checks that govern
- * emphasis pass with room: CVD separation dE 17.6, normal-vision dE 20.4,
- * contrast >= 3:1 on white. Do not repaint the accent to satisfy a red FAIL.
+ * gray. Both clear 3:1 against the white card, which is what matters here —
+ * each bar is read against the surface, not against the other one, and the
+ * quantity each stands for is printed beside it in text. Do not "fix" the pair
+ * for chroma: this design system is low-chroma throughout, so every available
+ * pair would fail that check and the only way to pass it is to invent a hue
+ * that belongs to no other surface.
  */
 
 const SECONDS_PER_DAY = 24 * 60 * 60;
