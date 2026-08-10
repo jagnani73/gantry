@@ -56,6 +56,27 @@ contract AgentPBMWalletFactoryTest is Test {
         assertTrue(wallet.owner() != address(factory));
     }
 
+    function test_createWallet_carriesTheLabelThroughToTheWallet() public {
+        // The path a real payer takes. Every other test here passes "", so without this
+        // the factory could drop the argument on the floor and the suite would agree.
+        // Naming at creation is the whole reason the factory takes a label at all: it
+        // keeps creating-and-arming at two transactions instead of three.
+        vm.prank(alice);
+        AgentPBMWallet wallet = AgentPBMWallet(factory.createWallet(agent, "Kopi Runner"));
+        assertEq(wallet.label(), "Kopi Runner");
+        // A label is not a policy: the wallet is still unarmed and cannot spend.
+        assertEq(wallet.policyUpdatedAt(), 0);
+    }
+
+    function test_revert_createWallet_labelTooLong() public {
+        // Bubbles from the constructor exactly as ZeroAddress does, so the factory needs
+        // no length check of its own — and a client that skipped its byte pre-check would
+        // burn the deploy rather than get a quiet truncation.
+        vm.expectRevert(abi.encodeWithSelector(AgentPBMWallet.LabelTooLong.selector, uint256(32)));
+        vm.prank(alice);
+        factory.createWallet(agent, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); // 32
+    }
+
     function test_revert_createWallet_zeroAgentSigner() public {
         // Bubbles from the wallet constructor — same ZeroAddress selector either way.
         vm.expectRevert(AgentPBMWallet.ZeroAddress.selector);

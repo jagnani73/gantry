@@ -58,13 +58,25 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
 
     /// @notice When the policy was last written — set by setPolicy AND revoke. 0 means a
     ///         wallet whose policy has never been armed.
-    /// @dev    Declared HERE rather than beside `policy` so it packs into the slot above:
-    ///         64 + 128 + 40 = 232 bits. A struct member variable owns whole slots, so
-    ///         adding this to Policy would cost a slot AND put a field in the setter's
-    ///         calldata that the contract only overwrites. It exists because the answer
-    ///         has no other cheap source: the client alternative is a backwards getLogs
-    ///         walk per wallet, bounded, on a rate-limited endpoint, that still cannot
-    ///         answer for a policy older than the window it searched.
+    /// @dev    The DECLARATION POSITION is what earns it a free slot: sitting after
+    ///         _lastSpendDay/_spentToday it packs with them (64 + 128 + 40 = 232 bits),
+    ///         so _setPolicy still writes the day bucket, the counter and this stamp in
+    ///         one SSTORE. Verified with `forge inspect AgentPBMWallet storage-layout`.
+    ///
+    ///         It is NOT in `Policy` for the calldata, not for the storage: a member
+    ///         there would ride in `setPolicy(Policy calldata)` as a caller-supplied
+    ///         field the contract immediately overwrites — an ABI wart and a trap for
+    ///         anyone hand-encoding a policy. (Storage was not the reason. `expiry`'s
+    ///         slot has 27 spare bytes because `categoryBitmap` needs a whole slot
+    ///         regardless, so a uint40 inside the struct would also have been free —
+    ///         an earlier version of this comment claimed otherwise, and a future
+    ///         reader "optimising" on that false premise would move the field and
+    ///         quietly reintroduce the calldata problem.)
+    ///
+    ///         It exists at all because the answer has no other cheap source: the
+    ///         client alternative is a backwards getLogs walk per wallet, bounded, on a
+    ///         rate-limited endpoint, that still cannot answer for a policy older than
+    ///         the window it searched.
     uint40 public policyUpdatedAt;
 
     /// @notice The owner's private label for this wallet ("Kopi Runner"). Display only —
@@ -211,6 +223,10 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
 
     /// @notice Rotates the agent's session key. Does not reset the daily spend counter —
     ///         a new key does not buy a fresh budget.
+    /// @dev    Deliberately does NOT stamp `policyUpdatedAt`: that dates the RULES, and
+    ///         every screen renders it as "rules updated". Rotating the key changes who
+    ///         may spend, not what may be spent, and moving the stamp here would tell a
+    ///         payer their caps or categories changed when they did not.
     function setAgentSigner(address newSigner) external onlyOwner {
         if (newSigner == address(0)) revert ZeroAddress();
         agentSigner = newSigner;
@@ -265,8 +281,15 @@ contract AgentPBMWallet is IAgentPBMWallet, Ownable2Step {
 
     /// @dev 31 BYTES, not 31 characters — the contract counts bytes, so a label of emoji
     ///      runs out four times faster than one of ASCII and any client-side counter must
-    ///      count the same way. 31 is where a Solidity string still lives inline in its
-    ///      own slot; this is a nickname, not a bio.
+    ///      count the same way (`LABEL_MAX_BYTES` in web/components/payer/agent-rules.ts
+    ///      is the client's copy of this number, and drift between them is silent).
+    ///      31 is where a Solidity string still lives inline in its own slot; this is a
+    ///      nickname, not a bio.
+    ///
+    ///      The emit is unconditional, so a wallet created unnamed logs `LabelSet("")`.
+    ///      That is deliberate: the event says what the label IS after the call, and an
+    ///      indexer reconstructing the current name from logs alone would otherwise have
+    ///      to special-case creation. It costs ~1.2k gas once per wallet.
     function _setLabel(string memory newLabel) private {
         if (bytes(newLabel).length > 31) revert LabelTooLong(bytes(newLabel).length);
         label = newLabel;

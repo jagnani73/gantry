@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
+import {GantryCore} from "../src/GantryCore.sol";
 import {AgentPBMWalletFactory} from "../src/AgentPBMWalletFactory.sol";
 
 /// @notice Deploys ONLY the AgentPBMWalletFactory against the existing core.
@@ -28,16 +29,32 @@ contract DeployAgentFactory is Script {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address core = vm.envAddress("GANTRY_CORE_ADDRESS");
 
+        // Proven to BE the core before anything is broadcast. `CORE` is immutable in the
+        // factory and in every wallet it mints, so a stale or typo'd address is
+        // unrecoverable — the factory deploys happily (it only rejects address(0)) and
+        // the mistake surfaces at the first agent payment, as `NotCore`, after payers
+        // have created, funded and armed wallets against it. This read fails against an
+        // EOA and against any contract that is not a GantryCore, and costs one RPC call.
+        // DeployPBM got this for free from its `core.merchants(...)` probe; splitting
+        // that script is what dropped it, so it is explicit here.
+        console2.log("core feeBps:", GantryCore(core).feeBps());
+
         vm.startBroadcast(pk);
         AgentPBMWalletFactory factory = new AgentPBMWalletFactory(core);
         vm.stopBroadcast();
 
         console2.log("AgentPBMWalletFactory:", address(factory));
         console2.log("  core:               ", core);
-        // The scan floor. Reading it from the receipt afterwards is the same number, but
-        // it is the one value a redeploy is most likely to forget — an unchanged deploy
-        // block sends every cold scan back over ~68k blocks that cannot hold a log.
-        console2.log("  deploy block:       ", block.number);
+        // The scan floor, and the value a redeploy is most likely to forget — an
+        // unchanged deploy block sends every cold scan back over blocks that cannot hold
+        // one of this factory's logs.
+        //
+        // A safe FLOOR, not the receipt: forge runs a script one block past the fork
+        // head and the broadcast then mines at that block or later, so this can only
+        // under-state. That is the harmless direction (a few extra getLogs windows);
+        // over-stating would silently lose wallets. `broadcast/DeployAgentFactory.s.sol/
+        // 84532/run-latest.json` carries the authoritative receipt block — pin that.
+        console2.log("  deploy block (floor):", block.number);
         console2.log("NEXT: pin agentPbmFactory + BASE_SEPOLIA_FACTORY_DEPLOY_BLOCK in");
         console2.log("      packages/shared/src/addresses.ts, then run pnpm demo:reset");
     }

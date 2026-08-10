@@ -397,11 +397,24 @@ contract AgentPBMWalletTest is Test {
         AgentPBMWallet named = new AgentPBMWallet(owner, agent, coreAddr, "Kopi Runner");
         assertEq(named.label(), "Kopi Runner");
 
-        vm.expectEmit(false, false, false, true);
+        // 5-arg form: the emitter is pinned too, matching the factory suite's convention.
+        vm.expectEmit(false, false, false, true, address(named));
         emit AgentPBMWallet.LabelSet("Lunch Runner");
         vm.prank(owner);
         named.setLabel("Lunch Runner");
         assertEq(named.label(), "Lunch Runner");
+    }
+
+    function test_label_doesNotMoveThePolicyDate() public {
+        uint40 armed = wallet.policyUpdatedAt();
+        assertGt(armed, 0, "the fixture wallet is armed");
+        vm.warp(block.timestamp + 3600);
+        vm.prank(owner);
+        wallet.setLabel("Renamed an hour later");
+        // The stamp dates the RULES, and every screen renders it as "rules updated". A
+        // rename that bumped it would tell a payer their caps or categories moved when
+        // only the nickname did.
+        assertEq(wallet.policyUpdatedAt(), armed);
     }
 
     function test_label_emptyIsLegal() public {
