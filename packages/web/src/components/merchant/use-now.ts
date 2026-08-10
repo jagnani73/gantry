@@ -10,9 +10,10 @@ import { useEffect, useState } from "react";
  * later is a hydration error bought for nothing, and every screen that wants a
  * date here has data that only arrives in the browser anyway.
  *
- * It ticks so that a dashboard left open on a counter rolls into the next day on
- * its own — "today's takings" that silently keep yesterday's rows would be the
- * worst possible number to get wrong.
+ * It ticks so that a dashboard left open on a counter rolls its window start on
+ * its own — a stale clock would keep an eight-day-old payment inside "the last
+ * 7 days", and a takings figure that silently counts rows outside the span its
+ * own header names is the worst possible number to get wrong.
  */
 export function useNowSeconds(intervalMs = 30_000): number | null {
   const [now, setNow] = useState<number | null>(null);

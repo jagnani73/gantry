@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { CATEGORY_LABELS, shortAddress } from "@gantry/shared";
 import { Card, GantryMark, Label, Mono, StatusDot } from "@/components/primitives";
 import { cn } from "@/lib/utils";
-import { feedStatusOf, rowsForToday } from "./feed-state";
+import { windowIsPartial } from "@gantry/shared";
+import { feedStatusOf, rowsForOverviewWindow } from "./feed-state";
 import { shopName, useMerchantContext } from "./merchant-context";
 import { MERCHANT_SCREENS, SCREEN_LABEL, merchantHref, type MerchantScreen } from "./screens";
 import { grouped } from "./format";
@@ -30,13 +31,22 @@ export function MerchantSidebar() {
   const pathname = usePathname();
   const now = useNowSeconds();
 
-  const today = rowsForToday(feed.rows, now);
+  const windowRows = rowsForOverviewWindow(feed.rows, now);
   const status = feedStatusOf(feed.connection);
 
-  // Overview is scoped to today, Transactions is the whole book. Two counts,
-  // because they answer different questions and a merchant reads both.
+  // Overview counts the rolling window, Transactions the whole book. Two counts,
+  // because they answer different questions and a merchant reads both — but they
+  // are not the same KIND of number, and the window change made that bite. The
+  // Transactions figure is the server's total and exact; the Overview one counts
+  // only the rows this browser has loaded, capped at one page. A seven-day window
+  // routinely fills a page (the demo book sits at 50 loaded of 74), so without the
+  // "+" the sidebar would read a flat "50" beside "74" on all six screens, with no
+  // way to tell it is truncated. The Overview screen says so in a full sentence and
+  // offers "Load older"; this badge has room for one character.
+  const windowPartial = windowIsPartial(windowRows.length, feed.rows.length, feed.hasMore);
   const count: Partial<Record<MerchantScreen, string>> = {
-    overview: today.length > 0 ? grouped(today.length) : "",
+    overview:
+      windowRows.length > 0 ? `${grouped(windowRows.length)}${windowPartial ? "+" : ""}` : "",
     transactions: feed.total > 0 ? grouped(feed.total) : "",
   };
 

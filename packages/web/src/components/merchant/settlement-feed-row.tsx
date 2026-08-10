@@ -3,7 +3,7 @@
 import { shortAddress, type SettlementEvent } from "@gantry/shared";
 import { DoorChip, Money, Mono, Row } from "@/components/primitives";
 import { DOOR_TITLE } from "./door-copy";
-import { clockTime } from "./format";
+import { feedWhen } from "./format";
 
 /**
  * One line of the live feed.
@@ -17,10 +17,13 @@ import { clockTime } from "./format";
 export function SettlementFeedRow({
   row,
   fresh,
+  nowSeconds,
   onOpen,
 }: {
   row: SettlementEvent;
   fresh: boolean;
+  /** For dating rows that are not from today. Null until the clock mounts. */
+  nowSeconds: number | null;
   onOpen(): void;
 }) {
   return (
@@ -28,7 +31,7 @@ export function SettlementFeedRow({
       interactive
       highlight={fresh}
       onClick={onOpen}
-      className="grid grid-cols-[34px_1fr_auto] items-center gap-4 sm:grid-cols-[34px_1fr_150px_116px_100px]"
+      className="grid grid-cols-[34px_1fr_auto] items-center gap-4 sm:grid-cols-[34px_1fr_150px_152px_100px]"
     >
       <DoorChip door={row.door} variant="tile-34" />
       <div className="min-w-0">
@@ -46,8 +49,8 @@ export function SettlementFeedRow({
         tone="faint"
         className="hidden text-right sm:block"
       />
-      <Mono size="sm" tone="muted" className="hidden text-right sm:block">
-        {clockTime(row.blockTime)}
+      <Mono size="sm" tone="muted" className="hidden whitespace-nowrap text-right sm:block">
+        {feedWhen(row.blockTime, nowSeconds)}
       </Mono>
       <Money units={row.xsgdOut} prefix="S$" size="lg" className="text-right" />
     </Row>

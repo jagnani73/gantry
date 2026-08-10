@@ -1,4 +1,4 @@
-import { dayKey, groupByDay, type SettlementEvent } from "@gantry/shared";
+import { rowsInOverviewWindow, type SettlementEvent } from "@gantry/shared";
 import type { FeedConnection } from "./use-merchant-feed";
 
 export interface FeedStatus {
@@ -11,13 +11,14 @@ export interface FeedStatus {
  * be live when it is not.
  *
  * It describes the STREAM, not the takings. A connected feed with no payments
- * yet today is still live, so the amber "Waiting" that used to sit on that case
- * is gone — it read as a fault in the connection rather than as a quiet morning,
- * and on a demo day it is the first thing on a cold screen. On Overview an empty
- * day is already said in the two places that are actually about money, the
- * "Nothing settled yet today" figure and the "No payments yet today" feed body;
- * on the other five merchant screens the sidebar carries this badge alone, and
- * there an empty day is simply not the badge's subject.
+ * in the window is still live, so the amber "Waiting" that used to sit on that
+ * case is gone — it read as a fault in the connection rather than as a quiet
+ * week, and on a demo day it is the first thing on a cold screen. On Overview an
+ * empty window is already said in the two places that are actually about money,
+ * the "Nothing settled…" figure and the "No payments…" feed body — both of which
+ * name the window length from `OVERVIEW_WINDOW_DAYS`, so this comment does not
+ * quote them; on the other five merchant screens the sidebar carries this badge
+ * alone, and there an empty window is simply not the badge's subject.
  *
  * `disconnected` is deliberately its own entry rather than a quieter kind of
  * empty. Payments keep settling on-chain while this screen cannot see them, and
@@ -40,36 +41,17 @@ export function feedStatusOf(connection: FeedConnection): FeedStatus {
 }
 
 /**
- * The rows that belong to today, in the merchant's own zone.
+ * The window's rows, or none before the clock has mounted.
  *
- * `groupByDay` rather than a hand-rolled filter because the zone is pinned
- * inside it: a UTC backend and an SGT browser disagree about which day a payment
- * belongs to between midnight and 08:00 SGT, and the day header would then
- * contradict the total sitting above it.
+ * A thin wrapper: the arithmetic lives in `@gantry/shared/overviewWindow`,
+ * where it can be tested, and the `null` handled here is a client-render
+ * concern rather than part of it — `useNowSeconds` returns null until mount so
+ * that the server and the first client paint agree.
  */
-export function rowsForToday(
+export function rowsForOverviewWindow(
   rows: readonly SettlementEvent[],
   nowSeconds: number | null,
 ): readonly SettlementEvent[] {
   if (nowSeconds === null) return [];
-  const today = dayKey(nowSeconds);
-  return groupByDay(rows, (row) => row.blockTime).find((group) => group.day === today)?.rows ?? [];
-}
-
-/**
- * Whether today's figures are a floor rather than a total.
- *
- * The feed pages backwards from the newest row, so today's rows are a prefix of
- * what is loaded: the moment one loaded row predates today, today is complete and
- * the KPIs are exact no matter how many older pages remain. Only when EVERY
- * loaded row falls today can an unloaded page still hold more of it — and then
- * the day's takings, its payment count and the card comparison are all lower
- * bounds, which a merchant cannot possibly infer from the screen.
- */
-export function todayIsPartial(
-  todayCount: number,
-  loadedCount: number,
-  hasMore: boolean,
-): boolean {
-  return hasMore && loadedCount > 0 && todayCount === loadedCount;
+  return rowsInOverviewWindow(rows, (row) => row.blockTime, nowSeconds);
 }

@@ -1,12 +1,21 @@
-import { DISPLAY_TIME_ZONE, type SettlementEvent } from "@gantry/shared";
+import {
+  DISPLAY_TIME_ZONE,
+  dayKey,
+  dayKeyMiddayUnixSeconds,
+  relativeDayLabel,
+  type DayKey,
+  type SettlementEvent,
+} from "@gantry/shared";
 
 /**
  * Dates and clocks on the merchant surface, all pinned to Asia/Singapore.
  *
- * The zone is not the browser's. The KPI grid buckets rows with `dayKey`, which
- * is pinned to SGT so a UTC backend and an SGT browser cannot disagree about
- * "today" — and a row rendered with a LOCAL clock underneath an SGT day header
- * would reintroduce exactly that disagreement one line lower down.
+ * The zone is not the browser's. Overview buckets rows against a window
+ * boundary computed with `dayKey`, pinned to SGT so a UTC backend and an SGT
+ * browser cannot disagree about which side of midnight a payment fell on — and
+ * a row timestamp rendered with a LOCAL clock, under a header whose date range
+ * was computed in SGT, would reintroduce exactly that disagreement one line
+ * lower down.
  *
  * Formatters are constructed once: building an Intl.DateTimeFormat per row is
  * the expensive way to draw a table.
@@ -20,19 +29,17 @@ const CLOCK = new Intl.DateTimeFormat("en-SG", {
   hour12: false,
 });
 
-/** "Thursday, 8 August" — the settlements header's date line. */
-const LONG_DATE = new Intl.DateTimeFormat("en-SG", {
-  timeZone: DISPLAY_TIME_ZONE,
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-});
-
 /** "5 August" — the "since" in a range that is obviously this year. */
 const MONTH_DAY = new Intl.DateTimeFormat("en-SG", {
   timeZone: DISPLAY_TIME_ZONE,
   day: "numeric",
   month: "long",
+});
+
+/** "4" — the opening end of a range whose month is written once, at the close. */
+const DAY_ONLY = new Intl.DateTimeFormat("en-SG", {
+  timeZone: DISPLAY_TIME_ZONE,
+  day: "numeric",
 });
 
 /** "8 Aug 2026" — registration dates and the drawer's timestamp. */
@@ -49,8 +56,44 @@ export function clockTime(unixSeconds: number): string {
   return CLOCK.format(unixSeconds * 1000);
 }
 
-export function longDate(unixSeconds: number): string {
-  return LONG_DATE.format(unixSeconds * 1000);
+/**
+ * "14:32" · "Yesterday 14:32" · "6 Aug 14:32" — a feed row's timestamp.
+ *
+ * The date appears only when the row is NOT from today. Overview's feed used to
+ * be a single day, so a bare clock was unambiguous; it now spans a rolling week
+ * under a panel headed "Live feed", where a payment from last Tuesday would
+ * otherwise read exactly like one that landed a minute ago. Today's rows stay
+ * bare, because prefixing every one of them with "Today" is noise on the case
+ * that needs no disambiguating.
+ */
+export function feedWhen(atUnixSeconds: number, nowUnixSeconds: number | null): string {
+  const time = clockTime(atUnixSeconds);
+  if (nowUnixSeconds === null) return time;
+  const label = relativeDayLabel(dayKey(atUnixSeconds), nowUnixSeconds);
+  if (label === "Today") return time;
+  return `${label ?? monthDay(atUnixSeconds)} ${time}`;
+}
+
+/**
+ * "4–10 August" — the span the Overview tiles cover.
+ *
+ * The month is written once when both ends share it, which is the common case
+ * for a seven-day window and the difference between a date range and a mouthful
+ * ("4 August – 10 August"). Both ends come from DayKeys built from the same
+ * clock reading the tiles use, so the header cannot drift from the START day
+ * they count. The top end is looser by design — see `rowsInOverviewWindow`.
+ */
+export function dayRangeLabel(startDay: DayKey, endDay: DayKey): string {
+  const start = dayKeyMiddayUnixSeconds(startDay);
+  const end = dayKeyMiddayUnixSeconds(endDay);
+  if (startDay === endDay) return monthDay(end);
+  // Compare the month component of the key itself rather than a formatted
+  // string: the keys are already in the display zone, and re-parsing a rendered
+  // date to find out what month it was in is how zones get lost.
+  const sameMonth = startDay.slice(0, 7) === endDay.slice(0, 7);
+  return sameMonth
+    ? `${DAY_ONLY.format(start * 1000)}–${monthDay(end)}`
+    : `${monthDay(start)} – ${monthDay(end)}`;
 }
 
 export function shortDate(unixSeconds: number): string {

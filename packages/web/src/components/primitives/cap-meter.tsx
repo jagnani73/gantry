@@ -5,7 +5,9 @@ import { formatUnits, percentOf, type Units } from "./units";
 /**
  * How much of an on-chain allowance is gone.
  *
- * Used for an agent's daily cap and for the merchant's agent-share KPI. The
+ * Used for an agent's daily cap on the payer surface. (The merchant's
+ * agent-share KPI was a second caller until it became a two-segment split bar,
+ * which is a part-to-whole rather than an allowance being consumed.) The
  * figure it draws is a chain read, so the bar must never be the only thing on
  * screen — every caller pairs it with the numbers underneath.
  */

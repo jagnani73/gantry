@@ -31,12 +31,14 @@ export function merchantHref(handle: string, screen: MerchantScreen): string {
 }
 
 /**
- * Where every merchant link lands: today at a glance, plus the live feed.
+ * Where every merchant link lands: the last seven days at a glance, plus the
+ * live feed.
  *
  * Named Overview rather than Settlements because the screen beside it lists
  * settlements too. Two nav items called "Settlements" and "Transactions" say
- * nothing about which one a merchant wants; "Overview" (today, live) against
- * "Transactions" (the whole book, searchable) says it in the label.
+ * nothing about which one a merchant wants; "Overview" (a rolling seven days,
+ * live) against "Transactions" (the whole book, searchable) says it in the
+ * label.
  */
 export const DEFAULT_SCREEN: MerchantScreen = "overview";
 
