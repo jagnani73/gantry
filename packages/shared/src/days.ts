@@ -54,7 +54,7 @@ export function dayKey(unixSeconds: number, timeZone: string = DISPLAY_TIME_ZONE
  * Calendar arithmetic, not `now - 86400`: subtracting a day's worth of seconds
  * lands on the wrong date around a DST shift, and month, year and leap-day
  * rollover are things `Date.UTC` already knows. (Singapore has no DST, but this
- * helper takes a zone and the bug would be invisible until it wasn't.)
+ * bug would be invisible until it wasn't.)
  */
 export function previousDayKey(day: DayKey): DayKey {
   const match = DAY_KEY.exec(day);
@@ -62,6 +62,44 @@ export function previousDayKey(day: DayKey): DayKey {
   const utc = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) - 1));
   const pad = (value: number, width: number): string => String(value).padStart(width, "0");
   return `${pad(utc.getUTCFullYear(), 4)}-${pad(utc.getUTCMonth() + 1, 2)}-${pad(utc.getUTCDate(), 2)}`;
+}
+
+/**
+ * `days` calendar days before `day`.
+ *
+ * Walks back through `previousDayKey` rather than converting to an instant and
+ * subtracting `days × 86400`: month, year and leap-day rollover are things the
+ * calendar already knows, and a DayKey carries no zone to convert through
+ * safely. The three rollovers are pinned in `days.test.ts`.
+ *
+ * Used for the merchant Overview's rolling window — see `OVERVIEW_WINDOW_DAYS`
+ * for why rolling rather than a calendar week.
+ */
+export function minusDaysKey(day: DayKey, days: number): DayKey {
+  if (!Number.isInteger(days) || days < 0) {
+    throw new Error(`days must be a non-negative integer, got ${JSON.stringify(days)}`);
+  }
+  let cursor = day;
+  for (let left = days; left > 0; left -= 1) cursor = previousDayKey(cursor);
+  return cursor;
+}
+
+/**
+ * A DayKey back into an instant, for handing to a date formatter.
+ *
+ * MIDDAY UTC, not midnight, and that is the whole point of the function. A
+ * DayKey carries no zone, so the only way to render one is to pick an instant
+ * inside it; midnight UTC is inside the day for zones east of UTC and inside
+ * the PREVIOUS one for every zone west of it, so a formatter would silently
+ * render the wrong date. Noon is inside the named day for every zone from
+ * UTC-12 through UTC+11; at UTC+12 and further east it lands on the following
+ * day. Safe here because every caller formats in `DISPLAY_TIME_ZONE` (UTC+8) —
+ * a caller that formats in a zone it was handed must not use this.
+ */
+export function dayKeyMiddayUnixSeconds(day: DayKey): number {
+  const match = DAY_KEY.exec(day);
+  if (!match) throw new Error(`invalid day key: ${JSON.stringify(day)}`);
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) / 1000;
 }
 
 /**

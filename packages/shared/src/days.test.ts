@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DISPLAY_TIME_ZONE, dayKey, groupByDay, previousDayKey, relativeDayLabel } from "./days";
+import {
+  DISPLAY_TIME_ZONE,
+  dayKey,
+  dayKeyMiddayUnixSeconds,
+  groupByDay,
+  previousDayKey,
+  relativeDayLabel,
+  minusDaysKey,
+} from "./days";
 
 const seconds = (...utc: [number, number, number, number?, number?, number?]): number =>
   Date.UTC(utc[0], utc[1] - 1, utc[2], utc[3] ?? 0, utc[4] ?? 0, utc[5] ?? 0) / 1000;
@@ -100,4 +108,35 @@ test("non-adjacent rows for one day land in one group", () => {
 
 test("groupByDay on an empty feed is an empty list, not a phantom day", () => {
   assert.deepEqual(groupByDay([], (r: { blockTime: number }) => r.blockTime), []);
+});
+
+test("a rolling window walks back the given number of days", () => {
+  assert.equal(minusDaysKey("2026-08-10", 0), "2026-08-10");
+  assert.equal(minusDaysKey("2026-08-10", 1), "2026-08-09");
+  // The 7-day window the merchant Overview uses is today plus the six before it.
+  assert.equal(minusDaysKey("2026-08-10", 6), "2026-08-04");
+});
+
+test("a rolling window crosses month, year and leap-day boundaries", () => {
+  assert.equal(minusDaysKey("2026-03-01", 6), "2026-02-23");
+  assert.equal(minusDaysKey("2027-01-02", 6), "2026-12-27");
+  assert.equal(minusDaysKey("2028-03-01", 6), "2028-02-24"); // through 29 Feb
+});
+
+test("minusDaysKey refuses a malformed key or a nonsense count", () => {
+  assert.throws(() => minusDaysKey("2026-8-10", 6), /invalid day key/);
+  assert.throws(() => minusDaysKey("2026-08-10", -1), /non-negative integer/);
+  assert.throws(() => minusDaysKey("2026-08-10", 1.5), /non-negative integer/);
+});
+
+test("a day key renders as its own date in the display zone", () => {
+  // Midnight UTC would be 08:00 SGT the same day but the PREVIOUS day in New
+  // York, which is the bug this helper exists to avoid.
+  const format = (day: string, timeZone: string): string =>
+    new Intl.DateTimeFormat("en-SG", { timeZone, day: "numeric", month: "short" }).format(
+      dayKeyMiddayUnixSeconds(day) * 1000,
+    );
+  assert.equal(format("2026-08-10", DISPLAY_TIME_ZONE), "10 Aug");
+  assert.equal(format("2026-08-10", "America/New_York"), "10 Aug");
+  assert.equal(format("2026-08-10", "UTC"), "10 Aug");
 });

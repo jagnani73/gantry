@@ -15,6 +15,7 @@ export * from "./payout";
 export * from "./dashboardScope";
 export * from "./time";
 export * from "./days";
+export * from "./overviewWindow";
 export * from "./cursor";
 export * from "./payerFilter";
 export * from "./agentStatus";
