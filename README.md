@@ -72,7 +72,7 @@ packages/web         Next.js — landing /, onboarding /onboard, merchant back-o
 packages/agent       LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallback (pnpm --filter @gantry/agent start "…")
 ```
 
-Two surfaces, one rail. The **merchant back-office** (`/merchant/[handle]/{overview,transactions,payouts,qr,profile,settings}`) is what a hawker leaves open on the counter; the **payer app** (`/app`, `/app/{activity,agents,settings}`) is where a payer's wallet, history and agents live. `/dashboard` still redirects to the merchant screens, `?handle=` and all.
+Two surfaces, one rail. The **merchant back-office** (`/merchant/[handle]/{overview,transactions,payouts,qr,settings}`) is what a hawker leaves open on the counter; the **payer app** (`/app`, `/app/{activity,agents,settings}`) is where a payer's wallet, history and agents live. `/dashboard` still redirects to the merchant screens, `?handle=` and all.
 
 ## Running locally
 
@@ -98,7 +98,7 @@ The variables that change **what the app does** — payer key source, agent auto
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
 - **Agent-door end-to-end:** `pnpm --filter @gantry/agent e2e:pbm` (note the package — it lives in the agent, not the backend), and the rejection beat with `pnpm --filter @gantry/agent e2e:pbm -- --handle gadgethub-sg --sgd 4 --expect-denial`.
 - **Reset between rehearsals:** `pnpm demo:reset` — clears the transaction cache, provisions and re-arms the demo agent, re-seeds the demo merchant profiles, and prints addresses + demo URLs. It waits on real receipts, so budget seconds rather than milliseconds; contracts persist, so nothing is redeployed.
-- **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), fill in the shop's name, location and one-line blurb, paste a payout address, register. The relayer pays the gas, so the merchant needs no ETH. The handle, payout and category go on-chain; the three display fields are stored off-chain and are editable afterwards from the shop profile screen.
+- **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), fill in the shop's name, location and one-line blurb, paste a payout address, register. The relayer pays the gas, so the merchant needs no ETH. The handle, payout and category go on-chain; the three display fields are stored off-chain and are editable afterwards from the Settings screen.
 - **Agent CLI:** `AGENT_SESSION_KEY` cannot be a freshly generated key — its address must be the `agentSigner` of a PBM wallet that already exists, or the CLI has nothing to pay from (`GET /api/agents?agentSigner=…` is how it finds its wallet) and a mismatched key fails every payment with `InvalidAgentSignature`. Create the wallet from the payer app's agents screen with that address as the signer, or rotate an existing wallet's signer on-chain via `setAgentSigner`.
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
 

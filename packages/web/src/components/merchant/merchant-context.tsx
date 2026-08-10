@@ -7,7 +7,7 @@ import { useChime, type ChimeControl } from "./use-chime";
 import { useMerchantFeed, type MerchantFeed } from "./use-merchant-feed";
 
 /**
- * Everything the six screens share, held once at the shell.
+ * Everything the five screens share, held once at the shell.
  *
  * The feed in particular belongs here rather than on the settlements screen: the
  * sidebar's nav counts and its live dot are drawn from it on every screen, and a
@@ -97,6 +97,12 @@ export function MerchantProvider({
   const reload = useCallback(() => setAttempt((previous) => previous + 1), []);
   const replace = useCallback((next: MerchantResponse) => {
     setMerchant(next);
+    // `error` cleared here, not just `status`. Asserting readiness while leaving
+    // a stale message armed underneath is safe only because the shell gates
+    // screens on `status === "ready"`, so nothing that calls this can be mounted
+    // in an error state — an invariant enforced in another file entirely. One
+    // line makes it local instead.
+    setError(null);
     setStatus("ready");
   }, []);
 

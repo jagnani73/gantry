@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Card } from "@/components/primitives";
+import { Card, ToastProvider } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { MerchantProvider, useMerchantContext } from "./merchant-context";
 import { MerchantSidebar } from "./merchant-sidebar";
@@ -40,7 +40,20 @@ function MerchantMain({ children }: { children: React.ReactNode }) {
   const { status } = useMerchantContext();
   return (
     <main className="flex min-w-0 flex-col gap-5 p-8 pb-12 print:p-0">
-      {status === "ready" ? children : <MerchantGate />}
+      {/* `fixed`, overriding the viewport's default `absolute`, and that override
+          is the whole point. The payer app can anchor to its own frame because
+          that frame is `h-dvh overflow-hidden` — its bottom edge IS the bottom of
+          what the eye can see. This column is a stretched grid item in document
+          flow with no height cap, so `bottom-0` would be the bottom of the PAGE:
+          Settings runs past 800px, and on a laptop viewport the confirmation
+          would sit below the fold with nothing else on screen saying the save
+          landed. It costs centring over the content column — a fixed toast
+          centres across the sidebar too — which is the right trade against a
+          confirmation that cannot be seen. Same reasoning covers Transactions,
+          whose column can be thousands of pixels tall. */}
+      <ToastProvider viewportClassName="fixed print:hidden">
+        {status === "ready" ? children : <MerchantGate />}
+      </ToastProvider>
     </main>
   );
 }

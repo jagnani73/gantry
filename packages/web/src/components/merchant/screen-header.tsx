@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /** Every screen opens the same way: a title, one line saying what it is, and at
- * most one action. Shared so the six of them cannot drift by a few pixels. */
+ * most one action. Shared so the five of them cannot drift by a few pixels. */
 export function ScreenHeader({
   title,
   children,

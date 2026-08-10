@@ -37,7 +37,15 @@ export function useChime(): ChimeControl {
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
-    setOn(window.localStorage.getItem(STORAGE_KEY) === "1");
+    try {
+      setOn(window.localStorage.getItem(STORAGE_KEY) === "1");
+    } catch (err) {
+      // ACCESSING `window.localStorage` throws SecurityError in a browser with
+      // site data blocked — not just reading a key. Unguarded, that throw
+      // propagates out of `MerchantProvider` and takes down the entire
+      // back-office through the nearest error boundary, over a sound preference.
+      console.warn("gantry: chime preference could not be read", err);
+    }
   }, []);
 
   useEffect(() => {
@@ -57,11 +65,25 @@ export function useChime(): ChimeControl {
 
   const set = useCallback(async (next: boolean) => {
     setOn(next);
-    window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+    } catch (err) {
+      // The toggle has ALREADY flipped, so an unhandled throw here leaves a
+      // switch claiming a preference that was never written — and it reverts on
+      // the next reload, which on a back-office left open on a counter reads as
+      // "it keeps forgetting" and is unreproducible for whoever gets the report.
+      console.warn("gantry: chime preference could not be saved", err);
+    }
     if (!next) return;
-    // Called straight from the toggle's click handler, so this IS the gesture.
-    await enableSound();
-    setArmed(soundEnabled());
+    try {
+      // Called straight from the toggle's click handler, so this IS the gesture.
+      await enableSound();
+      setArmed(soundEnabled());
+    } catch (err) {
+      // A browser that refuses to start audio leaves the label at "On · waiting
+      // for a tap", which is true — it just never becomes armed.
+      console.warn("gantry: this browser refused to start audio", err);
+    }
   }, []);
 
   const ring = useCallback(() => {

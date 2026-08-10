@@ -1,17 +1,19 @@
 /**
- * The six merchant screens, as routes rather than as a `page` state variable.
+ * The five merchant screens, as routes rather than as a `page` state variable.
  *
  * A back-office a merchant is meant to leave open on a counter needs its screens
  * to survive a refresh and to be linkable — "open your QR" in a rehearsal is a
  * URL, not a click path. The sidebar derives its active item from the pathname,
  * so there is no second source of truth for which screen is showing.
+ *
+ * There was a sixth, Shop profile, until Settings was found to be a read-only
+ * echo of it: `/merchant/[handle]/profile` still resolves, as a redirect.
  */
 export const MERCHANT_SCREENS = [
   "overview",
   "transactions",
   "payouts",
   "qr",
-  "profile",
   "settings",
 ] as const;
 
@@ -22,7 +24,6 @@ export const SCREEN_LABEL: Record<MerchantScreen, string> = {
   transactions: "Transactions",
   payouts: "Payouts",
   qr: "QR & standee",
-  profile: "Shop profile",
   settings: "Settings",
 };
 

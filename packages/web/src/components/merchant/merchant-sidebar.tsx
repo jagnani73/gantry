@@ -40,7 +40,7 @@ export function MerchantSidebar() {
   // Transactions figure is the server's total and exact; the Overview one counts
   // only the rows this browser has loaded, capped at one page. A seven-day window
   // routinely fills a page (the demo book sits at 50 loaded of 74), so without the
-  // "+" the sidebar would read a flat "50" beside "74" on all six screens, with no
+  // "+" the sidebar would read a flat "50" beside "74" on all five screens, with no
   // way to tell it is truncated. The Overview screen says so in a full sentence and
   // offers "Load older"; this badge has room for one character.
   const windowPartial = windowIsPartial(windowRows.length, feed.rows.length, feed.hasMore);

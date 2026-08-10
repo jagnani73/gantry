@@ -7,20 +7,27 @@ import { cn } from "./cn";
 /**
  * Transient confirmation, for actions whose result has nowhere to live.
  *
- * The app's default is inline feedback and it should stay that way: the profile
- * editor prints "Saved." above its own Save button, the QR screen's Copy button
- * relabels itself, a failed payment takes over the pay flow's own screen. Reach
- * for a toast only where the result lands somewhere the eye is not.
+ * The app's default is inline feedback and it should stay that way: the QR
+ * screen's Copy button relabels itself, a failed payment takes over the pay
+ * flow's own screen. Reach for a toast only where the result lands somewhere the
+ * eye is not — which, for a SUCCESS, is more often than it first looks, because
+ * a form that succeeded usually resets and disables the control the merchant was
+ * looking at.
  *
- * Exactly one action qualifies today, and it is the only caller: the payer's
- * top-up on the wallet screen. Its effect is the balance in the panel at the
- * very top of a screen the payer has usually scrolled down, and the amount the
- * faucet granted appears nowhere else at all, so the confirmation has to carry
- * the figure to where the tap happened.
+ * Callers today: the payer's wallet top-up (its effect is a balance at the top
+ * of a screen usually scrolled down, and the granted amount appears nowhere
+ * else), the payer's agent writes, and the merchant's shop-profile save. That
+ * last one used to print "Saved." above its own Save button and is cited in
+ * older comments as the model for inline feedback — it isn't any more.
  *
- * NOT a substitute for state. A toast is unreadable to anyone who looked away,
- * so nothing may be announced ONLY here: a balance still updates, an error still
- * renders where the action was. This layer is confirmation, never the record.
+ * NOT a substitute for state, and the asymmetry is the rule: a toast is
+ * unreadable to anyone who looked away, so SUCCESS may be transient while a
+ * FAILURE must still render where the action was. Nothing may be announced only
+ * here — a balance still updates, a profile still shows what was stored.
+ *
+ * Mounting: the viewport is `absolute` (see ToastViewport), so every surface
+ * providing this must give it a positioned ancestor. `PayerFrame` and
+ * `MerchantShell`'s content column both do.
  */
 
 export type ToastTone = "success" | "danger";
@@ -42,8 +49,9 @@ const ToastContext = createContext<ToastApi | null>(null);
 /** Success is a confirmation you may miss; an error is one you must not. */
 const DISMISS_MS: Record<ToastTone, number> = { success: 4_000, danger: 7_000 };
 
-/** Older toasts drop off the top rather than growing a wall over the screen —
- * this surface is 402px wide and the tab bar is under it. */
+/** Older toasts drop off the top rather than growing a wall over the screen.
+ * Sized for the narrowest mount: the payer app is 402px wide with a tab bar
+ * under it, so three is already most of what fits. */
 const MAX_VISIBLE = 3;
 
 export function useToast(): ToastApi {
@@ -54,11 +62,11 @@ export function useToast(): ToastApi {
 
 export function ToastProvider({
   children,
-  /** Positions the stack. The payer app is the only mount there is, and it
-   * pushes the stack clear of its tab bar. No merchant surface provides this
-   * context at all — `useToast()` would throw there — and a merchant mount
-   * would first have to give whatever the provider wraps a `relative` of its
-   * own, since the viewport is `absolute` (see ToastViewport). */
+  /** Positions the stack. The payer app pushes it clear of its tab bar; the
+   * merchant shell has no tab bar and needs no offset, but does mark it
+   * `print:hidden` — the standee prints from that column. Both mounts had to
+   * give the provider a positioned ancestor first, since the viewport is
+   * `absolute` (see ToastViewport). */
   viewportClassName,
 }: {
   children: ReactNode;
@@ -113,11 +121,18 @@ const TONE: Record<ToastTone, string> = {
 };
 
 /**
- * `absolute`, not `fixed`, and positioned against the nearest positioned
- * ancestor. On a desktop viewport the payer app renders inside a phone mock, and
- * a fixed viewport-anchored toast would appear outside the phone it belongs to.
- * Every mounting surface therefore has to be `relative` — PayerFrame already is,
- * for the same reason its overlays are.
+ * `absolute` by DEFAULT, against the nearest positioned ancestor: on a desktop
+ * viewport the payer app renders inside a phone mock, and a viewport-anchored
+ * toast would appear outside the phone it belongs to. That mount must therefore
+ * be `relative` — PayerFrame already is, for the same reason its overlays are.
+ *
+ * A mount whose column SCROLLS THE DOCUMENT must override this to `fixed` via
+ * `viewportClassName` (`cn` is tailwind-merge, so the later position wins). The
+ * default only works where the positioned ancestor is height-capped and
+ * scroll-contained, as PayerFrame's `h-dvh overflow-hidden` is; anchor it to a
+ * stretched, uncapped column and `bottom-0` means the bottom of the page, which
+ * on any screen taller than the viewport is a confirmation nobody sees. The
+ * merchant shell hits exactly that and passes `fixed`.
  */
 function ToastViewport({
   items,
