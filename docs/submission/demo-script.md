@@ -90,6 +90,7 @@ add it. If not, it lives in the clip and the deck only.
 | Register says it failed | Open `/pay/<handle>` BEFORE retrying. If it loads, the tx mined past the 20s receipt cap and you're already registered — the form now detects this and shows the success card, but check before burning a second handle |
 | Revoke button errors | The revoke is the *payer's* transaction, so the demo account needs gas. `pnpm demo:reset` funds it; if it still fails, the relayer's ETH is near its reserve — check the reset output's ETH line, because that also means every settlement is about to fail |
 | Agents screen is empty | The list comes from `WalletCreated` logs filtered by owner, so an empty list means the demo account owns no wallet yet. `pnpm demo:reset` provisions one |
+| Wallet, activity and agents ALL empty, and the address is unfamiliar | Someone tapped Settings → "Use my own wallet instead" on this browser. The choice is stored in `localStorage` and survives reloads. Settings → "Go back to the demo account" restores it; nothing was lost, the screens were showing a different account's (empty) history |
 
 ---
 
