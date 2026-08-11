@@ -16,9 +16,14 @@ export function LandingHeader() {
         GUTTER_X,
       )}
     >
-      <div className="flex items-center gap-2.5">
-        <GantryMark className="h-5.5" />
-        <span className="text-card-title-sm">Gantry</span>
+      {/* Scaled as a LOCKUP, not as a glyph: the mark is ~square and already
+          runs to twice the wordmark's cap height, so growing it alone reads as
+          a logo with a caption rather than a wordmark. The directory header
+          (components/directory/directory-chrome.tsx) carries the same three
+          values on purpose — change one, change both. */}
+      <div className="flex items-center gap-3.5">
+        <GantryMark className="h-9" />
+        <span className="text-title-lg">Gantry</span>
       </div>
       <nav className="flex items-center gap-4 sm:gap-6.5">
         {/* Dropped below 640px: the wordmark plus five links does not fit a 375px

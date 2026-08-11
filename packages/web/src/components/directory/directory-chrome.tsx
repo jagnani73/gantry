@@ -27,9 +27,12 @@ export function DirectoryHeader() {
     >
       {/* The prototype drew the mark as a plain ink square; the real one lives in
           exactly one place and repaints with the design system. */}
-      <Link href="/" className="focus-ring flex items-center gap-2.5 rounded-badge">
-        <GantryMark className="h-5.5" />
-        <span className="text-card-title-sm text-ink">Gantry</span>
+      {/* Sized to match the landing header's lockup exactly — this page is one
+          click from it, and a wordmark that shrinks on arrival reads as a
+          different site. Change one, change both. */}
+      <Link href="/" className="focus-ring flex items-center gap-3.5 rounded-badge">
+        <GantryMark className="h-9" />
+        <span className="text-title-lg text-ink">Gantry</span>
       </Link>
       <Mono size="3xs" tone="faint" className="tracking-[0.14em] uppercase">
         Merchant directory
