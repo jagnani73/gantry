@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { UnknownOutcomeError } from "@/lib/confirm-tx";
+import { describeWriteError } from "@/lib/write-error";
 import { useMerchantContext } from "./merchant-context";
 import { usePayoutWrites } from "./payout-writes";
 
@@ -164,7 +165,10 @@ export function PayoutRotationCard() {
         setEditing(false);
         setNext("");
       } else {
-        setError(err instanceof Error ? err.message : String(err));
+        // Shortened for the screen; the full wallet text goes to the console
+        // so nothing is lost from a debugging session.
+        console.warn("gantry: payout rotation failed", err);
+        setError(describeWriteError(err).headline);
       }
     } finally {
       setBusy(false);

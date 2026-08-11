@@ -14,6 +14,7 @@ import {
 import { Card, cn, Mono, useToast } from "@/components/primitives";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { describeWriteError } from "@/lib/write-error";
 import {
   capUnitsFromSgd,
   categoryBitmapOf,
@@ -403,7 +404,8 @@ function AgentFormFields({
         // Whatever already mined is reported FIRST. The wallet's own words for a
         // rejected second prompt are "User rejected the request", which says
         // nothing about the write that succeeded a moment earlier.
-        const failure = err instanceof Error ? err.message : String(err);
+        console.warn("gantry: agent write failed", err);
+        const failure = describeWriteError(err).headline;
         setError(landed.length > 0 ? `${landedText(landed)} ${failure}` : failure);
       }
       // A partial save moved the chain, so the list this form was prefilled from

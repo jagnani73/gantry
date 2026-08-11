@@ -25,6 +25,7 @@ import {
   useToast,
 } from "@/components/primitives";
 import { api } from "@/lib/api";
+import { describeWriteError } from "@/lib/write-error";
 import type { ActivityRow } from "./activity";
 import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
 import { categoryLabels, policyFingerprint, revokedFingerprint, sgdFromCapUnits } from "./agent-rules";
@@ -395,7 +396,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         // withdraw that is the entire balance. The unresolved and success paths
         // both clear it; this one was the odd branch out, not a decision.
         setConfirming(null);
-        setNotice({ tone: "danger", text: err instanceof Error ? err.message : String(err) });
+        setNotice({ tone: "danger", ...noticeFrom(err) });
       }
       setBusy(null);
       return;
@@ -469,7 +470,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         // withdraw that is the entire balance. The unresolved and success paths
         // both clear it; this one was the odd branch out, not a decision.
         setConfirming(null);
-        setNotice({ tone: "danger", text: err instanceof Error ? err.message : String(err) });
+        setNotice({ tone: "danger", ...noticeFrom(err) });
       }
       setBusy(null);
       return;
@@ -746,6 +747,19 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
       </div>
     </OverlayScreen>
   );
+}
+
+/**
+ * A proven failure, as one sentence.
+ *
+ * The whole error still goes to the console: shortening is about what the payer
+ * reads, never about what is knowable. Rendering `err.message` put sixteen lines
+ * of viem — Request Arguments, calldata, a docs URL, a version string — on
+ * screen to say that a prompt had been declined.
+ */
+function noticeFrom(err: unknown): { text: string } {
+  console.warn("gantry: agent write failed", err);
+  return { text: describeWriteError(err).headline };
 }
 
 /** A row belongs to an agent when the wallet itself paid, or when the wallet's

@@ -17,6 +17,7 @@ import {
 } from "@gantry/shared";
 import { Card, Figure, Mono } from "@/components/primitives";
 import { api, ApiClientError } from "@/lib/api";
+import { describeWriteError } from "@/lib/write-error";
 import { getDemoAccount } from "@/lib/demo-account";
 import { settlementKey, type ActivityRow } from "./activity";
 import { AmountKeypad, isValidAmount } from "./amount-keypad";
@@ -498,7 +499,15 @@ export function PayFlow({ handle }: { handle: string }) {
             {errorName}
             {intent ? ` · ${shortAddress(intent.intentId)}` : ""}
           </Mono>
-          <p className="mt-2 max-w-[34ch] text-fine text-faint">{message}</p>
+          {/* Shortened HERE, not in `fail`, because the raw message is
+              load-bearing upstream: `pendingTxHash` pulls a transaction hash
+              out of viem's receipt-timeout text with a regex, and a trimmed
+              string would silently stop matching. The screen gets the
+              sentence; the state keeps the whole thing, and the error NAME
+              above it is verbatim either way. */}
+          <p className="mt-2 max-w-[34ch] text-fine text-faint">
+            {describeWriteError(new Error(message)).headline}
+          </p>
         </div>
         <div className="flex shrink-0 flex-col gap-2.5 px-5 pb-11">
           {txHash ? (
@@ -545,7 +554,15 @@ export function PayFlow({ handle }: { handle: string }) {
             {errorName}
             {intent ? ` · ${shortAddress(intent.intentId)}` : ""}
           </Mono>
-          <p className="mt-2 max-w-[34ch] text-fine text-faint">{message}</p>
+          {/* Shortened HERE, not in `fail`, because the raw message is
+              load-bearing upstream: `pendingTxHash` pulls a transaction hash
+              out of viem's receipt-timeout text with a regex, and a trimmed
+              string would silently stop matching. The screen gets the
+              sentence; the state keeps the whole thing, and the error NAME
+              above it is verbatim either way. */}
+          <p className="mt-2 max-w-[34ch] text-fine text-faint">
+            {describeWriteError(new Error(message)).headline}
+          </p>
         </div>
         <div className="flex shrink-0 flex-col gap-2.5 px-5 pb-11">
           <button

@@ -22,6 +22,7 @@ import {
 } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
 import { confirmTx, UnknownOutcomeError, type WriteName } from "@/lib/confirm-tx";
+import { WriteContextError } from "@/lib/write-error";
 import { getDemoAccount } from "@/lib/demo-account";
 import { demoKeyMalformed } from "@/lib/env";
 import { usePayerIdentity } from "./identity";
@@ -156,7 +157,11 @@ function rethrowWithWriteContext(
     );
   }
   if (notes.length === 0) throw err;
-  throw new Error(`${notes.join(" ")}\n\n${message}`, { cause: err });
+  // Carried as data, not concatenated. The screens shorten the underlying viem
+  // error before rendering it, and a note glued onto the front of that string
+  // would either be cut with the rest of the block or defeat the matching that
+  // shortens it.
+  throw new WriteContextError(notes, err);
 }
 
 export interface AgentWrites {
