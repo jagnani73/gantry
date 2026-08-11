@@ -76,7 +76,7 @@ export function PayoutsScreen() {
           <Label size="lg">Paid out to date</Label>
           <p className="mt-3 max-w-[64ch] text-body text-muted">
             The settlement history didn&apos;t load, so there is no total to show. This says
-            nothing about what has settled — every payment is final on-chain either way.
+            nothing about what has settled. Every payment is final on-chain either way.
           </p>
           <p className="mt-2 text-fine text-faint">{feed.historyError}</p>
           <Button variant="secondary" size="sm" className="mt-4 w-fit" onClick={feed.retry}>
@@ -92,8 +92,26 @@ export function PayoutsScreen() {
           <Figure units={totals.net} size="payout" className="mt-3.5" />
           <div className="mt-4 flex flex-wrap gap-9 border-t border-hairline pt-4">
             <Stat label="Gross">S${formatUnits6(totals.gross)}</Stat>
+            {/* FOUR decimals. A 0.5% fee on a 2dp price is a 4dp number — 0.5%
+                of S$29.50 is S$0.1475 — so 2dp truncated it to "0.14" and the
+                three figures beside each other missed by a whole cent (29.50 −
+                0.14 = 29.36, not 29.35). The money was always exact; the
+                display lost three-quarters of a cent, and a fee is the one
+                figure where truncating understates what was taken.
+
+                This does NOT make the row reconcile, and it is not meant to:
+                `formatUnits6` truncates, so 29.50 − 0.1475 is 29.3525 against a
+                displayed net of 29.35. It takes the visible error from 0.01 to
+                0.0025 and shows the precision the fee actually has. Reconciling
+                exactly at a fixed 2dp cannot be done without deriving one of
+                the three from the other two, which would mean printing a number
+                the chain never produced.
+
+                The rest of the app already agreed on 4dp here — the
+                transactions table and its drawer both do — so this brings the
+                lone outlier into line rather than inventing a convention. */}
             <Stat label={`Gantry fee (${formatBps(GANTRY_FEE_BPS)})`}>
-              −S${formatUnits6(totals.fees)}
+              −S${formatUnits6(totals.fees, 4)}
             </Stat>
             <Stat label="Payments">{grouped(totals.count)}</Stat>
           </div>
@@ -150,8 +168,9 @@ export function PayoutsScreen() {
                     <Mono size="sm" className="text-right">
                       S${formatUnits6(day.gross)}
                     </Mono>
+                    {/* 4dp — see the totals card above for why. */}
                     <Mono size="sm" tone="faint" className="text-right">
-                      −S${formatUnits6(day.fees)}
+                      −S${formatUnits6(day.fees, 4)}
                     </Mono>
                     <Mono size="sm" className="text-right">
                       S${formatUnits6(day.net)}
@@ -180,7 +199,7 @@ export function PayoutsScreen() {
 /** Five columns, and the day is the only one that is not a figure. Every number
  * is right-aligned so the decimal points line up down the column, which is the
  * whole reason to render this as a table rather than as cards. */
-const DAY_GRID = "grid grid-cols-[1fr_72px_92px_92px_92px] items-center gap-3";
+const DAY_GRID = "grid grid-cols-[1fr_72px_92px_108px_92px] items-center gap-3";
 
 /** How long to keep asking the backend to catch up with a rotation we have a
  * receipt for. Sized like the payer app's policy read-back: the TTL is 60s but
@@ -323,7 +342,7 @@ function PayoutCard() {
         // refused by the contract — which reads as a failure of the rotation
         // rather than as proof it already worked.
         setUnresolved({
-          text: "The change was submitted and we couldn't confirm it in time. It may still be landing. Check the transaction before sending it again — if it did land, this wallet can no longer make the change, because it is no longer the payout address, and a second attempt would be refused for that reason rather than because the first one failed.",
+          text: "The change was submitted and we couldn't confirm it in time. It may still be landing. Check the transaction before sending it again. If it did land, this wallet can no longer make the change, because it is no longer the payout address, and a second attempt would be refused for that reason rather than because the first one failed.",
           txHash: err.txHash,
           attempted: parsed.address,
         });
@@ -364,7 +383,7 @@ function PayoutCard() {
       ) : null}
       <p className="mt-auto pt-4.5 text-meta text-muted">
         Set on-chain at registration. The contract gates the change on the current payout, so
-        nobody else can point your takings somewhere new — including us.
+        nobody else can point your takings somewhere new, including us.
       </p>
       <a
         className="focus-ring mt-3 w-fit rounded-badge text-body"
@@ -395,7 +414,7 @@ function PayoutCard() {
                   only one that can rotate again. */}
               <p className="mt-2 text-fine text-faint">
                 Check it character by character. Once this lands, only the new address can change
-                it again — a valid address you do not control cannot be undone by anyone.
+                it again. A valid address you do not control cannot be undone by anyone.
               </p>
               <div className="mt-3.5 flex gap-2.5">
                 <Button size="sm" onClick={() => void submit()} disabled={busy || next.trim() === ""}>
