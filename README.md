@@ -123,11 +123,14 @@ plus a 15s sweep. It must run as **exactly one long-lived instance** — never
 autoscaled, or two of them will claim the same nonce and every rate limit halves
 in effectiveness.
 
-A persistent disk is *not* required for correctness — SQLite is a disposable
-cache with no exception, and an indexer with no stored cursor re-sweeps from the
-deploy block in 1,999-block chunks (growing ~22 a day). Every table is
-rebuildable from the chain, including the merchant's display record, which lives
-in `GantryCore` rather than in a local table. One caveat worth knowing: those
+A persistent disk is *not* required for correctness — an indexer with no stored
+cursor re-sweeps from the deploy block in 1,999-block chunks (growing ~22 a day),
+and that rebuilds the settlement feed and the agent-wallet index, including the
+merchant's display record, which lives in `GantryCore` rather than in a local
+table. Two tables are backend-written and do *not* come back: `intents`, and
+`denials` — a refused agent payment is caught in simulation and never
+broadcast, so no event exists to sweep and that row is its only trace. A wiped
+disk therefore loses the record of declined payments. One caveat worth knowing: those
 chunks are sized for the public node's 2,000-block ceiling, and Alchemy's free
 tier caps `eth_getLogs` at **ten** blocks, so every chunk is refused by the paid
 endpoint and served by the rate-limited public one.

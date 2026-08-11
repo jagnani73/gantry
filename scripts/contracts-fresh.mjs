@@ -33,6 +33,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contractsDir = resolve(repoRoot, "packages/contracts");
 const addressesFile = resolve(repoRoot, "packages/shared/src/addresses.ts");
 const startedAt = Date.now();
+/** Set when the deploy SUCCEEDED but the host was left in a state that must be
+ * fixed by hand. Reported at the end and reflected in the exit code, because a
+ * warning twenty lines above the address table is a warning nobody reads. */
+let degraded = false;
 
 const flag = (name) => process.argv.includes(name);
 const die = (message) => {
@@ -311,11 +315,11 @@ writeFileSync(addressesFile, source);
 
 // ------------------------------------------------------------- 4. local cache
 
-// Done here rather than asked for. Its cursor points into the old chain range,
-// and nothing a reset does deletes a row any more — a display floor hides rows
-// from the FEED, and `agent_wallets` is not a feed. So wallets minted by the
-// DEAD factory would keep answering the agent CLI's signer lookup, and
-// `demo:reset` would arm one whose immutable CORE is the retired core.
+// Done here rather than asked for, and it is the ONLY way to clear this host —
+// there is no reset route and `demo:reset` deletes nothing. Two reasons it must
+// happen: the cursor points into the old chain range, and wallets minted by the
+// DEAD factory would keep answering the agent CLI's signer lookup, so
+// `demo:reset` could arm one whose immutable CORE is the retired core.
 const db = resolve(repoRoot, "packages/backend/gantry.db");
 try {
   for (const suffix of ["", "-wal", "-shm"]) {
@@ -329,9 +333,17 @@ try {
   // scoped to the factory that minted them, so the dead factory's are already
   // filtered out, and `demo:reset` floors the feed past everything the retired
   // core settled. Never let cleanup undo the report of what was deployed.
+  // NOT harmless, and it must not be reported as such. `agent_wallets` rows are
+  // factory-scoped so the dead factory's are filtered out — but `settlements`
+  // has no core column and there is no reset route any more, so the retired
+  // core's payments survive with no marker, render as current takings inside the
+  // Overview window, and nothing can remove them but this file delete.
   console.warn(`!  could not delete ${db} (${err instanceof Error ? err.message : err}).`);
-  console.warn("   Almost certainly the backend is running and holding it open. Harmless:");
-  console.warn("   stale wallets are filtered by factory and demo:reset clears the rest.");
+  console.warn("   The backend is running and holding it open. This is NOT harmless:");
+  console.warn("   settlements from the RETIRED core survive with no marker, they will");
+  console.warn("   render as current takings, and nothing else can remove them.");
+  console.warn("   STOP the backend and delete gantry.db{,-wal,-shm} before rehearsing.");
+  degraded = true;
 }
 
 // ----------------------------------------------------------------- 5. verify
@@ -392,3 +404,10 @@ console.log("  3. restart the backend, then pnpm demo:reset (registers the demo 
 console.log("  4. update the address tables in CLAUDE.md, README.md and docs/submission/");
 console.log("  5. commit and push — BOTH hosts inline these at build time, so Vercel and");
 console.log("     Render each serve the dead core until they rebuild");
+
+if (degraded) {
+  console.log("");
+  console.error("✗ DEPLOY SUCCEEDED, THIS HOST DID NOT. See the warning above and fix it before");
+  console.error("  rehearsing — the addresses are pinned and correct, the local cache is not.");
+  process.exit(1);
+}

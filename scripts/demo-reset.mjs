@@ -202,17 +202,50 @@ const healthRes = await fetch(`${backend}/health`).catch((err) => {
   console.error(`cannot reach the backend at ${backend} (${err instanceof Error ? err.message : err}). Is \`pnpm dev\` running?`);
   process.exit(1);
 });
-if (!healthRes?.ok) {
-  console.error(`health check failed: ${healthRes ? healthRes.status : "network error"}`);
+// `process.exit` inside the catch above terminates before this line, so a
+// rejection never reaches here — only a real HTTP status can.
+if (!healthRes.ok) {
+  console.error(`health check failed: ${healthRes.status}`);
   process.exit(1);
 }
-const health = await healthRes.json();
+// A 200 carrying non-JSON is a captive portal or a proxy, not our backend. The
+// promise this file makes is one line rather than a raw undici stack trace, and
+// a top-level `await res.json()` throwing would break it at the first step.
+const health = await healthRes.json().catch(() => null);
+if (!health?.indexer) {
+  console.error(`${backend}/health returned 200 but not our health payload — captive portal or wrong URL?`);
+  process.exit(1);
+}
+
+/**
+ * Prove the admin token BEFORE anything spends. The deleted reset call was the
+ * first request to carry `x-admin-token`, so a rotated or typo'd one used to
+ * stop this script in its first second. Without a probe the failure scatters:
+ * step 1 401s, steps 4-6 still send the payer's OWN transactions (a contract
+ * deployment and a policy write, real gas), and step 3 loses its operator
+ * cooldown exemption so the second shop 429s and reports as a registration
+ * failure rather than an auth one. Four confusing warnings and spent gas,
+ * thirty seconds apart, instead of one line for free.
+ *
+ * `wallet/topup` with no body is the cheap probe: it checks the token first and
+ * refuses the missing address with a 400, so a 401 here means the token and
+ * nothing else.
+ */
+const authProbe = await fetch(`${backend}/api/admin/wallet/topup`, {
+  method: "POST",
+  headers: { "content-type": "application/json", "x-admin-token": adminToken },
+  body: "{}",
+}).catch(() => null);
+if (authProbe?.status === 401) {
+  console.error("ADMIN_TOKEN is set but the backend rejects it (401). Check packages/backend/.env.");
+  process.exit(1);
+}
 
 let degraded = false;
 
 /** Every network call from here on is best-effort: a flake must not crash the
- * script after the feed was floored and money moved, because the cheat sheet
- * below is the whole point of running it. */
+ * script after money has moved, because the cheat sheet below is the whole point
+ * of running it. */
 async function call(method, path, json) {
   try {
     const res = await fetch(`${backend}${path}`, {
@@ -626,7 +659,41 @@ let gadgetLine;
  * before going on stage. */
 const mark = (line) => (line.startsWith("⚠") ? line : `✓ ${line}`);
 
-console.log(`${mark(`indexer cursor ${health.indexer.cursor}, lag ${health.indexer.lag} (chain ${health.chainId})`)}
+/**
+ * The indexer line is GRADED, not decorated — and this is the one check that
+ * says a payment will actually reach the dashboard.
+ *
+ * It used to be free: the deleted reset route awaited `getBlockNumber()`, so a
+ * dead RPC path failed this script in its first second. `/health` deliberately
+ * makes no RPC call, so on its own it proves only that Express is listening.
+ * `lag` is null until the first successful head read, and grows when head reads
+ * succeed while the `getLogs` chunks do not — the documented Alchemy-10-block /
+ * shared-egress-IP failure. Both must refuse the checkmark.
+ *
+ * Re-read at the end rather than reusing the boot probe: that one was taken
+ * before ~30s of on-chain work, so its numbers are stale by the time they print.
+ */
+const finalHealth = await fetch(`${backend}/health`)
+  .then((res) => (res.ok ? res.json() : null))
+  .catch(() => null);
+const lag = finalHealth?.indexer?.lag ?? null;
+const headAt = finalHealth?.indexer?.headAt ?? null;
+const headStale = headAt !== null && Math.floor(Date.now() / 1000) - headAt > 60;
+let indexerLine;
+if (!finalHealth) {
+  degraded = true;
+  indexerLine = "⚠ could not re-read /health; indexer state UNKNOWN";
+} else if (lag === null) {
+  degraded = true;
+  indexerLine = "⚠ indexer has NEVER read a chain head (RPC path down) — the live feed will show nothing";
+} else if (lag > 100 || headStale) {
+  degraded = true;
+  indexerLine = `⚠ indexer ${lag} blocks behind${headStale ? ", head read stale" : ""} — payments will NOT reach the dashboard`;
+} else {
+  indexerLine = `indexer cursor ${finalHealth.indexer.cursor}, lag ${lag} (chain ${finalHealth.chainId})`;
+}
+
+console.log(`${mark(indexerLine)}
 ${mark(payerLine)}
 ${mark(profileLine)}
 ${mark(walletLine)}${signerLine ? `\n${signerLine}` : ""}

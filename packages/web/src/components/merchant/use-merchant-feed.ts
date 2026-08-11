@@ -202,16 +202,26 @@ export function useMerchantFeed(
       if (live) onLiveRef.current(row);
     });
 
-    // No "reset" listener: the server has no route that clears or hides rows any
-    // more, so nothing can pull the book out from under an open dashboard. A
-    // clean book comes from a fresh core, which changes the contract addresses
-    // and therefore needs a rebuild of this app anyway.
+    // No "reset" listener: the server has no route that clears or hides rows, so
+    // nothing can pull the book out from under an open dashboard.
+    //
+    // That removed the only channel by which a server could tell this client its
+    // book is stale, and one case survives: `pnpm contracts:fresh` repoints the
+    // backend at a NEW core while this tab keeps its rows. It does not fix
+    // itself — the feed reads /api/settlements and the SSE stream and never
+    // touches a contract address, so nothing here invalidates. A hard refresh
+    // does. Bounded and dev-only (that command is never run near a demo), which
+    // is why it is documented rather than re-plumbed.
 
     return () => {
       for (const timer of timers) clearTimeout(timer);
       source.close();
     };
-  }, [handle, epoch, retry]);
+    // `retry` is deliberately NOT a dependency: it was referenced only by the
+    // deleted listener. It bumps `epoch`, which IS a dependency, so listing it
+    // would tear this subscription down and rebuild it twice per retry the day
+    // anyone gives that useCallback a real dep list.
+  }, [handle, epoch]);
 
   useEffect(() => {
     const issuedAt = epoch;
