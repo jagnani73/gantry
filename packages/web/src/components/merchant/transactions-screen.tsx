@@ -116,13 +116,19 @@ export function TransactionsScreen() {
   /**
    * Filtered, and the search is over a subset of the book.
    *
-   * `feed.hasMore` alone was not enough and the gap was the worst possible one:
-   * when the FIRST page fails, the cursor is never set, so `hasMore` is false
-   * and this read as a complete search over the zero rows that were read. The
-   * screen then asserted "Every page has been searched". `historyStatus` is the
-   * only thing that distinguishes "read the whole book" from "read none of it".
+   * `feed.historyError`, and neither of the two things it was tried as. The
+   * original `filtered && hasMore && historyError` missed the worst case: when
+   * the FIRST page fails the cursor is never set, so `hasMore` is false and a
+   * search over zero rows read as complete. Keying on `historyStatus === "error"`
+   * fixed that and broke the commoner one — `loadMore`'s catch sets
+   * `historyError` and leaves `historyStatus` at "ready" (only the initial load
+   * effect moves it), so a cascade that died on page four went back to looking
+   * healthy. Verified by failing the paging requests in a browser.
+   *
+   * The error alone covers both, because it is the one thing set on every
+   * failed read regardless of which one failed.
    */
-  const stalled = filtered && feed.historyStatus === "error";
+  const stalled = filtered && feed.historyError !== null;
   /** The only state in which an exhaustive claim is true: a read that succeeded
    * AND has no pages left. */
   const searchedEverything = feed.historyStatus === "ready" && !feed.hasMore;
