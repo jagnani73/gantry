@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { api, ApiClientError } from "@/lib/api";
 import { shortDate } from "./format";
 import { useMerchantContext } from "./merchant-context";
+import { PayoutRotationCard } from "./payout-rotation";
 import { ScreenHeader } from "./screen-header";
 import { ShopTile } from "./shop-tile";
 import { Toggle } from "./toggle";
@@ -363,6 +364,12 @@ export function SettingsScreen() {
           </p>
         </Card>
       </div>
+
+      {/* Where the money goes, and the only write in this back-office the chain
+          authenticates. It sits above the chime and the contract links because
+          it is the one setting here with consequences, and below the profile
+          form because that is what a merchant comes to this screen for. */}
+      <PayoutRotationCard />
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[1fr_392px]">
         <Card radius="card" pad="none" className="px-6 py-5.5">
