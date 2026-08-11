@@ -98,12 +98,12 @@ private · merchants supply their own payout address rather than being issued a
 wallet · no fiat off-ramp.
 
 ### 8. Built so far — feasibility evidence
-Basescan links for all five contracts · the live merchant back-office URL
+Basescan links for all four contracts · the live merchant back-office URL
 (<https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview>,
-backed by <https://gantry-backend.onrender.com>) · 162
-Foundry tests (157 run in CI; the 5 real-USDC and PBM fork tests skip themselves
-without a fork RPC URL and are run locally) plus 247 TypeScript tests (110 shared,
-137 backend) · the commit graph with `m1`/`m2`/`m3`/`m4` tags. Screening risk this
+backed by <https://gantry-backend.onrender.com>) · 180
+Foundry tests (175 run in CI; the 5 real-USDC and PBM fork tests skip themselves
+without a fork RPC URL and are run locally) plus 229 TypeScript tests (110 shared,
+119 backend) · the commit graph with `m1`/`m2`/`m3`/`m4` tags. Screening risk this
 counters: "solo builder, will never ship."
 
 ### 9. Regulation posture

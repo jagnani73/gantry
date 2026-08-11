@@ -160,8 +160,12 @@ been wrong in a draft at least once.
 - Contracts are named `GantryCore` and `AgentPBMWallet`. `SettlementRouter` and
   `PolicyGuard` appear in old planning notes and never existed in code.
 - **Test counts are quoted on deck slide 8, so re-measure before quoting them.**
-  As of 10 Aug 2026: **110 shared + 137 backend = 247 TypeScript tests**, plus 162
-  Foundry of which **157 run in CI** — the 5 fork tests `vm.skip` without a fork
-  RPC URL, so never cite them as something a screener can reproduce by cloning. They had drifted to "97 / 105 / 202" and nothing caught it, because
+  As of 11 Aug 2026: **110 shared + 119 backend = 229 TypeScript tests**, plus 180
+  Foundry of which **175 run in CI** — the 5 fork tests `vm.skip` without a fork
+  RPC URL, so never cite them as something a screener can reproduce by cloning.
+  The backend figure moves the most: it fell 137 → 119 when the agent-wallet
+  scanner and the reset were deleted, so a count copied from an older section is
+  wrong in the direction that overstates. They had drifted to "97 / 105 / 202"
+  and nothing caught it, because
   the only place they appear is prose. `pnpm --filter @gantry/shared test` and
   `pnpm --filter @gantry/backend test` print the real numbers in one line each.
