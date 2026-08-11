@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getAddress, isAddress, type Address, type Hex } from "viem";
 import {
+  agentStatus,
   basescanTx,
   BASE_SEPOLIA_ADDRESSES,
   CATEGORY_OPTIONS,
@@ -150,6 +151,24 @@ function AgentFormFields({
   // "expires in" and the "did the payer touch it" comparison cannot drift apart
   // while the form is on screen.
   const [openedAt] = useState(() => clock());
+  /**
+   * This wallet cannot spend right now, and saving is what changes that.
+   *
+   * `setPolicy` overwrites the whole struct including a fresh expiry, so it is
+   * the ONLY way back from a revoke — there is no separate un-revoke — and
+   * nothing on the form said that saving would bring a dead agent back to life.
+   *
+   * The two dead states are kept APART because they leave the form looking
+   * completely different, and one sentence for both was wrong about one of
+   * them. A revoke zeroes the caps and the category bitmap, so the fields open
+   * empty and `validate` blocks Save until real ones are typed. A LAPSED policy
+   * has cleared nothing: every cap and category is still on-chain and still
+   * prefilled, only `expiry` is in the past — so Save is live on first paint,
+   * and telling that payer their limits "were cleared" contradicts the
+   * populated fields three inches below.
+   */
+  const status = existing ? agentStatus(existing, openedAt) : null;
+  const reArming = status !== null && status !== "active";
   const initialDays = daysRemaining(existing, openedAt);
   /** The absolute expiry already on-chain, when it is still in the future. An
    * untouched expiry field re-sends THIS rather than `now + days`, so opening
@@ -260,7 +279,7 @@ function AgentFormFields({
         // while the app is open — as can another visitor, since a deployed build
         // signs with one shared key — so "the wallet already holds these" is a
         // stronger statement than anything here can support.
-        toast.success("No change — this matches what we read off the wallet.");
+        toast.success("No change. This matches what we read off the wallet.");
         popOverlay();
         return;
       }
@@ -405,10 +424,22 @@ function AgentFormFields({
       <OverlayHeader
         onBack={popOverlay}
         backLabel="Back"
-        title={wallet ? "Edit rules" : "New agent"}
+        title={wallet ? (reArming ? "Arm this agent" : "Edit rules") : "New agent"}
         subtitle={subject ? shortAddress(subject) : undefined}
       />
       <div className="flex flex-col gap-3.5 px-5 pt-6 pb-11">
+        {/* Stated before the fields, because the fields themselves are the clue
+            and they read differently in each case — empty after a revoke, fully
+            populated after a lapse. */}
+        {reArming ? (
+          <Card tone="sunken" radius="control-m" pad="none" className="px-4.5 py-4">
+            <p className="text-meta-sm text-muted">
+              {status === "revoked"
+                ? "This agent is revoked and cannot spend. Its caps and categories were cleared, so they start empty here. Saving writes a new policy on-chain and lets it spend again from that moment."
+                : "This agent's policy has expired, so it cannot spend. Its old limits are still below, unchanged. Saving writes them again with a new expiry and lets it spend from that moment."}
+            </p>
+          </Card>
+        ) : null}
         <Card radius="card-m" pad="none" className="flex flex-col gap-4 px-5 py-5">
           {/* The hint here read "Yours alone. It stays in this browser and never
               leaves it." That was true of the localStorage map this replaced and
@@ -589,7 +620,9 @@ function AgentFormFields({
             (wallet
               ? writesNothing
                 ? "Done"
-                : "Save rules"
+                : reArming
+                  ? "Arm this agent again"
+                  : "Save rules"
               : createdWallet
                 ? "Arm this wallet's policy"
                 : "Create agent")}
@@ -636,12 +669,12 @@ function unresolvedText(
     // was — then advised re-sending, which would reset the daily counter for a
     // stalled rename.
     case "setLabel":
-      return `${landedText(landed)} The rename was submitted and we couldn't confirm it in time. It only changes the display name — the spend rules are unaffected either way — so open the agent and see which name the chain holds before sending it again.`;
+      return `${landedText(landed)} The rename was submitted and we couldn't confirm it in time. It only changes the display name (the spend rules are unaffected either way), so open the agent and see which name the chain holds before sending it again.`;
     // The one unresolved write where doing nothing is not the safe default. If
     // the rotation was prompted by a leaked key, the old key keeps spending for
     // as long as this stays unresolved — so the advice is to look now.
     case "setAgentSigner":
-      return `${landedText(landed)} The session-key rotation was submitted and we couldn't confirm it in time. Open the agent and check which signer the chain holds: if the old key is still there and you were replacing one you don't trust, revoke the policy — that stops every key at once — and rotate afterwards.`;
+      return `${landedText(landed)} The session-key rotation was submitted and we couldn't confirm it in time. Open the agent and check which signer the chain holds: if the old key is still there and you were replacing one you don't trust, revoke the policy, which stops every key at once, and rotate afterwards.`;
     case "setPolicy":
       return created
         ? `The wallet is deployed at ${shortAddress(created)} and the policy write was submitted without being confirmed in time. An unarmed wallet can't spend anything, because every authorization reverts, so open it and see what the chain says before sending another.`
