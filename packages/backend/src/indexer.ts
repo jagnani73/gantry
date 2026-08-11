@@ -17,7 +17,9 @@ import {
   setIntentStatus,
   insertAgentWallet,
   insertDenial,
+  insertMerchant,
   insertSettlementRow,
+  setMerchantProfileRow,
   type SettlementRow,
 } from "./db";
 import { POLICY_DENIAL_NAMES, namedErrorArgs } from "./services/pbm-core";
@@ -133,6 +135,82 @@ async function processLog(log: CoreLog): Promise<void> {
       return;
     }
     await recordDenial(args.intentId, args.wallet, args.reason, log);
+    return;
+  }
+
+  /*
+   * The merchant index, and every registration date with it.
+   *
+   * Free to sweep: the pass already reads the core's address in every window and
+   * viem compiles the event list into one topic0 OR-filter, so these two cost no
+   * extra RPC calls. That is what retired the separate bounded log walk in
+   * services/merchants.ts — it re-covered ground this sweep had already walked,
+   * capped itself at 24 windows a pass, and lost every answer on a restart.
+   *
+   * The registration date is the block's timestamp, so this branch pays one
+   * `blockTime` read. It is cached and merchants are rare.
+   */
+  if (log.eventName === "MerchantRegistered") {
+    const args = log.args as { merchantId?: Hex; handle?: string; categoryId?: number };
+    // The permanent/transient split `recordDenial` documents at length: an
+    // undecodable log can never decode, so returning past it is correct, while
+    // the `blockTime` read below is transient and THROWS — leaving the cursor
+    // unmoved so the next pass retries rather than losing the merchant forever.
+    if (!args.merchantId || args.handle === undefined || args.categoryId === undefined) {
+      console.warn(`indexer: undecodable MerchantRegistered in ${log.transactionHash}, skipped`);
+      return;
+    }
+    insertMerchant({
+      merchant_id: args.merchantId,
+      handle: args.handle,
+      category_id: args.categoryId,
+      // The event carries `payout` too, deliberately dropped: the directory is
+      // a public read surface and the table it feeds holds no such column.
+      //
+      // Empty text, filled by the `MerchantProfileUpdated` that follows in this
+      // same transaction. That ordering is only safe because BOTH delivery paths
+      // are sequential — the sweep awaits each log, and `watchChain` serializes
+      // the watch. It is not safe by virtue of the log order alone: the await
+      // below means this branch yields and a concurrent profile update would
+      // land on a row that does not exist yet.
+      display_name: "",
+      location: "",
+      blurb: "",
+      block_number: Number(log.blockNumber),
+      block_time: await blockTime(log.blockNumber),
+    });
+    return;
+  }
+
+  // Fires on register AND on every later edit, which is why following this one
+  // event is enough to hold a merchant's CURRENT text without special-casing
+  // creation. No chain read and no block time: an edit is not a date.
+  if (log.eventName === "MerchantProfileUpdated") {
+    const args = log.args as {
+      merchantId?: Hex;
+      displayName?: string;
+      location?: string;
+      blurb?: string;
+    };
+    if (
+      !args.merchantId ||
+      args.displayName === undefined ||
+      args.location === undefined ||
+      args.blurb === undefined
+    ) {
+      console.warn(
+        `indexer: undecodable MerchantProfileUpdated in ${log.transactionHash}, skipped`,
+      );
+      return;
+    }
+    // Raw, exactly as the chain carries it. registerMerchant is permissionless
+    // and the contract checks length only, so the sanitising is `resolveProfile`
+    // on the read path — where it also covers rows written before a rule existed.
+    setMerchantProfileRow(args.merchantId, {
+      display_name: args.displayName,
+      location: args.location,
+      blurb: args.blurb,
+    });
     return;
   }
 
@@ -259,9 +337,11 @@ export function settlementEventOf(row: SettlementRow): SettlementEvent {
   );
 }
 
-// Sized to the public sepolia.base.org node's 2,000-block getLogs ceiling, and
-// shared with the other two chunked walks — see LOG_CHUNK_SPAN for the measured
-// provider facts (including why the paid primary serves none of these calls).
+// Sized to the public sepolia.base.org node's 2,000-block getLogs ceiling — see
+// LOG_CHUNK_SPAN for the measured provider facts, including why the paid primary
+// serves none of these calls. This is now the constant's ONLY consumer: the
+// factory scan in services/agents.ts and the registration-date walk in
+// services/merchants.ts were both folded into this sweep and deleted.
 const SWEEP_CHUNK = LOG_CHUNK_SPAN;
 
 /**
@@ -278,7 +358,9 @@ const SWEPT_EVENTS = [
       entry.type === "event" &&
       (entry.name === "IntentSettled" ||
         entry.name === "IntentCancelled" ||
-        entry.name === "IntentDenied"),
+        entry.name === "IntentDenied" ||
+        entry.name === "MerchantRegistered" ||
+        entry.name === "MerchantProfileUpdated"),
   ),
   ...agentPbmWalletFactoryAbi.filter(
     (entry): entry is Extract<(typeof agentPbmWalletFactoryAbi)[number], { type: "event" }> =>
@@ -287,18 +369,37 @@ const SWEPT_EVENTS = [
 ] as const;
 
 /**
- * Four, always. `pnpm abis` regenerates these ABIs from the contracts, so a
- * renamed or removed event silently yields a shorter array — the sweep would
- * stop indexing it while the cursor kept advancing, which is unrecoverable
- * without a manual rewind. The live settlement feed is the one thing CLAUDE.md
- * says is never cut, so it fails at boot instead. Same shape as the accepts[0]
- * assertion in routes/order.ts.
+ * These six by NAME, always. `pnpm abis` regenerates these ABIs from the
+ * contracts, so a renamed or removed event silently yields a shorter array — the
+ * sweep would stop indexing it while the cursor kept advancing, which is
+ * unrecoverable without a manual rewind. The live settlement feed is the one
+ * thing CLAUDE.md says is never cut, so it fails at boot instead. Same shape as
+ * the accepts[0] assertion in routes/order.ts.
+ *
+ * The set, not the count: a rename paired with any addition keeps the length at
+ * six and would sail through a length check, which is exactly the silent
+ * outcome this exists to prevent.
  */
-if (SWEPT_EVENTS.length !== 4) {
-  throw new Error(
-    "indexer: expected 4 swept events (IntentSettled, IntentCancelled, IntentDenied, " +
-      `WalletCreated), got ${SWEPT_EVENTS.length}`,
-  );
+const EXPECTED_SWEPT_EVENTS = [
+  "IntentCancelled",
+  "IntentDenied",
+  "IntentSettled",
+  "MerchantProfileUpdated",
+  "MerchantRegistered",
+  "WalletCreated",
+].join(", ");
+
+{
+  const found = SWEPT_EVENTS.map((entry) => entry.name)
+    .sort()
+    .join(", ");
+  if (found !== EXPECTED_SWEPT_EVENTS) {
+    throw new Error(
+      `indexer: expected to sweep [${EXPECTED_SWEPT_EVENTS}], found [${found}] — ` +
+        "an event was renamed or removed in the contracts and the sweep would " +
+        "silently stop indexing it while the cursor kept advancing",
+    );
+  }
 }
 
 let inFlight: Promise<void> | null = null;
@@ -429,6 +530,29 @@ async function sweep(): Promise<void> {
 }
 
 let watchBackoffMs = 1_000;
+
+/**
+ * Serializes the watch path, and it is load-bearing rather than tidy.
+ *
+ * `processLog` awaits an RPC in some branches and not others, so dispatching
+ * logs concurrently reorders them by how much I/O each one happens to do — not
+ * by the order the chain produced them. `registerMerchant` emits
+ * `MerchantRegistered` then `MerchantProfileUpdated` in ONE transaction, and the
+ * first awaits `blockTime` while the second is pure SQLite: fired concurrently,
+ * the profile UPDATE always ran first, matched zero rows, and the merchant was
+ * then inserted with empty display text. Not a race — deterministic, because an
+ * `await` always yields and the loop's next iteration runs in the same turn.
+ *
+ * The 15s sweep repaired it (it awaits each log in `getLogs` order), so the
+ * symptom was a freshly onboarded shop rendering as its bare handle for up to
+ * one sweep — on the surface that had just told it registration succeeded.
+ *
+ * Chaining costs nothing here: logs are rare, and the sweep is the throughput
+ * path anyway. Each link catches its own failure so one bad log cannot break the
+ * chain for every log after it.
+ */
+let watchChain: Promise<void> = Promise.resolve();
+
 function startWatch(): void {
   const unwatch = wsClient.watchContractEvent({
     address: config.addresses.gantryCore,
@@ -436,9 +560,9 @@ function startWatch(): void {
     onLogs: (logs) => {
       watchBackoffMs = 1_000;
       for (const log of logs) {
-        void processLog(log as unknown as CoreLog).catch((err) =>
-          console.error("indexer watch processing failed:", err),
-        );
+        watchChain = watchChain
+          .then(() => processLog(log as unknown as CoreLog))
+          .catch((err) => console.error("indexer watch processing failed:", err));
       }
     },
     onError: (err) => {

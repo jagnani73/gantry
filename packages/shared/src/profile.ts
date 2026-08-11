@@ -96,8 +96,15 @@ const ZERO_WIDTH_JOINERS = new Set([0x200c, 0x200d]);
  * — hanging off a handle that is claimed on-chain and permanent. That is the
  * same failure the zero-width SPACE is rejected for, so it needs the same
  * answer, expressed as a requirement rather than a longer blocklist.
+ *
+ * EXPORTED because the read path needs it too. While `normalizeProfile` was the
+ * only writer this could stay private, but merchant text went on-chain and
+ * `registerMerchant` is permissionless, so a name of fifty joiners can be
+ * written straight to the contract without ever passing through here. The read
+ * path (`resolveProfile`) is the only chokepoint left, and it has to apply the
+ * same three rules this one does: non-blank, not deceptive, and visible.
  */
-function hasVisibleContent(text: string): boolean {
+export function hasVisibleContent(text: string): boolean {
   for (const character of text) {
     const codePoint = character.codePointAt(0);
     if (codePoint === undefined) continue;

@@ -5,6 +5,8 @@ import {
   PROFILE_LIMITS,
   normalizeProfile,
   resolveProfile,
+  toMerchantSummary,
+  type IndexedMerchant,
   type MerchantProfile,
 } from "../src/services/merchants-core";
 
@@ -144,10 +146,101 @@ test("text that lies about itself is dropped, not forwarded", () => {
   );
 });
 
+test("a name made only of joiners is dropped on the READ path too", () => {
+  // ZWJ and ZWNJ are deliberately permitted by the deception blocklist — they
+  // are load-bearing inside emoji and Persian — so a name of fifty of them is
+  // neither blank nor deceptive and trims to a non-empty string. It renders as
+  // nothing, and `displayName ?? handle` does not fire on a present-but-invisible
+  // value, so the shop would appear on the public directory with a blank name.
+  // The write path has always refused this; the read path had to learn it when
+  // merchant text moved on-chain behind a permissionless register.
+  assert.deepEqual(
+    resolveProfile({ displayName: "‍‍‍‍‍", location: "", blurb: "" }),
+    {},
+  );
+  assert.equal(
+    "location" in resolveProfile({ displayName: "", location: "‌ ‌", blurb: "" }),
+    false,
+  );
+  // Still not a blocklist: a joiner doing its actual job survives.
+  assert.equal(
+    resolveProfile({ displayName: "Ah Hock \u{1F468}‍\u{1F373}", location: "", blurb: "" })
+      .displayName,
+    "Ah Hock \u{1F468}‍\u{1F373}",
+  );
+});
+
 test("a merchant with nothing on-chain gets no display fields at all", () => {
   // Absence is the contract: an unnamed merchant renders as its handle, which is
   // true, where an invented name is not. There is deliberately no seed-data
   // fallback any more — inventing a name for an empty record is exactly what
   // "the chain is the only source" forbids, and it would hide an unnamed shop.
   assert.deepEqual(resolveProfile({ displayName: "", location: "", blurb: "" }), {});
+});
+
+function indexed(overrides: Partial<IndexedMerchant> = {}): IndexedMerchant {
+  return {
+    merchant_id: "0x1f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a0",
+    handle: "ah-hock-chicken-rice",
+    category_id: 1,
+    display_name: "Ah Hock Chicken Rice",
+    location: "Maxwell Food Centre #01-32",
+    blurb: "Hainanese chicken rice since 1987.",
+    block_number: 45_330_000,
+    block_time: 1_785_900_500,
+    ...overrides,
+  };
+}
+
+test("a directory row carries no payout, and cannot be made to", () => {
+  // The privacy rule is enforced by the schema — the store holds no such column —
+  // so this pins the wire half of it. A shop's identity is public; the address
+  // its money lands in is not something a public list of shops publishes.
+  const row = toMerchantSummary(indexed());
+  assert.equal("payout" in row, false);
+  assert.deepEqual(Object.keys(row).sort(), [
+    "blockNumber",
+    "blurb",
+    "categoryId",
+    "categoryName",
+    "displayName",
+    "handle",
+    "location",
+    "merchantId",
+    "registeredAt",
+  ]);
+});
+
+test("a directory row is dated from its registration block", () => {
+  const row = toMerchantSummary(indexed());
+  assert.equal(row.registeredAt, 1_785_900_500);
+  assert.equal(row.blockNumber, 45_330_000);
+  // The registry's slug, matching MerchantResponse — the human label is a
+  // client-side lookup, so the wire never has to be re-issued to reword one.
+  assert.equal(row.categoryName, "food_beverage");
+  // A keccak hash, so lowercase already IS canonical — running it through the
+  // address checksummer would invent capitalisation that means nothing.
+  // Compared against the INPUT, not against its own lowercasing, so this also
+  // catches a mapper that substituted some other value.
+  assert.equal(row.merchantId, indexed().merchant_id);
+});
+
+test("every listed row goes through the same read-path sanitiser", () => {
+  // The directory renders text written by anyone who paid gas: registerMerchant
+  // is permissionless and the contract checks length only. A row that skipped
+  // resolveProfile would put an RLO override on a public page.
+  const deceptive = toMerchantSummary(
+    indexed({ display_name: "Ah Hock‮eciR nekcihC", location: "  ", blurb: "" }),
+  );
+  assert.equal("displayName" in deceptive, false);
+  assert.equal("location" in deceptive, false);
+  assert.equal("blurb" in deceptive, false);
+  // The handle survives, which is what such a row renders as.
+  assert.equal(deceptive.handle, "ah-hock-chicken-rice");
+});
+
+test("an unlisted category renders as its id, never as nothing", () => {
+  // The chain accepts any uint16 < 256 and the directory lists whatever is
+  // registered, so a category no client knows must still name itself.
+  assert.equal(toMerchantSummary(indexed({ category_id: 250 })).categoryName, "category_250");
 });

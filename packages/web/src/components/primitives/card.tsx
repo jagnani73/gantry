@@ -61,8 +61,12 @@ export function Card({
   ...props
 }: CardProps) {
   const Comp = (as ?? "div") as React.ElementType;
+  // A card that IS the control — the directory's shop card — must not default to
+  // `type="submit"`. Set here rather than at the call site, on the Row
+  // precedent, so no caller can forget it.
   return (
     <Comp
+      {...(Comp === "button" ? { type: "button" as const } : {})}
       className={cn(
         TONE[tone],
         RADIUS[radius],

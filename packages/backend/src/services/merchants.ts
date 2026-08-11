@@ -1,11 +1,11 @@
 import { keccak256, toBytes, zeroAddress, type Address, type Hex } from "viem";
 import {
-  LOG_CHUNK_SPAN,
   categoryName,
   gantryCoreAbi,
   isKnownCategory,
   isValidHandle,
   normalizePayout,
+  type MerchantListResponse,
   type MerchantResponse,
   type RegisterMerchantRequest,
   type RegisterMerchantResponse,
@@ -14,9 +14,16 @@ import {
 } from "@gantry/shared";
 import { publicClient } from "../chain";
 import { config } from "../config";
+import { countMerchants, getMerchantRow, insertMerchant, listMerchants } from "../db";
 import { ApiError } from "../errors";
+import { indexerStatus } from "../indexer";
 import { sendRelayerTx } from "../relayer";
-import { normalizeProfile, resolveProfile, type MerchantProfile } from "./merchants-core";
+import {
+  normalizeProfile,
+  resolveProfile,
+  toMerchantSummary,
+  type MerchantProfile,
+} from "./merchants-core";
 
 /** What the registry itself stores. */
 interface ChainMerchant {
@@ -43,27 +50,41 @@ export function merchantId(handle: string): Hex {
   return keccak256(toBytes(handle));
 }
 
-export interface MerchantLookupOptions {
-  /**
-   * Wait briefly for the registration date rather than serving whatever is
-   * already resolved. Display surfaces want it; the PAYMENT path must not have
-   * it — getMerchant runs on every intent and every 402 challenge, and a payment
-   * queueing behind a log query is a worse failure than a missing date.
-   */
-  waitForRegisteredAt?: boolean;
-}
-
-export async function getMerchant(
-  handle: string,
-  opts: MerchantLookupOptions = {},
-): Promise<MerchantResponse> {
+export async function getMerchant(handle: string): Promise<MerchantResponse> {
   if (!isValidHandle(handle)) {
     throw new ApiError(400, "InvalidHandle", `not a valid merchant handle: ${handle}`);
   }
   const id = merchantId(handle);
   const chain = await readMerchant(handle, id);
-  const at = await registeredAtOf(handle, opts.waitForRegisteredAt === true);
-  return compose(handle, id, chain, at);
+  return compose(handle, id, chain, registeredAtOf(handle));
+}
+
+/**
+ * The public directory: every merchant the index holds, oldest first.
+ *
+ * Served entirely from the swept table with no chain read at all — which is what
+ * makes it affordable and what makes two hosts agree. `GantryCore` has no
+ * enumeration (a `mapping(bytes32 => Merchant)` and nothing else), so the logs
+ * ARE the only census; they are also a complete one, because merchants are never
+ * deleted.
+ *
+ * Sorted by registration and nothing else. Any other order would be a ranking,
+ * and this list exists to say Gantry ranks nobody — a directory that ordered
+ * shops by takings or by activity is the curation the footer note disclaims.
+ *
+ * Rows the sweep has not reached yet are simply absent, which is honest only as
+ * far as the number beside them: `indexer` travels with the list so an empty one
+ * can say whether the RAIL is empty or merely this host's view of it. Without
+ * that the page asserts "No shops registered yet" on a cold backfill, which is a
+ * false claim about the chain rather than a slow one.
+ */
+export function listMerchantIndex(): MerchantListResponse {
+  const status = indexerStatus();
+  return {
+    merchants: listMerchants().map(toMerchantSummary),
+    total: countMerchants(),
+    indexer: { cursor: status.cursor, lag: status.lag },
+  };
 }
 
 /**
@@ -127,139 +148,57 @@ function compose(
 }
 
 /**
- * Registration timestamps, resolved once and then kept forever — the block a
- * merchant registered in cannot change. Permanence is the whole point: without
- * it every merchant lookup would carry a log query.
+ * The registration date, straight off the swept `merchants` table.
  *
- * Keyed by the handle EXACTLY as the log carried it. Lowercasing would let a
- * mixed-case handle registered straight on-chain answer for a different
- * merchantId, and these two are different merchants.
- */
-const registrationTimes = new Map<string, number>();
-
-/**
- * There is no cheap "when did this one handle register" query. A full-range
- * getLogs filtered on the indexed merchantId would be one call, but no provider
- * in the fallback chain will serve it: measured 8 Aug 2026, Alchemy's free tier
- * caps eth_getLogs at a TEN block range and sepolia.base.org at 2000. So the
- * range has to be walked, and the walk is amortised — one pass records EVERY
- * MerchantRegistered it sees, not just the handle that triggered it.
+ * A local SQLite read, so it costs nothing and EVERY caller gets it — including
+ * the payment path, which the old implementation had to be kept away from.
  *
- * Three things keep that affordable:
- *  - only display requests start a pass (see `waitForRegisteredAt`); the payment
- *    path never triggers RPC work it does not need;
- *  - a pass is capped and RESUMABLE, so it never monopolises the transport a
- *    live payment is settling on, and picks up where it stopped;
- *  - a merchant registered THROUGH this backend never needs it at all — the
- *    receipt already names the block (`primeRegisteredAt`).
+ * What this replaced was a second log walk run by this file alone: 24 getLogs
+ * windows a pass on a 30s cooldown, resumable, amortised, and covering exactly
+ * the block range the indexer sweep already covers — with its answers in a Map
+ * that every restart threw away. Folding `MerchantRegistered` into that sweep
+ * made all of it redundant: there it costs no extra RPC calls (the pass reads
+ * the core's address regardless) and the answer persists.
+ *
+ * `undefined` means "the sweep has not reached that block yet", never "no such
+ * merchant" — the chain read decides that. It renders as nothing; an estimate
+ * would be worse, since this is the fact a shop would cite as proof it existed.
  */
-const SCAN_CHUNK = LOG_CHUNK_SPAN;
-const SCAN_CHUNKS_PER_PASS = 24;
-const SCAN_COOLDOWN_MS = 30_000;
-/** How long a display request waits on a pass in progress. */
-const REGISTERED_AT_WAIT_MS = 1_500;
-const POLL_MS = 100;
-
-/** Last block scanned; null = never started. Survives a failed pass, so the
- * next one resumes rather than re-walking from the deploy block. */
-let scanCursor: bigint | null = null;
-let scanning: Promise<void> | null = null;
-let scanNextAt = 0;
-
-async function registeredAtOf(handle: string, wait: boolean): Promise<number | undefined> {
-  const known = registrationTimes.get(handle);
-  if (known !== undefined) return known;
-  if (!wait) return undefined;
-
-  const pass = startScan();
-  if (!pass) return undefined; // cooling down; the field is simply absent
-
-  // Polled rather than wired to a per-handle waiter: a pass fills the map chunk
-  // by chunk, so the answer usually lands in the first chunk or two and this
-  // request has no reason to wait for the rest of the range.
-  let done = false;
-  void pass.then(() => {
-    done = true;
-  });
-  const deadline = Date.now() + REGISTERED_AT_WAIT_MS;
-  while (!done && Date.now() < deadline) {
-    await expire(POLL_MS);
-    const at = registrationTimes.get(handle);
-    if (at !== undefined) return at;
-  }
-  return registrationTimes.get(handle);
-}
-
-function expire(ms: number): Promise<undefined> {
-  return new Promise<undefined>((resolve) => {
-    setTimeout(() => resolve(undefined), ms).unref();
-  });
-}
-
-/** The pass in flight, starting one if the cooldown has elapsed; null when the
- * caller should just go without a date this time. */
-function startScan(): Promise<void> | null {
-  if (scanning) return scanning;
-  if (Date.now() < scanNextAt) return null;
-  scanning = scanRegistrations().finally(() => {
-    scanning = null;
-    scanNextAt = Date.now() + SCAN_COOLDOWN_MS;
-  });
-  return scanning;
+function registeredAtOf(handle: string): number | undefined {
+  return getMerchantRow(handle)?.block_time;
 }
 
 /**
- * Resolves rather than rejects, always: callers race it against a timer, and an
- * unhandled rejection would take the process down over a display field.
+ * The block a fresh registration mined in IS its registration date, so writing
+ * the row here spares a shop that just onboarded from waiting up to 15s for the
+ * sweep to tell it when it registered.
+ *
+ * The same row the indexer writes, from the same chain, learned from a receipt
+ * instead of a log — and `insertMerchant` is INSERT OR IGNORE, so whichever
+ * arrives first wins and the other is a no-op. Never awaited: the merchant's
+ * response must not wait on it, and a failure only leaves the sweep to do it.
  */
-async function scanRegistrations(): Promise<void> {
-  try {
-    const head = await publicClient.getBlockNumber();
-    let from = (scanCursor ?? config.deployBlock - 1n) + 1n;
-    for (let chunk = 0; chunk < SCAN_CHUNKS_PER_PASS && from <= head; chunk++) {
-      const to = from + SCAN_CHUNK > head ? head : from + SCAN_CHUNK;
-      const logs = await publicClient.getContractEvents({
-        address: config.addresses.gantryCore,
-        abi: gantryCoreAbi,
-        eventName: "MerchantRegistered",
-        fromBlock: from,
-        toBlock: to,
-      });
-      for (const log of logs) {
-        const handle = log.args.handle;
-        if (handle && log.blockNumber !== null && !registrationTimes.has(handle)) {
-          await rememberBlockTime(handle, log.blockNumber);
-        }
-      }
-      scanCursor = to;
-      from = to + 1n;
-    }
-  } catch (err) {
-    // The cursor keeps whatever the pass managed, so the next one resumes.
-    console.warn(
-      "registration-date scan pass failed (registeredAt stays absent until it resumes):",
-      err instanceof Error ? err.message : err,
-    );
-  }
-}
-
-async function rememberBlockTime(handle: string, blockNumber: bigint): Promise<number> {
-  const block = await publicClient.getBlock({ blockNumber });
-  const at = Number(block.timestamp);
-  registrationTimes.set(handle, at);
-  return at;
-}
-
-/**
- * The block a fresh registration mined in IS the registration date, so reading
- * it here saves the log query entirely for a shop that just onboarded. Never
- * awaited: the merchant's response must not wait on it, and a failure only
- * leaves the normal lookup to run later.
- */
-function primeRegisteredAt(handle: string, blockNumber: bigint): void {
-  void rememberBlockTime(handle, blockNumber).catch((err) =>
-    console.warn(`could not read the registration block time for ${handle}:`, err),
-  );
+function primeRegistration(
+  handle: string,
+  categoryId: number,
+  profile: MerchantProfile,
+  blockNumber: bigint,
+): void {
+  void publicClient
+    .getBlock({ blockNumber })
+    .then((block) =>
+      insertMerchant({
+        merchant_id: merchantId(handle),
+        handle,
+        category_id: categoryId,
+        display_name: profile.displayName,
+        location: profile.location,
+        blurb: profile.blurb,
+        block_number: Number(blockNumber),
+        block_time: Number(block.timestamp),
+      }),
+    )
+    .catch((err) => console.warn(`could not index the registration of ${handle}:`, err));
 }
 
 /**
@@ -406,7 +345,7 @@ export async function registerMerchant(
     // Cooldown only after a successful register, so a reverted attempt still
     // surfaces its real error on retry rather than a bogus 429 (faucet precedent).
     if (!operator) armThrottle(registerThrottle, key);
-    primeRegisteredAt(req.handle, receipt.blockNumber);
+    primeRegistration(req.handle, req.categoryId, profile.value, receipt.blockNumber);
     console.log(
       `registered ${req.handle} → ${payout.address} (category ${req.categoryId}) in ${receipt.transactionHash}`,
     );
@@ -529,11 +468,6 @@ export async function updateMerchantProfile(
   // 404s for a handle nobody registered, before any gas is spent. The contract
   // rejects it too (MerchantNotFound), but paying for that revert to learn what a
   // read already knows is the wrong order.
-  //
-  // WITHOUT `waitForRegisteredAt`: that flag can start a 24-window log walk and
-  // block up to 1.5s, on the same transport this is about to send a transaction
-  // through — and the registration date is not in this response's critical path.
-  // The display surfaces that actually want it ask for it themselves.
   const merchant = await getMerchant(handle);
 
   // Unlike the register path this write IS the request, so a failure must fail
@@ -600,9 +534,7 @@ async function ownsHandle(handle: string, payout: Address): Promise<ChainMerchan
 
 /** Prime the 60s cache so the immediate redirect to /pay/<handle> doesn't race a
  * fresh chain read. Nothing to invalidate: only successful lookups are cached
- * and this handle had none (the 404 path throws before cache.set). The profile
- * is read back out of SQLite rather than passed in, so the response says what
- * was actually stored. */
+ * and this handle had none (the 404 path throws before cache.set). */
 function primeCache(
   handle: string,
   payout: Address,
@@ -617,5 +549,8 @@ function primeCache(
  * worth being careful about. */
 function primeCacheFrom(handle: string, value: ChainMerchant): MerchantResponse {
   cache.set(handle, { at: Date.now(), value });
-  return compose(handle, merchantId(handle), value, registrationTimes.get(handle));
+  // Usually absent on the register path: `primeRegistration` still has a block
+  // read in flight, and the sweep is up to 15s away. The field is omitted rather
+  // than guessed, and the shop's own screens pick it up on their next load.
+  return compose(handle, merchantId(handle), value, registeredAtOf(handle));
 }

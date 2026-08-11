@@ -72,6 +72,10 @@
   --text-hero--line-height: 1.02;
   --text-hero--letter-spacing: -0.035em;
   --text-hero--font-weight: 600;
+  --text-hero-sm: 56px; /* directory headline — a page that leads with a list */
+  --text-hero-sm--line-height: 1.04;
+  --text-hero-sm--letter-spacing: -0.03em;
+  --text-hero-sm--font-weight: 600;
   --text-section: 32px;
   --text-section--line-height: 1.12;
   --text-section--letter-spacing: -0.025em;
@@ -172,6 +176,8 @@
   --text-amount-sm--font-weight: 600;
   --text-stat: 19px; /* mono stat under "You've paid here" */
   --text-stat--line-height: 1.2;
+  --text-stat-figure: 30px; /* directory stat rail — a mono count, not a sum */
+  --text-stat-figure--line-height: 1.1;
 
   /* Row and list titles */
   --text-list-title: 14px;
@@ -184,6 +190,8 @@
   /* Prose */
   --text-standfirst: 19px;
   --text-standfirst--line-height: 30px;
+  --text-standfirst-sm: 17px; /* under the directory headline */
+  --text-standfirst-sm--line-height: 27px;
   --text-body-lg: 14.5px;
   --text-body-lg--line-height: 23px;
   --text-body: 13.5px;
@@ -314,6 +322,10 @@
   --animate-overlay-in: overlay-in 180ms ease-out; /* scrims, fades */
   --animate-drawer-in: drawer-in 180ms ease-out; /* merchant transaction drawer */
   --animate-overlay-push: overlay-push 240ms ease-out; /* phone full-screen overlay */
+  /* The same drawer, below 768, where a 468px panel would cover the page it is
+     supposed to sit beside. It rises instead of sliding in from an edge that is
+     no longer there. */
+  --animate-sheet-in: sheet-in 180ms ease-out;
 
   @keyframes accent-tint {
     from {
@@ -347,6 +359,14 @@
     to {
       transform: translateX(0);
       opacity: 1;
+    }
+  }
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
     }
   }
 }

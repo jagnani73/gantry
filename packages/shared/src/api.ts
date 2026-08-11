@@ -65,20 +65,85 @@ export interface MerchantResponse {
   categoryId: number;
   categoryName: string;
   /**
-   * The off-chain display record. The chain stores only handle/payout/category,
-   * so these are all optional: a merchant registered before the profile table
-   * existed (or by a script) is a real merchant with no name. Fall back to the
-   * handle rather than rendering an empty shop.
+   * The display record. On-chain since 11 Aug 2026, and still optional: the
+   * contract checks only length, so `resolveProfile` DROPS anything blank or
+   * deceptive on the read path and the key never reaches this object. Fall back
+   * to the handle rather than rendering an empty shop.
    */
   displayName?: string;
   location?: string;
   blurb?: string;
   /**
-   * Unix seconds, read from the MerchantRegistered log. Absent when the log was
-   * not found — the lookup window is bounded and the RPC can fail — and an
-   * absent registration date must render as nothing, never as an estimate.
+   * Unix seconds, from the swept `MerchantRegistered` log. Absent while the
+   * indexer's cursor has not yet reached the block that registered this handle —
+   * an absent registration date must render as nothing, never as an estimate.
    */
   registeredAt?: number;
+}
+
+/**
+ * One row of the public directory (`GET /api/merchants`).
+ *
+ * Deliberately not `MerchantResponse`: **there is no `payout`**, and there is no
+ * column behind one either. The directory is a public read surface, so the rule
+ * that a shop's identity is public while its money is not is enforced by the
+ * schema rather than by whoever writes the next screen.
+ *
+ * `registeredAt` and `blockNumber` are REQUIRED here where the single-handle
+ * response has them optional, and the difference is real: a row exists only
+ * because some writer held the registration BLOCK — the sweep decoding the log,
+ * or the backend reading the receipt of a register it just relayed — so the date
+ * always arrived with it. A merchant the index has not reached is absent from
+ * the list entirely, which is the honest answer; never present with no date.
+ */
+export interface MerchantSummary {
+  handle: string;
+  merchantId: Hex;
+  categoryId: number;
+  categoryName: string;
+  displayName?: string;
+  location?: string;
+  blurb?: string;
+  /** Unix seconds — the timestamp of the block `registerMerchant` mined in. */
+  registeredAt: number;
+  blockNumber: number;
+}
+
+/**
+ * GET /api/merchants — every merchant the index holds, oldest registration
+ * first. There is no filtering, no ranking and no pagination: the page searches
+ * and filters what it loaded, and a list that ordered or omitted anything would
+ * be the curation this directory exists to say Gantry does not do.
+ *
+ * `total` exists so a truncated response can say so. It equals `merchants.length`
+ * until the index outgrows one page, and a client that finds them unequal must
+ * announce it rather than presenting a capped list as the whole rail.
+ */
+export interface MerchantListResponse {
+  merchants: MerchantSummary[];
+  total: number;
+  /**
+   * How far the sweep has actually got, so an empty list can say WHICH kind of
+   * empty it is.
+   *
+   * Without this the response cannot distinguish "the rail has no shops" from
+   * "this host has not indexed them yet" — and the directory does not merely
+   * stay silent on the difference, it asserts one: an empty grid renders "No
+   * shops registered yet", and a filtered empty renders "a name that isn't here
+   * has not been registered". Both are claims about the chain, and a cold
+   * free-tier instance serving its first request would make them falsely, fast,
+   * with a 200.
+   *
+   * Deliberately NOT the 503 that `GET /api/agents` raises on a failed sweep.
+   * That rule exists because an empty answer there makes an agent CLI mint a
+   * DUPLICATE WALLET — an irreversible on-chain write. Nobody acts on this list,
+   * so refusing the request would trade a caveated page for no page at all, on
+   * the host most likely to be cold when a stranger arrives.
+   *
+   * `lag` is blocks behind the chain head, or null before any head is known.
+   * Treat anything above a handful of blocks as "still catching up".
+   */
+  indexer: { cursor: number; lag: number | null };
 }
 
 /**

@@ -13,6 +13,7 @@ export * from "./quote";
 export * from "./handle";
 export * from "./payout";
 export * from "./dashboardScope";
+export * from "./directory";
 export * from "./time";
 export * from "./days";
 export * from "./overviewWindow";

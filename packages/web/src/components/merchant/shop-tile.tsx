@@ -15,7 +15,8 @@ const SIZE = {
   // sm:aspect-square` and the tile takes its height from the field stack beside
   // it, so 88 is the narrow-viewport case rather than the size it usually draws.
   lg: "size-22 rounded-control-m text-card-title",
-  md: "size-13 rounded-tile text-card-title-xs", // 52 — the payer preview
+  xl: "size-15.5 rounded-control-m text-card-title-sm", // 62 — the directory drawer
+  md: "size-13 rounded-tile text-card-title-xs", // 52 — the payer preview, directory card
 } as const;
 
 export function initialsOf(name: string): string {

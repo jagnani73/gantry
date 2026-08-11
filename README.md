@@ -43,6 +43,7 @@ funding is capped rather than closed.
 - [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents, minted per payer by a [permissionless factory](https://sepolia.basescan.org/address/0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1)
 - [x] Stablecoin-in → XSGD-out atomic FX behind the `IGantrySwap` seam — shipping on `FixedRateSwap`, which accepts any token with an owner-listed rate (USDC today). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
 - [x] Merchant onboarding — one form, live handle availability, on-chain registration, printable QR (`/onboard`)
+- [x] Public merchant directory (`/merchants`) — every shop registered on the rail, in registration order, built entirely from the core's own `MerchantRegistered` logs. It ranks nothing and reviews nothing, and says so.
 - [x] Merchant back-office — an overview with the live feed, transactions, payouts, QR/standee, profile and settings, with a live SSE feed carrying Human/Agent badges and one feed for both doors
 - [x] Payer app — wallet, activity, and an agents console where the payer creates a PBM wallet, sets its policy and revokes it, signing every one of those transactions themselves
 - [x] LLM-powered agent CLI (Gemini via the Vercel AI SDK) paying — and getting rejected on-chain — autonomously, with a visually-identical scripted fallback
@@ -56,7 +57,7 @@ funding is capped rather than closed.
 | [`MockXSGD`](https://sepolia.basescan.org/address/0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503) | `0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503` |
 | [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1) | `0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1` |
 
-All four were deployed in a single run on 11 Aug 2026 and share one floor block, **45328301**. That is the point of deploying them together: the indexer sweeps the core's settlement events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, and one constant is what makes that possible.
+All four were deployed in a single run on 11 Aug 2026 and share one floor block, **45328301**. That is the point of deploying them together: the indexer sweeps the core's settlement, denial and merchant-registration events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, and one constant is what makes that possible. Six events in one topic filter cost exactly what one would.
 
 The factory is permissionless: agent wallets are created *by the payer*, from the payer's own key, so their addresses are not constants — there is no wallet worth pinning here.
 
@@ -69,8 +70,8 @@ The pay token is Circle's real testnet USDC (`0x036CbD53842c5426634e7929541eC231
 ```
 packages/contracts   Foundry — GantryCore, AgentPBMWallet + factory, FixedRateSwap (IGantrySwap), mocks
 packages/shared      ABIs (generated via `pnpm abis`), addresses, quote math, EIP-712 typed data, API types, formatting/profile/cursor helpers
-packages/backend     Express — merchant API, relayer, SSE indexer, paged history + agent/denial reads, x402 facilitator (exact + gantry-pbm) + protected order route
-packages/web         Next.js — landing /, onboarding /onboard, merchant back-office /merchant/[handle]/*, payer app /app/*, payer page /pay/[handle], shop page /m/[handle], printable QR /qr/[handle]
+packages/backend     Express — merchant API + directory index, relayer, SSE indexer, paged history + agent/denial reads, x402 facilitator (exact + gantry-pbm) + protected order route
+packages/web         Next.js — landing /, directory /merchants, onboarding /onboard, merchant back-office /merchant/[handle]/*, payer app /app/*, payer page /pay/[handle], shop page /m/[handle], printable QR /qr/[handle]
 packages/agent       LLM agent CLI (Vercel AI SDK + Gemini) with scripted fallback (pnpm --filter @gantry/agent start "…")
 ```
 
@@ -101,6 +102,7 @@ The variables that change **what the app does** — payer key source, agent auto
 - **Agent-door end-to-end:** `pnpm --filter @gantry/agent e2e:pbm` (note the package — it lives in the agent, not the backend), and the rejection beat with `pnpm --filter @gantry/agent e2e:pbm -- --handle gadgethub-sg --sgd 4 --expect-denial`.
 - **Provision before a rehearsal:** `pnpm demo:reset` — tops up the funder, funds the demo payer, registers the demo shops on-chain, provisions and re-arms the demo agent, and prints addresses + demo URLs. It waits on real receipts, so budget seconds rather than milliseconds; contracts persist, so nothing is redeployed. It does **not** clear the transaction feed: nothing does. Every host indexes the same chain from the same block and shows everything it finds, which is what keeps a laptop and the deployed backend in agreement. If you need an empty book, deploy a fresh core with `pnpm contracts:fresh`.
 - **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), fill in the shop's name, location and one-line blurb, paste a payout address, register. The relayer pays the gas, so the merchant needs no ETH. All six fields go on-chain in that one transaction, and the three display fields are editable afterwards from the Settings screen — which is another relayer-signed transaction, so the merchant still never needs a wallet.
+- **See who is on the rail:** open `/merchants`. It is built from the swept `MerchantRegistered` logs, so a shop appears there within a sweep of registering — and a **pre-existing `packages/backend/gantry.db` will be missing every merchant registered before the upgrade**, because the table is new and the cursor never rewinds. Later registrations still sweep in normally, which is what makes it look fixed when it is not. Delete the file and let it backfill; that is the only migration this cache has.
 - **Agent CLI:** `AGENT_SESSION_KEY` cannot be a freshly generated key — its address must be the `agentSigner` of a PBM wallet that already exists, or the CLI has nothing to pay from (`GET /api/agents?agentSigner=…` is how it finds its wallet) and a mismatched key fails every payment with `InvalidAgentSignature`. Create the wallet from the payer app's agents screen with that address as the signer, or rotate an existing wallet's signer on-chain via `setAgentSigner`.
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
 

@@ -1,4 +1,12 @@
-import { isDeceptive, type MerchantProfile } from "@gantry/shared";
+import type { Hex } from "viem";
+import {
+  categoryName,
+  hasVisibleContent,
+  isDeceptive,
+  type MerchantProfile,
+  type MerchantSummary,
+} from "@gantry/shared";
+import type { MerchantRow } from "../db-core";
 
 /**
  * Pure profile rules — no config, no chain, no db handle (facilitator-core.ts
@@ -56,9 +64,60 @@ export function resolveProfile(chain: MerchantProfile): Partial<MerchantProfile>
 
 /** One field, or nothing at all. Deceptive text is DROPPED rather than escaped
  * or repaired: the honest rendering of a name designed to lie about itself is
- * the shop's own handle. */
+ * the shop's own handle.
+ *
+ * The three checks are the same three `normalizeProfile` applies on the write
+ * path, and all three have to be here: `registerMerchant` is permissionless, so
+ * nothing guarantees a stored value ever met them. `hasVisibleContent` is the
+ * one that is easy to leave out — a name of joiners is neither blank nor
+ * deceptive, and trims to a non-empty string, so it passes the other two and
+ * renders as an invisible shop name with the handle fallback never firing. */
 function renderable(field: keyof MerchantProfile, value: string): Partial<MerchantProfile> {
   const trimmed = value.trim();
-  if (!trimmed || isDeceptive(trimmed)) return {};
+  if (!trimmed || isDeceptive(trimmed) || !hasVisibleContent(trimmed)) return {};
   return { [field]: trimmed };
+}
+
+/**
+ * The store's own row shape, imported rather than redeclared.
+ *
+ * A `import type` is erased under `verbatimModuleSyntax`, so this costs nothing
+ * at runtime and the module stays as free of the database as `pbm-core.ts` —
+ * which already imports `DenialRow` the same way, and is the precedent. A
+ * hand-copied shape would compile happily while a column was added to one side
+ * and not the other, and TypeScript would not catch that direction: extra
+ * properties on a non-literal are assignable, so the mapper would silently
+ * ignore the new column.
+ */
+export type IndexedMerchant = MerchantRow;
+
+/**
+ * One swept row → one directory entry.
+ *
+ * Every row goes through `resolveProfile` on the way out, and that is load
+ * bearing rather than tidy: the directory renders text written by anyone who
+ * paid gas, since `registerMerchant` is permissionless and the contract checks
+ * length only. The read path is the only chokepoint left.
+ *
+ * `payout` is absent because the store never held it — see MerchantRow. Do not
+ * "complete" this mapper by adding a chain read for it: a public list of shops
+ * is not a public list of the addresses their money lands in.
+ */
+export function toMerchantSummary(row: IndexedMerchant): MerchantSummary {
+  return {
+    handle: row.handle,
+    // A keccak hash, so lowercase already IS canonical — this is exactly the
+    // value that must never be run through `checksummed`, which would invent
+    // capitalisation that means nothing.
+    merchantId: row.merchant_id as Hex,
+    categoryId: row.category_id,
+    categoryName: categoryName(row.category_id),
+    ...resolveProfile({
+      displayName: row.display_name,
+      location: row.location,
+      blurb: row.blurb,
+    }),
+    registeredAt: row.block_time,
+    blockNumber: row.block_number,
+  };
 }

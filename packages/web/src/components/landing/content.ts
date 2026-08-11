@@ -28,6 +28,8 @@ export const REPO_URL = "https://github.com/jagnani73/gantry";
 export const DEMO_HANDLE = DEMO_MERCHANT_HANDLE;
 export const MERCHANT_HREF = `/merchant/${DEMO_HANDLE}/overview`;
 export const PAYER_HREF = "/app";
+/** The public directory. Every shop on the rail, in registration order. */
+export const MERCHANTS_HREF = "/merchants";
 
 export const GANTRY_FEE_LABEL = formatBps(GANTRY_FEE_BPS);
 export const CARD_FEE_LABEL = formatBps(CARD_FEE_BPS);

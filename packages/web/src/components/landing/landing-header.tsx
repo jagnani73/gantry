@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { GantryMark } from "@/components/primitives";
 import { cn } from "@/lib/utils";
-import { GUTTER_X, REPO_URL } from "./content";
+import { GUTTER_X, MERCHANTS_HREF, REPO_URL } from "./content";
 
 /* The base layer paints every `a` accent green; these are navigation, not links
    into the argument, so they take the text ladder instead. Utilities sit in a
@@ -20,7 +21,7 @@ export function LandingHeader() {
         <span className="text-card-title-sm">Gantry</span>
       </div>
       <nav className="flex items-center gap-4 sm:gap-6.5">
-        {/* Dropped below 640px: the wordmark plus four links does not fit a 375px
+        {/* Dropped below 640px: the wordmark plus five links does not fit a 375px
             phone, and every anchor only jumps to a section one scroll away.
             Each label is a literal prefix of the heading it lands on — a nav that
             promises a word the destination never says reads as a broken link
@@ -34,6 +35,13 @@ export function LandingHeader() {
         <a className={cn(NAV_LINK, "hidden sm:inline")} href="#contracts">
           Contracts
         </a>
+        {/* The only INTERNAL entry here that leaves the page rather than
+            scrolling it (GitHub below leaves too, but off-site). Kept at every
+            width for that reason: the anchors above are a convenience for a
+            scroll a reader could do themselves, this is another page. */}
+        <Link className={NAV_LINK} href={MERCHANTS_HREF}>
+          Merchants
+        </Link>
         <a className={NAV_LINK} href={REPO_URL} target="_blank" rel="noreferrer">
           GitHub ↗
         </a>

@@ -7,6 +7,7 @@ import type {
   FaucetGasResponse,
   FaucetResponse,
   IntentResponse,
+  MerchantListResponse,
   MerchantResponse,
   RegisterMerchantRequest,
   RegisterMerchantResponse,
@@ -87,6 +88,13 @@ async function call<T>(path: string, init?: RequestInit & { timeoutMs?: number }
 
 export const api = {
   merchant: (handle: string) => call<MerchantResponse>(`/api/merchants/${handle}`, { timeoutMs: 12_000 }),
+  /**
+   * The whole directory in one call — no filter, no page. A longer timeout than
+   * the single-handle lookup because this is often a visitor's FIRST request to
+   * a free-tier host that spins down when idle, so it can be paying a ~50s cold
+   * start rather than doing any work.
+   */
+  merchants: () => call<MerchantListResponse>("/api/merchants", { timeoutMs: 60_000 }),
   registerMerchant: (req: RegisterMerchantRequest) =>
     call<RegisterMerchantResponse>("/api/merchants", {
       method: "POST",

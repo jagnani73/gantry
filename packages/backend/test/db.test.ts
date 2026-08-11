@@ -243,6 +243,112 @@ test("denials record the cancel tx, never a reverted one", () => {
   assert.equal(store.countDenials("0xPBMWALLET"), 1);
 });
 
+test("merchants are keyed by id, lowercased on write, and never rewritten", () => {
+  store.insertMerchant({
+    merchant_id: "0xMerChantAhHock",
+    handle: "Ah-Hock-Chicken-Rice",
+    category_id: 1,
+    display_name: "Ah Hock Chicken Rice",
+    location: "Maxwell Food Centre",
+    blurb: "Hainanese chicken rice since 1987.",
+    block_number: 45_330_000,
+    block_time: 1_785_900_500,
+  });
+  // The same registration log, redelivered by the other path. OR IGNORE: it is
+  // immutable history, and a rewrite here would clobber the profile a later
+  // MerchantProfileUpdated has already applied on top of it.
+  store.insertMerchant({
+    merchant_id: "0xmerchantahhock",
+    handle: "ah-hock-chicken-rice",
+    category_id: 9,
+    display_name: "clobbered",
+    location: "clobbered",
+    blurb: "clobbered",
+    block_number: 99_999_999,
+    block_time: 0,
+  });
+
+  const row = store.getMerchantRow("AH-HOCK-CHICKEN-RICE"); // a mixed-case lookup must hit
+  assert.equal(row?.merchant_id, "0xmerchantahhock");
+  assert.equal(row?.handle, "ah-hock-chicken-rice");
+  assert.equal(row?.category_id, 1, "the first sighting wins");
+  assert.equal(row?.block_time, 1_785_900_500, "the registration date is not rewritten");
+  // The load-bearing one: the indexer's own registration branch inserts EMPTY
+  // display text (the profile arrives on a second log), so a re-sweep that
+  // rewrote rather than ignored would blank a named shop.
+  assert.equal(row?.display_name, "Ah Hock Chicken Rice");
+});
+
+test("setMerchantProfileRow rewrites only the display text", () => {
+  store.setMerchantProfileRow("0xMerChantAhHock", {
+    display_name: "Ah Hock Chicken Rice & Kopi",
+    location: "Maxwell Food Centre #01-32",
+    blurb: "Now with kopi.",
+  });
+  const row = store.getMerchantRow("ah-hock-chicken-rice");
+  assert.equal(row?.display_name, "Ah Hock Chicken Rice & Kopi");
+  assert.equal(row?.location, "Maxwell Food Centre #01-32");
+  assert.equal(row?.category_id, 1, "an edit cannot move a merchant's category");
+  assert.equal(row?.block_number, 45_330_000, "nor re-date its registration");
+
+  // A profile event for an id with no row is a no-op, not an insert: the event
+  // carries no handle, category or block, so a row minted from it would be a
+  // merchant with no identity. registerMerchant emits both in one transaction,
+  // so in practice the row always exists first.
+  store.setMerchantProfileRow("0xnosuchmerchant", {
+    display_name: "Ghost",
+    location: "",
+    blurb: "",
+  });
+  assert.equal(store.countMerchants(), 1);
+});
+
+test("listMerchants orders by registration, oldest first", () => {
+  // Deliberately inserted newest-first, and out of handle order within a block,
+  // so a table that happened to return insertion order would fail here.
+  store.insertMerchant({
+    merchant_id: "0xmerchantkopi",
+    handle: "kopi-corner-sg",
+    category_id: 1,
+    display_name: "Kopi Corner",
+    location: "Tiong Bahru",
+    blurb: "",
+    block_number: 45_340_000,
+    block_time: 1_785_901_000,
+  });
+  store.insertMerchant({
+    merchant_id: "0xmerchantgadget",
+    handle: "gadgethub-sg",
+    category_id: 2,
+    display_name: "GadgetHub SG",
+    location: "Sim Lim Square",
+    blurb: "Cables and chargers.",
+    block_number: 45_340_000,
+    block_time: 1_785_901_000,
+  });
+
+  assert.deepEqual(
+    store.listMerchants().map((m) => m.handle),
+    ["ah-hock-chicken-rice", "gadgethub-sg", "kopi-corner-sg"],
+  );
+  assert.equal(store.countMerchants(), 3);
+
+  // The cap is a backstop, and a caller comparing these two is how a truncated
+  // list announces itself instead of passing for the whole rail.
+  assert.equal(store.listMerchants(2).length, 2);
+  assert.equal(store.countMerchants(), 3);
+});
+
+test("the merchants table holds no payout column", () => {
+  // The directory is a public read surface. A shop's identity being public does
+  // not make its money public, and nothing can leak a field the store never
+  // held — so this is enforced by the schema rather than by every future screen
+  // remembering. `getMerchant` reads payout live from the chain instead.
+  const cols = store.db.prepare("PRAGMA table_info(merchants)").all() as { name: string }[];
+  assert.ok(cols.length > 0, "the merchants table must exist");
+  assert.ok(!cols.some((c) => c.name === "payout"), "payout must not be stored");
+});
+
 const SIGNER = "0xsigner00000000000000000000000000000000b";
 const FACTORY = "0xFacT0000000000000000000000000000000000A1";
 

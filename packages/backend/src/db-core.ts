@@ -85,6 +85,51 @@ export interface DenialRow {
 }
 
 /**
+ * One registered merchant, as the core's own logs report it — the index behind
+ * the public directory and behind every registration date.
+ *
+ * There is deliberately NO `payout` column, and its absence is the feature: the
+ * directory is a public read surface, and a shop's identity being public does
+ * not make its money public. Nothing can leak a field the store never held, so
+ * the rule survives whoever writes the next screen. `getMerchant` reads payout
+ * live from the chain, where it belongs — a rotated payout would make a cached
+ * one wrong anyway.
+ *
+ * Registration facts (`handle`, `category_id`, `block_*`) are immutable, so the
+ * insert is `OR IGNORE`. The three profile strings are not: `setMerchantProfile`
+ * rewrites them, and `MerchantProfileUpdated` fires on both register and edit —
+ * which is why an indexer following ONE event always holds the current text.
+ *
+ * They are stored RAW, exactly as the chain carries them. `registerMerchant` is
+ * permissionless and the contract checks length only, so the sanitising belongs
+ * on the read path (`resolveProfile`) where it applies to every consumer,
+ * including rows written before a rule existed.
+ */
+export interface MerchantRow {
+  merchant_id: string;
+  handle: string;
+  category_id: number;
+  display_name: string;
+  location: string;
+  blurb: string;
+  block_number: number;
+  /** Unix seconds of the registration block — the registration date itself. */
+  block_time: number;
+}
+
+/**
+ * Bounds one directory response. The rail is far smaller than this and the page
+ * filters client-side over everything it loaded, so the cap is a backstop rather
+ * than pagination — but a truncated list must ANNOUNCE itself, which is what
+ * `countMerchants` beside it is for.
+ *
+ * Not exported past this module on purpose: the client detects truncation by
+ * comparing `total` against the rows it received, so nothing outside needs to
+ * know the number, and a client that knew it would be tempted to assume it.
+ */
+const MERCHANT_LIST_LIMIT = 500;
+
+/**
  * Filters shared by the settlement list and its total-count sibling. Omit a key
  * to match every row on that dimension; a key that is present but names nobody
  * is REFUSED (see `settlementWhere`), because widening it is invisible.
@@ -111,7 +156,8 @@ export interface SettlementFilter {
  * identical rows — that is the whole reason the contracts are deployed together
  * and share one `BASE_SEPOLIA_DEPLOY_BLOCK`:
  *   - `settlements` (IntentSettled), `agent_wallets` (WalletCreated),
- *     `denials` (IntentDenied, on the cancel — see `DenialRow`)
+ *     `denials` (IntentDenied, on the cancel — see `DenialRow`),
+ *     `merchants` (MerchantRegistered + MerchantProfileUpdated)
  *
  * BACKEND-WRITTEN, so it exists only on the host that did the work:
  *   - `intents` — `IntentCreated` exists but is deliberately not swept; the row
@@ -201,6 +247,28 @@ export function createDatabase(path: string) {
       factory      TEXT NOT NULL DEFAULT ''
     );
 
+    /*
+     * Every merchant the core has registered — see MerchantRow for why there is
+     * no payout column here and why the profile text is stored raw.
+     *
+     * Swept in the same getLogs windows as everything above: the sweep already
+     * reads the core's address every pass, and viem compiles the event list into
+     * one topic0 OR-filter, so these two events cost no extra RPC calls at all.
+     * That is also what retired the separate bounded log walk this backend used
+     * to run just to date a registration — it re-covered ground the sweep had
+     * already walked, and lost its answers on every restart.
+     */
+    CREATE TABLE IF NOT EXISTS merchants (
+      merchant_id  TEXT PRIMARY KEY,
+      handle       TEXT NOT NULL,
+      category_id  INTEGER NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      location     TEXT NOT NULL DEFAULT '',
+      blurb        TEXT NOT NULL DEFAULT '',
+      block_number INTEGER NOT NULL,
+      block_time   INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS denials (
       intent_id    TEXT PRIMARY KEY,
       handle       TEXT NOT NULL,
@@ -227,6 +295,13 @@ export function createDatabase(path: string) {
     -- The agent CLI knows only its own session key, so this is the lookup that
     -- lets it find the wallets it acts for.
     CREATE INDEX IF NOT EXISTS idx_agent_wallets_signer ON agent_wallets (agent_signer);
+    -- UNIQUE states the contract's own invariant: merchantId is keccak(handle),
+    -- so one handle can never belong to two merchants. It also makes the profile
+    -- edit and every by-handle lookup an index seek.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_merchants_handle ON merchants (handle);
+    -- The directory's only order: registration, oldest first. Handle breaks ties
+    -- so two shops registered in one block never swap places between requests.
+    CREATE INDEX IF NOT EXISTS idx_merchants_order ON merchants (block_number, handle);
   `);
 
   // The cache is disposable, but ALTER beats deleting a db mid-demo: bring an
@@ -299,6 +374,33 @@ export function createDatabase(path: string) {
   const countDenialsStmt = db.prepare<[string], { n: number }>(
     "SELECT COUNT(*) AS n FROM denials WHERE wallet = ?",
   );
+  // `OR IGNORE` for the same reason WalletCreated uses it: a registration log is
+  // immutable history, the watch and the sweep deliver it twice by design, and a
+  // rewrite would clobber the profile a later MerchantProfileUpdated had already
+  // applied on top of it.
+  const insertMerchantStmt = db.prepare(`
+    INSERT OR IGNORE INTO merchants (
+      merchant_id, handle, category_id, display_name, location, blurb,
+      block_number, block_time
+    ) VALUES (
+      @merchant_id, @handle, @category_id, @display_name, @location, @blurb,
+      @block_number, @block_time
+    )
+  `);
+  // Keyed on merchant_id because that is ALL the event carries: the three
+  // strings are unindexed data and the handle is not on it at all. A no-op for
+  // an id with no row is correct — registerMerchant emits both events in one
+  // transaction, so the row exists before any edit can refer to it.
+  const setMerchantProfileStmt = db.prepare(
+    "UPDATE merchants SET display_name = ?, location = ?, blurb = ? WHERE merchant_id = ?",
+  );
+  const getMerchantStmt = db.prepare<[string], MerchantRow>(
+    "SELECT * FROM merchants WHERE handle = ?",
+  );
+  const listMerchantsStmt = db.prepare<[number], MerchantRow>(
+    "SELECT * FROM merchants ORDER BY block_number ASC, handle ASC LIMIT ?",
+  );
+  const countMerchantsStmt = db.prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM merchants");
 
   // better-sqlite3 does not cache prepared statements, and the settlement list
   // builds its SQL from the filter — so cache by SQL text rather than re-parsing
@@ -467,6 +569,47 @@ export function createDatabase(path: string) {
 
     countDenials(wallet: string): number {
       return countDenialsStmt.get(wallet.toLowerCase())?.n ?? 0;
+    },
+
+    /** Registration facts, written once. Ids and the handle lowercase on write
+     * like every other id column — `merchant_id` is a keccak hash, for which
+     * lowercase already IS canonical, and handles are lowercase on-chain. */
+    insertMerchant(row: MerchantRow): void {
+      insertMerchantStmt.run({
+        ...row,
+        merchant_id: row.merchant_id.toLowerCase(),
+        handle: row.handle.toLowerCase(),
+      });
+    },
+
+    /** The display text, from `MerchantProfileUpdated`. Stored raw — see
+     * MerchantRow; sanitising happens on the way out. */
+    setMerchantProfileRow(
+      merchantId: string,
+      profile: { display_name: string; location: string; blurb: string },
+    ): void {
+      setMerchantProfileStmt.run(
+        profile.display_name,
+        profile.location,
+        profile.blurb,
+        merchantId.toLowerCase(),
+      );
+    },
+
+    /** Present only once the sweep has crossed the registration block. Absent is
+     * "not indexed yet", never "no such merchant" — the chain read decides that. */
+    getMerchantRow(handle: string): MerchantRow | undefined {
+      return getMerchantStmt.get(handle.toLowerCase());
+    },
+
+    /** The whole directory, oldest registration first. Capped — compare the
+     * length against `countMerchants` before presenting it as everything. */
+    listMerchants(limit = MERCHANT_LIST_LIMIT): MerchantRow[] {
+      return listMerchantsStmt.all(limit);
+    },
+
+    countMerchants(): number {
+      return countMerchantsStmt.get()?.n ?? 0;
     },
 
     getCursor(): bigint | null {

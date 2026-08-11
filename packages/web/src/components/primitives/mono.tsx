@@ -7,9 +7,13 @@ import { TEXT_TONE, type Tone } from "./tone";
  * number, a clock time, a handle. Always tabular-nums, so a column of timestamps
  * does not shimmer as the seconds tick.
  */
-type MonoSize = "md" | "sm" | "xs" | "2xs" | "3xs" | "4xs";
+type MonoSize = "figure" | "md" | "sm" | "xs" | "2xs" | "3xs" | "4xs";
 
 const SIZE: Record<MonoSize, string> = {
+  // 30 — the directory stat rail. A mono figure rather than a <Figure>: these
+  // are counts, not money, so they take no currency prefix and no sans amount
+  // treatment. The one size in this ladder that reads at arm's length.
+  figure: "text-stat-figure",
   md: "text-mono", // 12.5 — key/value values, drawer
   sm: "text-mono-sm", // 12 — table cells
   xs: "text-mono-xs", // 11.5 — payer address under a row title

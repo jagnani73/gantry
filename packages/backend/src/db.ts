@@ -6,6 +6,7 @@ export type {
   DenialRow,
   IntentRow,
   AgentWalletRow,
+  MerchantRow,
   SettlementFilter,
   SettlementRow,
 } from "./db-core";
@@ -26,6 +27,11 @@ export const {
   insertDenial,
   listDenials,
   countDenials,
+  insertMerchant,
+  setMerchantProfileRow,
+  getMerchantRow,
+  listMerchants,
+  countMerchants,
   getCursor,
   setCursor,
 } = store;
