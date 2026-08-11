@@ -81,7 +81,7 @@ export function SettingsScreen() {
               Use my own wallet instead
             </button>
             <p className="mt-2 text-center text-fine text-faint">
-              The demo account&apos;s payments and agents stay with the demo account — they belong
+              The demo account&apos;s payments and agents stay with the demo account: they belong
               to its address on-chain, not to this app. You can switch back here.
             </p>
           </>

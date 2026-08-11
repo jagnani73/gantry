@@ -22,7 +22,7 @@ export default function NotFound() {
       <h1 className="mt-7 text-title-lg">This page isn&apos;t here</h1>
       <p className="mt-3 max-w-[46ch] text-body text-muted">
         If you followed a link to a shop, the handle may be misspelled, or that shop may not have
-        registered on Gantry. Handles are exact — <span className="font-mono">ah-hock-chicken-rice</span>,
+        registered on Gantry. Handles are exact: <span className="font-mono">ah-hock-chicken-rice</span>,
         not <span className="font-mono">Ah Hock</span>.
       </p>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">

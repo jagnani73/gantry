@@ -162,7 +162,7 @@ export function TransactionsScreen() {
           ? // Says which of the two things is true, because they lead to
             // different actions: results still arriving means wait, and a
             // finished search means the answer is no.
-            `${plural(feed.total, "payment")} · reading them all to search — ${grouped(feed.rows.length)} so far`
+            `${plural(feed.total, "payment")} · reading them all to search, ${grouped(feed.rows.length)} so far`
           : feed.hasMore
             ? `${plural(feed.total, "payment")} · showing the most recent ${feed.rows.length}`
             : `${plural(feed.total, "payment")}${oldest ? ` since ${monthDay(oldest.blockTime)}` : ""} · S$${formatUnits6(totals.net)} net`}
@@ -217,7 +217,7 @@ export function TransactionsScreen() {
         <Card tone="danger" radius="control-m" pad="none" className="px-4.5 py-3.5">
           <p className="text-meta">
             The history stopped loading, so this is a search over the{" "}
-            {grouped(feed.rows.length)} payments already loaded — not the whole book. Anything
+            {grouped(feed.rows.length)} payments already loaded, not the whole book. Anything
             older has not been checked.
           </p>
         </Card>

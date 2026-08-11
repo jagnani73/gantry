@@ -169,7 +169,7 @@ export function SettingsScreen() {
       setSave({
         kind: "error",
         message: unresolved
-          ? `${message} Your change may still have been saved — reload this screen to see what is stored before sending it again.`
+          ? `${message} Your change may still have been saved. Reload this screen to see what is stored before sending it again.`
           : message,
         // The server names the offending field in `args[0]`, and the machinery to
         // point at it already exists. Web and backend deploy independently, so
@@ -352,7 +352,7 @@ export function SettingsScreen() {
               next to each other. */}
           <p className="mt-3.5 text-fine text-quiet">
             The name, location and one-liner are yours to write. They live in GantryCore now, so
-            every payer surface reads the same record — but nobody verifies them, and
+            every payer surface reads the same record, but nobody verifies them, and
             &ldquo;registered&rdquo; means a contract call anyone can make, not a check anyone
             ran. The handle and category cannot change at all: the handle is claimed permanently
             and the contract ships no setter for the category.

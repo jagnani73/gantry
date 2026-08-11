@@ -52,7 +52,7 @@ export default function GlobalError({
       >
         <h1 style={{ margin: 0, fontSize: "1.5rem", fontWeight: 600 }}>Gantry failed to load</h1>
         <p style={{ margin: 0, maxWidth: "44ch", lineHeight: 1.5, opacity: 0.7 }}>
-          The app could not start in this browser. Nothing on-chain is affected — settled payments
+          The app could not start in this browser. Nothing on-chain is affected: settled payments
           and saved policies are unchanged.
         </p>
         {error.digest ? (
