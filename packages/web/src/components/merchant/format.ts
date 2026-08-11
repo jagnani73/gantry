@@ -64,21 +64,29 @@ export function clockTime(unixSeconds: number): string {
 }
 
 /**
- * "14:32" · "Yesterday 14:32" · "6 Aug 14:32" — a feed row's timestamp.
+ * "Today" · "Yesterday" · "6 Aug" — the day above a feed row's clock.
  *
- * The date appears only when the row is NOT from today. Overview's feed used to
- * be a single day, so a bare clock was unambiguous; it now spans a rolling week
- * under a panel headed "Live feed", where a payment from last Tuesday would
- * otherwise read exactly like one that landed a minute ago. Today's rows stay
- * bare, because prefixing every one of them with "Today" is noise on the case
- * that needs no disambiguating.
+ * EVERY row gets one, including today's. An earlier version went quiet for
+ * today, on the reasoning that "Today" is noise where nothing needs
+ * disambiguating — but that was a rule about a single row read alone, and a feed
+ * is read as a column. Spelling the day only sometimes means the line under a
+ * timestamp changes meaning down the list: "14:32" and "Yesterday 14:32" are not
+ * the same kind of thing, so the eye has to parse each one before it can compare
+ * it to the one above. Saying the same kind of thing every line is what makes a
+ * column scannable, which is the argument `tableDay` already makes for
+ * Transactions.
+ *
+ * The relative labels stay, and that is the difference from `tableDay`: a live
+ * feed spans a rolling week and its recent end is where a merchant actually
+ * looks, so "Yesterday" earns its width there in a way it would not in the book.
+ *
+ * Falls back to the absolute day before the clock mounts. "6 Aug" settling into
+ * "Today" a frame later is a word changing; rendering nothing and then a line
+ * would move every row under it.
  */
-export function feedWhen(atUnixSeconds: number, nowUnixSeconds: number | null): string {
-  const time = clockTime(atUnixSeconds);
-  if (nowUnixSeconds === null) return time;
-  const label = relativeDayLabel(dayKey(atUnixSeconds), nowUnixSeconds);
-  if (label === "Today") return time;
-  return `${label ?? monthDay(atUnixSeconds)} ${time}`;
+export function feedDay(atUnixSeconds: number, nowUnixSeconds: number | null): string {
+  if (nowUnixSeconds === null) return tableDay(atUnixSeconds);
+  return relativeDayLabel(dayKey(atUnixSeconds), nowUnixSeconds) ?? tableDay(atUnixSeconds);
 }
 
 /**
@@ -108,17 +116,17 @@ export function shortDate(unixSeconds: number): string {
 }
 
 /**
- * "8 Aug" — the day above a Transactions row's clock.
+ * "8 Aug" — the day above a Transactions row's clock, and `feedDay`'s fallback.
  *
  * No year, deliberately, and it is the one place that omission is safe: the
  * drawer and the CSV export both carry `shortDate`, so the full date is one
  * click or one download away, while a year repeated down every row of a book
- * that spans weeks is the noise `feedWhen` avoids for the same reason.
+ * that spans weeks is noise on a column the eye is scanning past.
  *
- * Unlike `feedWhen` this does NOT go quiet for today. That rule fits a live
- * feed, where nearly every row is today and a date would be the exception;
- * Transactions is the whole book, where a column the eye scans has to say the
- * same kind of thing on every line.
+ * Absolute always, where `feedDay` prefers "Today"/"Yesterday". Transactions is
+ * the whole book: a relative label there dates a row against the moment the page
+ * was opened, which is the wrong anchor for a tab left up on a counter and a
+ * meaningless one in an exported CSV.
  */
 export function tableDay(unixSeconds: number): string {
   return TABLE_DAY.format(unixSeconds * 1000);

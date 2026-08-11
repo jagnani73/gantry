@@ -3,7 +3,7 @@
 import { shortAddress, type SettlementEvent } from "@gantry/shared";
 import { DoorChip, Money, Mono, Row } from "@/components/primitives";
 import { DOOR_TITLE } from "./door-copy";
-import { feedWhen } from "./format";
+import { clockTime, feedDay } from "./format";
 
 /**
  * One line of the live feed.
@@ -23,7 +23,8 @@ export function SettlementFeedRow({
 }: {
   row: SettlementEvent;
   fresh: boolean;
-  /** For dating rows that are not from today. Null until the clock mounts. */
+  /** Anchors "Today"/"Yesterday". Null until the clock mounts, which `feedDay`
+   * answers with the absolute day rather than with nothing. */
   nowSeconds: number | null;
   onOpen(): void;
 }) {
@@ -54,9 +55,20 @@ export function SettlementFeedRow({
         tone="faint"
         className="hidden text-right sm:block"
       />
-      <Mono size="sm" tone="muted" className="hidden whitespace-nowrap text-right sm:block">
-        {feedWhen(row.blockTime, nowSeconds)}
-      </Mono>
+      {/* Stacked, matching Transactions: the day sits above the clock rather
+          than in front of it, so the column keeps one width whether the label
+          reads "Today" or "Yesterday" — inline, a longer label pushed the time
+          left and the times stopped lining up. It costs no height, because the
+          payer cell opposite is already two lines. Both lines are Mono, so day
+          and clock share one tabular grid. */}
+      <div className="hidden flex-col gap-0.5 text-right sm:flex">
+        <Mono size="3xs" tone="faintest" className="whitespace-nowrap">
+          {feedDay(row.blockTime, nowSeconds)}
+        </Mono>
+        <Mono size="sm" tone="muted" className="whitespace-nowrap">
+          {clockTime(row.blockTime)}
+        </Mono>
+      </div>
       <Money units={row.xsgdOut} prefix="S$" size="lg" className="text-right" />
     </Row>
   );
