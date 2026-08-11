@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { BASE_SEPOLIA_ADDRESSES, basescanAddress, shortAddress } from "@gantry/shared";
 import { Card, KeyValue, KeyValueList, Mono } from "@/components/primitives";
+import { switchSigner, type SignerPreference } from "@/lib/payer-signer";
 import { formatRate } from "./format";
 import { usePayer } from "./payer-context";
 
@@ -16,6 +18,18 @@ import { usePayer } from "./payer-context";
  */
 export function SettingsScreen() {
   const { identity, rate } = usePayer();
+  /** `switchSigner` throws only when storage is blocked, in which case the
+   * reload never happens and this is the only thing that would say so. */
+  const [switchError, setSwitchError] = useState<string | null>(null);
+
+  const choose = (preference: SignerPreference) => {
+    setSwitchError(null);
+    try {
+      switchSigner(preference);
+    } catch (err) {
+      setSwitchError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
     <>
@@ -33,30 +47,61 @@ export function SettingsScreen() {
           </p>
         )}
 
-        {identity.demo ? (
+        {/* Gated on `ready`, like every other payer screen. The stored signer
+            preference resolves in an effect, so `demo` is false on the first
+            committed render — and without this gate a demo build painted the
+            connected branch (a Connect button plus "Go back to the demo
+            account") for one frame, with a layout shift, on the one screen
+            whose job is to state which account signs. */}
+        {!identity.ready ? null : identity.demo ? (
           <>
             <p className="mt-3 text-meta text-muted">
               A shared demo account this build is configured with, funded for you. It is not
               yours and it is not private: everyone running this demo signs with the same key,
               so treat the payments and agents here as a public sandbox.
             </p>
-            {/* Deliberately inert. Migrating this history onto a connected
-                wallet is a real feature with a real design, and a button that
-                silently swapped the signer mid-demo would be worse than none. */}
+            {/*
+             * The button that used to sit here was inert and said "Coming soon".
+             * What made it hard was never the switch — it was the assumption
+             * that history had to come with it. It does not, and it must not: an
+             * activity feed is every settlement whose on-chain payer is this
+             * address, and an agent is a wallet this address owns on-chain.
+             * Neither is ours to move, and claiming to move them would mean
+             * showing one account's payments under another's name.
+             *
+             * So the switch is exactly a switch, and the copy says what stays
+             * behind. `switchSigner` reloads, which is what stops two screens
+             * from holding different answers to "who am I".
+             */}
             <button
               type="button"
-              disabled
-              className="mt-4 h-12 w-full cursor-not-allowed rounded-tile bg-nav-active text-btn-sm font-medium text-faintest"
+              onClick={() => void choose("connected")}
+              className="focus-ring mt-4 h-12 w-full rounded-tile bg-ink text-btn-sm font-medium text-paper transition-colors hover:bg-ink-hover"
             >
-              Connect my own wallet
+              Use my own wallet instead
             </button>
-            <p className="mt-2 text-center text-fine text-faint">Coming soon</p>
+            <p className="mt-2 text-center text-fine text-faint">
+              The demo account&apos;s payments and agents stay with the demo account — they belong
+              to its address on-chain, not to this app. You can switch back here.
+            </p>
           </>
         ) : (
-          <div className="mt-4">
+          <div className="mt-4 flex flex-col gap-3">
             <ConnectButton showBalance={false} />
+            {identity.demoConfigured ? (
+              <button
+                type="button"
+                onClick={() => void choose("demo")}
+                className="focus-ring h-11 w-full rounded-tile bg-fill-hover text-btn-sm font-medium text-ink transition-colors hover:bg-fill-hover-strong"
+              >
+                Go back to the demo account
+              </button>
+            ) : null}
           </div>
         )}
+        {switchError ? (
+          <p className="mt-3 text-meta text-danger break-words">{switchError}</p>
+        ) : null}
       </Card>
 
       <Card radius="card-m" pad="none" className="mt-3 px-5 py-2">
