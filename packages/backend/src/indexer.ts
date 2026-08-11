@@ -15,7 +15,6 @@ import {
   setIntentStatus,
   insertAgentWallet,
   insertSettlementRow,
-  setDisplayFloor,
   type SettlementRow,
 } from "./db";
 import { cursorOf, toSettlementEvent } from "./services/settlements";
@@ -26,11 +25,12 @@ import { broadcast } from "./sse";
  *  - watchContractEvent over WS = the <2s latency path (lossy: WS can drop);
  *  - a 15s getLogs sweep from the persisted cursor = the correctness backstop
  *    (also does startup backfill).
- * The sweep owns the cursor outright — nothing else writes it. Admin reset
- * (resetIndexer) no longer touches it or deletes anything; it records a display
- * floor and lets the sweep carry on, so an in-flight pass is never a hazard and
- * needs no epoch to abort it. SQLite PK dedup makes watch/sweep overlap harmless
- * for settlements; intent lifecycle logs only update cached status.
+ * The sweep owns the cursor outright — nothing else writes it, and nothing
+ * deletes a row or rewinds it at runtime. That is what lets any two hosts agree:
+ * both start at `BASE_SEPOLIA_DEPLOY_BLOCK` and sweep forward, so the same range
+ * yields the same rows everywhere. A clean book comes from a fresh core, not
+ * from local state. SQLite PK dedup makes watch/sweep overlap harmless for
+ * settlements; intent lifecycle logs only update cached status.
  */
 
 type CoreLog = {
@@ -352,28 +352,19 @@ export async function startIndexer(): Promise<void> {
   console.log(`indexer running (cursor ${getCursor() ?? config.deployBlock})`);
 }
 
-/**
- * Admin reset: start the rehearsal feed from here.
+/*
+ * There is deliberately no `resetIndexer` here any more, and no route that
+ * calls one.
  *
- * This deletes nothing and does not move the cursor. It records a display floor
- * at the current head, and the read surfaces skip what lies beneath it — so the
- * cache remains a faithful projection of the chain, and this box and a deployed
- * host converge on identical rows from the identical floor. See `DisplayFloor`
- * in db-core for why emptiness is a rendering fact rather than a storage one.
+ * Every version of it made the local cache disagree with the chain it is
+ * supposed to mirror — first by deleting rows and jumping the cursor past them,
+ * then by hiding rows behind a display floor. Either way the demo laptop showed
+ * a different book from the deployed host, which is the disparity the single
+ * deploy block exists to remove. A per-host emptiness knob cannot coexist with
+ * "both hosts index the same chain from the same block and agree".
  *
- * The head read comes first so a failing RPC leaves the previous floor in place
- * rather than writing one built from a fallback — a floor is what the whole feed
- * is measured against, and a wrong one is silent.
+ * A clean book is a fresh core: `pnpm contracts:fresh` deploys all four
+ * contracts together, pins one new `BASE_SEPOLIA_DEPLOY_BLOCK`, and drops the
+ * local database. Every host then backfills from that block and they start
+ * equal — and stay equal, because nothing ever diverges them again.
  */
-export async function resetIndexer(): Promise<void> {
-  const head = await publicClient.getBlockNumber();
-  const at = Math.floor(Date.now() / 1000);
-  // Exclusive on block, inclusive on time — see DisplayFloor. `head` is the last
-  // block that can hold a pre-reset settlement, and a denial written from here on
-  // carries a `created_at` at or after this second.
-  setDisplayFloor({ block: Number(head), at });
-  // Same read the sweep records, so a reset does not leave /health reporting a
-  // lag against a head from before this call.
-  lastHead = head;
-  lastHeadAt = at;
-}

@@ -1,9 +1,10 @@
-// One-command demo reset. It marks the rehearsal window first (a server-side
-// display floor at the chain head, plus an SSE `reset` so open dashboards drop
-// what they are holding), then runs the numbered steps below. Nothing is
-// deleted and the sweep cursor is untouched: the feed starts empty because the
-// read surfaces skip below the floor, which is what lets this box and the
-// deployed host hold identical rows. These
+// One-command demo PROVISIONING: money, merchants and the agent's policy. It
+// does NOT touch the transaction feed and cannot — every mechanism for that was
+// per-host state, which is precisely what made this laptop and the deployed
+// backend show different books while indexing the same chain from the same
+// block. A clean book is a fresh core: `pnpm contracts:fresh`.
+//
+// The name is kept because it is in the demo script and in muscle memory. These
 // numbers ARE the `// 1.` … `// 7.` markers in the file, deliberately — "step
 // 6b" is cross-referenced from here and from services/agents.ts, so a header
 // that counted differently would name a different step:
@@ -190,22 +191,19 @@ async function payerTx(params) {
 
 const started = Date.now();
 
+// This script does NOT clear the transaction feed, and no longer can — the
+// route that did is gone. Clearing was per-host state, so it made this laptop
+// show a different book from the deployed backend indexing the same chain.
+// A clean book is a fresh core: `pnpm contracts:fresh`.
+//
 // Guarded like every other call below: an unreachable backend should say so in
 // one line, not dump an undici stack trace as the first thing an operator sees.
-const reset = await fetch(`${backend}/api/admin/reset`, {
-  method: "POST",
-  headers: { "x-admin-token": adminToken },
-}).catch((err) => {
+const healthRes = await fetch(`${backend}/health`).catch((err) => {
   console.error(`cannot reach the backend at ${backend} (${err instanceof Error ? err.message : err}). Is \`pnpm dev\` running?`);
   process.exit(1);
 });
-if (!reset.ok) {
-  console.error(`reset failed: ${reset.status} ${await reset.text()}`);
-  process.exit(1);
-}
-const healthRes = await fetch(`${backend}/health`).catch(() => null);
 if (!healthRes?.ok) {
-  console.error(`health check failed after reset: ${healthRes ? healthRes.status : "network error"}`);
+  console.error(`health check failed: ${healthRes ? healthRes.status : "network error"}`);
   process.exit(1);
 }
 const health = await healthRes.json();
@@ -628,7 +626,7 @@ let gadgetLine;
  * before going on stage. */
 const mark = (line) => (line.startsWith("⚠") ? line : `✓ ${line}`);
 
-console.log(`${mark(`feed floored at block ${health.displayFloor?.block ?? "—"}, indexer cursor ${health.indexer.cursor} (chain ${health.chainId})`)}
+console.log(`${mark(`indexer cursor ${health.indexer.cursor}, lag ${health.indexer.lag} (chain ${health.chainId})`)}
 ${mark(payerLine)}
 ${mark(profileLine)}
 ${mark(walletLine)}${signerLine ? `\n${signerLine}` : ""}

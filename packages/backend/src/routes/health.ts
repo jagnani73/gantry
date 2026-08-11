@@ -1,7 +1,6 @@
 import { Router } from "express";
 import type { HealthResponse } from "@gantry/shared";
 import { relayerAccount } from "../chain";
-import { getDisplayFloor } from "../db";
 import { indexerStatus } from "../indexer";
 import { config } from "../config";
 
@@ -27,9 +26,6 @@ healthRouter.get("/health", (_req, res) => {
     chainId: config.chainId,
     relayer: relayerAccount.address,
     indexer: indexerStatus(),
-    // Second local read, same cost class. It answers the question the cursor
-    // cannot: an empty dashboard on a host whose lag is 0 is a floor, not a fault.
-    displayFloor: getDisplayFloor(),
   };
   res.json(body);
 });

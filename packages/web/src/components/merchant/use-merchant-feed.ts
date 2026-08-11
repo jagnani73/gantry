@@ -202,10 +202,10 @@ export function useMerchantFeed(
       if (live) onLiveRef.current(row);
     });
 
-    // `demo-reset` records a server-side display floor; the rows below it still
-    // exist but stop being served, and this feed has to drop what it is already
-    // holding or a rehearsal starts with the last one's payments on screen.
-    source.addEventListener("reset", () => retry());
+    // No "reset" listener: the server has no route that clears or hides rows any
+    // more, so nothing can pull the book out from under an open dashboard. A
+    // clean book comes from a fresh core, which changes the contract addresses
+    // and therefore needs a rebuild of this app anyway.
 
     return () => {
       for (const timer of timers) clearTimeout(timer);

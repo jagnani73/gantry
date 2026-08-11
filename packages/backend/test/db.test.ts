@@ -248,60 +248,28 @@ test("denials record the cancel tx, never a reverted one", () => {
 const SIGNER = "0xsigner00000000000000000000000000000000b";
 const FACTORY = "0xFacT0000000000000000000000000000000000A1";
 
-test("the display floor retires older rows from every read surface", () => {
+test("the store has no way to clear or hide a row", () => {
+  // The property the single deploy block exists for: this cache is a pure
+  // projection of the chain, so any host that has swept the same range holds
+  // the same rows. Every mechanism that made one host's view differ — the old
+  // `clearCache` + cursor jump, and the display floor that replaced it — was
+  // removed, because per-host emptiness cannot coexist with hosts agreeing.
+  // A clean book comes from deploying a fresh core, never from local state.
+  const surface = store as unknown as Record<string, unknown>;
+  for (const gone of ["clearCache", "getDisplayFloor", "setDisplayFloor"]) {
+    assert.equal(surface[gone], undefined, `${gone} must not come back`);
+  }
+
+  // Everything written across this file is still readable, unfiltered.
   store.setCursor(45_065_094n);
-  // Book at this point: settlements in blocks 10, 10, 11, 12, 13 and one denial
-  // at 1_785_900_200. Floor between the halves — block is exclusive, so 12 and
-  // 13 survive and 11 does not; the denial predates `at`, so it drops.
-  store.setDisplayFloor({ block: 11, at: 1_785_900_300 });
-
-  assert.deepEqual(
-    store.listSettlements({}, null, 10).rows.map((r) => r.block_number),
-    [13, 12],
-  );
-  // Count comes from the same WHERE, so a page and its total cannot disagree
-  // about the window — the failure that would print "2 of 5" under two rows.
-  assert.equal(store.countSettlements({}), 2);
-  assert.deepEqual(
-    store.recentSettlements().map((r) => r.block_number),
-    [12, 13],
-  );
-  // SSE replay: a Last-Event-ID predating the reset must not hand a reconnecting
-  // dashboard the very rows the reset retired.
-  assert.deepEqual(
-    store.settlementsAfter(9, 0).map((r) => r.block_number),
-    [12, 13],
-  );
-  assert.deepEqual(store.listDenials("0xpbmwallet"), []);
-  assert.equal(store.countDenials("0xPBMWALLET"), 0);
-
-  // A reset is not a rewind: the sweep still owns the cursor and nothing moved it.
-  assert.equal(store.getCursor(), 45_065_094n);
-  assert.deepEqual(store.getDisplayFloor(), { block: 11, at: 1_785_900_300 });
-});
-
-test("nothing is destroyed — lowering the floor brings every row back", () => {
-  // The property the design exists for. A reset used to DELETE, so a demo box and
-  // a deployed host could not hold the same rows even in principle; now only the
-  // window differs, and re-indexing the same range on either produces the same set.
-  store.setDisplayFloor({ block: 0, at: 0 });
   assert.equal(store.countSettlements({}), 5);
   assert.equal(store.countDenials("0xpbmwallet"), 1);
   assert.equal(store.getIntentRow("0xabcdef")?.settle_tx, "0xsettletx");
   assert.equal(store.agentWalletsBySigner(SIGNER, FACTORY).length, 1);
-});
+  assert.equal(store.getCursor(), 45_065_094n);
 
-test("an unreadable floor shows everything rather than hiding everything", () => {
-  // Fails OPEN deliberately: rows that should have been retired are visible and
-  // get noticed, while an empty book is indistinguishable from a broken feed —
-  // the worse of the two on a stage.
-  const poke = store.db.prepare(
-    "INSERT INTO meta (key, value) VALUES ('display_floor', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-  );
-  for (const bad of ["", "abc", "11", "11:", ":9", "-1:0", "11:2:3", "1e21:0", "9007199254740993:0"]) {
-    poke.run(bad);
-    assert.equal(store.getDisplayFloor(), null, `${JSON.stringify(bad)} must not parse`);
-    assert.equal(store.countSettlements({}), 5, `${JSON.stringify(bad)} must not hide rows`);
-    assert.equal(store.countDenials("0xpbmwallet"), 1);
-  }
+  // The two SSE paths see the whole book too — a reconnecting dashboard is not
+  // a second place emptiness could be decided.
+  assert.equal(store.recentSettlements().length, 5);
+  assert.equal(store.settlementsAfter(9, 0).length, 5);
 });

@@ -43,26 +43,19 @@ export interface HealthResponse {
   hostClass: "demo" | "public";
   chainId: number;
   relayer: Address;
+  /**
+   * Where this host's view of the chain starts and how far it has got. Every
+   * host sweeps forward from the same `BASE_SEPOLIA_DEPLOY_BLOCK` and nothing
+   * clears or rewinds it, so two hosts at the same `cursor` hold the same rows —
+   * which is why there is no per-host "what am I showing" field here to explain
+   * a difference.
+   */
   indexer: {
     cursor: number;
     head: number | null;
     lag: number | null;
     headAt: number | null;
   };
-  /**
-   * The rehearsal window, or null when the host serves everything it has swept.
-   *
-   * Separate from `indexer` on purpose: the indexer neither reads nor honours
-   * this: it keeps sweeping the whole range and storing every row. The floor is
-   * a READ-surface bound written by `demo:reset`, and it is the only reason a
-   * demo box and a deployed host — indexing the same chain from the same block —
-   * legitimately show different feeds. Without it on this endpoint, "why is the
-   * dashboard empty" has no local answer.
-   *
-   * `block` is exclusive (settlements), `at` is inclusive unix seconds
-   * (denials, which have no block to be mined in).
-   */
-  displayFloor: { block: number; at: number } | null;
 }
 
 export interface MerchantResponse {

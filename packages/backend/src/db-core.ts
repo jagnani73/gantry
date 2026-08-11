@@ -78,45 +78,6 @@ export interface DenialRow {
 }
 
 /**
- * Rehearsal display floor: rows older than this are stored but not shown.
- *
- * `demo:reset` used to DELETE the transaction tables and jump the sweep cursor
- * to head so the deleted rows were never re-imported. That made a rehearsal a
- * destructive act on derived state — the local cache stopped being a faithful
- * projection of the chain, so a demo box and a deployed host could not hold the
- * same rows even in principle. It also created a standing trap: every
- * append-only table had to be remembered and exempted, and `agent_wallets`
- * needed exactly that carve-out.
- *
- * So emptiness became a RENDERING fact instead of a storage one. Nothing is
- * deleted, the cursor is never moved by hand, and both hosts converge on the
- * same rows from the same floor. What a reset writes is this marker, and the
- * read surfaces skip anything beneath it.
- *
- * Two dimensions because the two tables are dated differently: settlements
- * carry a `block_number` (chain order), denials carry a `created_at` (wall
- * clock) because a denial has no transaction to be mined in — see `DenialRow`.
- *
- * A missing or malformed marker means NO floor, i.e. show everything. Failing
- * open is deliberate: the failure is then visible (old rows on screen, which a
- * presenter notices) rather than invisible (an empty book, indistinguishable
- * from a broken feed).
- */
-export interface DisplayFloor {
-  /** Exclusive: a settlement shows when `block_number > block`. */
-  block: number;
-  /** Inclusive: a denial shows when `created_at >= at`. Unix seconds. */
-  at: number;
-}
-
-/** Sentinels that match every row, so the floor is one bound parameter rather
- * than a second SQL shape per query. */
-const NO_FLOOR_BLOCK = -1;
-const NO_FLOOR_AT = 0;
-
-const DISPLAY_FLOOR_KEY = "display_floor";
-
-/**
  * Filters shared by the settlement list and its total-count sibling. Omit a key
  * to match every row on that dimension; a key that is present but names nobody
  * is REFUSED (see `settlementWhere`), because widening it is invisible.
@@ -128,9 +89,18 @@ export interface SettlementFilter {
   payers?: string[];
 }
 
-/** Cache only — chain is the source of truth. Deleting the file is a valid
- * migration (in-flight intents lose the requote path and the stored
- * validBefore fallback until re-created). */
+/**
+ * Cache only — the chain is the source of truth, with no exception since the
+ * merchant display record moved on-chain. Every table here is rebuilt by
+ * sweeping from `BASE_SEPOLIA_DEPLOY_BLOCK`, so two hosts that have swept the
+ * same range hold identical rows; that is the whole reason the contracts are
+ * deployed together and share one block.
+ *
+ * There is deliberately no runtime "clear" or "reset". Deleting the file is the
+ * valid migration (in-flight intents lose the requote path and the stored
+ * validBefore fallback until re-created), and a clean book comes from deploying
+ * a fresh core — `pnpm contracts:fresh` — which every host then indexes from.
+ */
 export function createDatabase(path: string) {
   const db = new Database(path);
   db.pragma("journal_mode = WAL");
@@ -188,11 +158,10 @@ export function createDatabase(path: string) {
      * creation log records who made a wallet, never who controls it now; the live
      * multicall in services/agents.ts decides.
      *
-     * This table needed an explicit carve-out back when a reset DELETED rows and
-     * jumped the cursor past them — append-only history, so nothing would have
-     * looked for it again. A reset writes a display floor now (see DisplayFloor)
-     * and destroys nothing, so that whole class of exemption is gone. A wallet is
-     * hidden from a feed by its floor, never lost.
+     * Nothing in this file is ever deleted at runtime. Every table is derived
+     * from the chain, from the single BASE_SEPOLIA_DEPLOY_BLOCK, so any host
+     * that sweeps the same range holds the same rows — dropping the file and
+     * letting it backfill is the only "reset" there is.
      */
     CREATE TABLE IF NOT EXISTS agent_wallets (
       wallet       TEXT PRIMARY KEY,
@@ -282,16 +251,11 @@ export function createDatabase(path: string) {
       @amount_in, @xsgd_out, @fee_xsgd, @door, @block_number, @block_time, @agent_payer
     )
   `);
-  // Both SSE paths carry the display floor. The LIVE stream does not need it —
-  // a floor is written at the chain head, so anything broadcast afterwards is
-  // above it by construction — but REPLAY does: a client reconnecting with a
-  // `Last-Event-ID` from before a reset would otherwise be handed the very rows
-  // the reset was meant to retire.
-  const recentSettlementsStmt = db.prepare<[number, number], SettlementRow>(
-    "SELECT * FROM (SELECT * FROM settlements WHERE block_number > ? ORDER BY block_number DESC, log_index DESC LIMIT ?) ORDER BY block_number ASC, log_index ASC",
+  const recentSettlementsStmt = db.prepare<[number], SettlementRow>(
+    "SELECT * FROM (SELECT * FROM settlements ORDER BY block_number DESC, log_index DESC LIMIT ?) ORDER BY block_number ASC, log_index ASC",
   );
-  const settlementsAfterStmt = db.prepare<[number, number, number, number], SettlementRow>(
-    "SELECT * FROM settlements WHERE ((block_number > ?) OR (block_number = ? AND log_index > ?)) AND block_number > ? ORDER BY block_number ASC, log_index ASC",
+  const settlementsAfterStmt = db.prepare<[number, number, number], SettlementRow>(
+    "SELECT * FROM settlements WHERE (block_number > ?) OR (block_number = ? AND log_index > ?) ORDER BY block_number ASC, log_index ASC",
   );
   // `OR IGNORE`, not `OR REPLACE`: a WalletCreated log is immutable history, so a
   // re-sweep of the same block must be a no-op rather than a rewrite. The watch and
@@ -312,11 +276,11 @@ export function createDatabase(path: string) {
       @error_name, @error_args, @cancel_tx, @created_at
     )
   `);
-  const listDenialsStmt = db.prepare<[string, number, number], DenialRow>(
-    "SELECT * FROM denials WHERE wallet = ? AND created_at >= ? ORDER BY created_at DESC LIMIT ?",
+  const listDenialsStmt = db.prepare<[string, number], DenialRow>(
+    "SELECT * FROM denials WHERE wallet = ? ORDER BY created_at DESC LIMIT ?",
   );
-  const countDenialsStmt = db.prepare<[string, number], { n: number }>(
-    "SELECT COUNT(*) AS n FROM denials WHERE wallet = ? AND created_at >= ?",
+  const countDenialsStmt = db.prepare<[string], { n: number }>(
+    "SELECT COUNT(*) AS n FROM denials WHERE wallet = ?",
   );
 
   // better-sqlite3 does not cache prepared statements, and the settlement list
@@ -347,11 +311,8 @@ export function createDatabase(path: string) {
    * and a 500 is visible where a widened feed is not.
    */
   function settlementWhere(filter: SettlementFilter): { sql: string; params: unknown[] } {
-    // The floor is not a caller-supplied filter and is never optional: it is
-    // applied here so the list and the count can no more disagree about the
-    // rehearsal window than they can about the handle.
-    const clauses: string[] = ["block_number > ?"];
-    const params: unknown[] = [floorBlock()];
+    const clauses: string[] = [];
+    const params: unknown[] = [];
     if (filter.handle !== undefined) {
       if (filter.handle === "") throw new Error("settlement filter: handle is present but empty");
       clauses.push("handle = ?");
@@ -366,8 +327,7 @@ export function createDatabase(path: string) {
       clauses.push(`(payer IN (${holes}) OR agent_payer IN (${holes}))`);
       params.push(...lowered, ...lowered);
     }
-    // Always a WHERE now — the floor clause is unconditional.
-    return { sql: `WHERE ${clauses.join(" AND ")}`, params };
+    return { sql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
   }
 
   const getMetaStmt = db.prepare<[string], { value: string }>(
@@ -376,33 +336,6 @@ export function createDatabase(path: string) {
   const setMetaStmt = db.prepare(
     "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   );
-
-  /**
-   * Stored as one `"<block>:<at>"` value rather than two meta rows, so the two
-   * halves can never be read half-updated — a floor whose block moved but whose
-   * timestamp did not would hide this run's settlements while showing the last
-   * run's denials.
-   *
-   * Anything unparseable returns null, i.e. no floor. See `DisplayFloor` for why
-   * that direction is the safe one.
-   */
-  function displayFloor(): DisplayFloor | null {
-    const raw = getMetaStmt.get(DISPLAY_FLOOR_KEY)?.value;
-    // Matched whole, not parsed leniently: `Number("")` is 0, so a truncated
-    // `"45307715:"` would otherwise read as a valid floor at the epoch and hide
-    // this run's settlements while showing every denial ever recorded.
-    if (raw === undefined || !/^\d+:\d+$/.test(raw)) return null;
-    const [blockPart, atPart] = raw.split(":");
-    const block = Number(blockPart);
-    const at = Number(atPart);
-    // Past 2^53 the value SQLite compares against stops being the value we
-    // parsed, so an unrepresentable floor is treated as no floor.
-    if (!Number.isSafeInteger(block) || !Number.isSafeInteger(at)) return null;
-    return { block, at };
-  }
-
-  const floorBlock = (): number => displayFloor()?.block ?? NO_FLOOR_BLOCK;
-  const floorAt = (): number => displayFloor()?.at ?? NO_FLOOR_AT;
 
   return {
     db,
@@ -445,11 +378,11 @@ export function createDatabase(path: string) {
     },
 
     recentSettlements(limit = 20): SettlementRow[] {
-      return recentSettlementsStmt.all(floorBlock(), limit);
+      return recentSettlementsStmt.all(limit);
     },
 
     settlementsAfter(blockNumber: number, logIndex: number): SettlementRow[] {
-      return settlementsAfterStmt.all(blockNumber, blockNumber, logIndex, floorBlock());
+      return settlementsAfterStmt.all(blockNumber, blockNumber, logIndex);
     },
 
     /**
@@ -465,7 +398,7 @@ export function createDatabase(path: string) {
     ): { rows: SettlementRow[]; hasMore: boolean } {
       const { sql: where, params } = settlementWhere(filter);
       const cursor = before
-        ? "AND (block_number < ? OR (block_number = ? AND log_index < ?))"
+        ? `${where ? "AND" : "WHERE"} (block_number < ? OR (block_number = ? AND log_index < ?))`
         : "";
       const cursorParams = before
         ? [before.blockNumber, before.blockNumber, before.logIndex]
@@ -517,30 +450,11 @@ export function createDatabase(path: string) {
     },
 
     listDenials(wallet: string, limit = 50): DenialRow[] {
-      return listDenialsStmt.all(wallet.toLowerCase(), floorAt(), limit);
+      return listDenialsStmt.all(wallet.toLowerCase(), limit);
     },
 
     countDenials(wallet: string): number {
-      return countDenialsStmt.get(wallet.toLowerCase(), floorAt())?.n ?? 0;
-    },
-
-    /**
-     * The rehearsal window this cache renders. Null until a reset writes one,
-     * which is the state a deployed host stays in forever — it shows everything
-     * it has swept, which is what a shop window should do.
-     */
-    getDisplayFloor(): DisplayFloor | null {
-      return displayFloor();
-    },
-
-    /**
-     * Admin reset: retire everything below this point from the READ surfaces.
-     * Nothing is deleted and the sweep cursor is not touched, so the cache stays
-     * a faithful projection of the chain and a later `getLogs` pass over the same
-     * range produces the same rows on any host. See `DisplayFloor`.
-     */
-    setDisplayFloor(floor: DisplayFloor): void {
-      setMetaStmt.run(DISPLAY_FLOOR_KEY, `${floor.block}:${floor.at}`);
+      return countDenialsStmt.get(wallet.toLowerCase())?.n ?? 0;
     },
 
     getCursor(): bigint | null {

@@ -4,7 +4,6 @@ import { createDatabase } from "./db-core";
 export type {
   DbIntentStatus,
   DenialRow,
-  DisplayFloor,
   IntentRow,
   AgentWalletRow,
   SettlementFilter,
@@ -28,8 +27,6 @@ export const {
   insertDenial,
   listDenials,
   countDenials,
-  getDisplayFloor,
-  setDisplayFloor,
   getCursor,
   setCursor,
 } = store;

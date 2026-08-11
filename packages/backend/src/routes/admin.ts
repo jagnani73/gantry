@@ -1,8 +1,6 @@
 import { Router } from "express";
 import { getAddress, isAddress, zeroAddress, type Address } from "viem";
 import { config } from "../config";
-import { resetIndexer } from "../indexer";
-import { broadcast } from "../sse";
 import { ApiError } from "../errors";
 import { topUpFunder, topUpPbmWallet } from "../services/funder";
 
@@ -19,14 +17,12 @@ function requireAdminToken(token: string | undefined): void {
  * are `onlyOwner` and agent wallets are owned by the PAYER, so no server key can
  * arm one — the rehearsal re-arm moved into `demo:reset`, which signs with the
  * demo payer's own key.
+ *
+ * There is deliberately no `/api/admin/reset` either. It cleared this host's
+ * view of the chain, which is exactly what made a demo laptop and the deployed
+ * host show different books. A clean book is a fresh core (`pnpm
+ * contracts:fresh`); every host then indexes from the same new block.
  */
-
-adminRouter.post("/api/admin/reset", async (req, res) => {
-  requireAdminToken(req.get("x-admin-token"));
-  await resetIndexer();
-  broadcast("reset", null, { at: Math.floor(Date.now() / 1000) });
-  res.json({ ok: true });
-});
 
 /** demo-reset's funder check: swaps ETH for USDC when the funder runs low.
  * Admin-gated and deliberately out of the payment path — see services/funder.ts. */

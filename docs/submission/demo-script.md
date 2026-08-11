@@ -12,16 +12,21 @@ never venue wifi. Local Anvil was considered and deliberately not built; the
 hotspot covers the same failure mode without a second orchestration path to
 maintain.
 
-**Before every run:** `pnpm demo:reset` — it floors the merchant feed at the
-current block (nothing is deleted; the rows below simply stop being served),
-provisions/tops up and re-arms the demo agent wallet, registers the demo shops
-on-chain if they are missing, checks `gadgethub-sg` is still registered, and
-prints the funder's ETH
+**Before every run:** `pnpm demo:reset` — it provisions/tops up and re-arms the
+demo agent wallet, registers the demo shops on-chain if they are missing, checks
+`gadgethub-sg` is still registered, and prints the funder's ETH
 **and** USDC balances, swapping ETH→USDC if the USDC has run low. Check both
 numbers. Every register and every settle spends ETH; every payer grant and wallet
 top-up spends USDC, which cannot be minted. The re-arm is signed by the **demo
 payer's** key, not the relayer's — `setPolicy` is `onlyOwner` and the payer owns
 the wallet — so that key needs a little ETH, which the faucet's gas leg supplies.
+
+It does **not** clear the merchant feed, and nothing does: every host indexes the
+same chain from the same block and shows everything it finds, which is what keeps
+this laptop and the deployed backend showing the same book. **If a run needs an
+empty feed, deploy a fresh core first** — `pnpm contracts:fresh`, then commit the
+new addresses and rebuild both hosts. Budget minutes for that, not seconds, and
+never do it on demo day.
 
 **The onboarding cooldown survives `demo:reset`** — it's a 30s in-process
 per-IP guard, so two registration takes inside 30s will 429. Space them, or
