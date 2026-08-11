@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
 import {
   BASE_SEPOLIA_ADDRESSES,
@@ -115,6 +115,26 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
    * screen and they must never share a confirmation: arming Revoke and then
    * tapping Withdraw would otherwise fire whichever the flag was last set for. */
   const [confirming, setConfirming] = useState<"revoke" | "withdraw" | null>(null);
+  /**
+   * A withdraw whose receipt is in hand, before the read agrees.
+   *
+   * Carries what the receipt actually PROVES, which is narrower than it first
+   * appears: `amount` left a wallet that read `before` at the time. It does NOT
+   * prove the wallet is now empty — the read behind `before` can be stale-low
+   * (a top-up landed, or another visitor of the shared demo key funded it), in
+   * which case a remainder survives the withdraw.
+   *
+   * An earlier version of this pinned the display to ZERO and deliberately
+   * never cleared it. That inference was wrong and it failed dangerously: a
+   * wallet with a remainder could never satisfy the exit condition, so the
+   * override stuck, the Withdraw button vanished (it is gated on a non-zero
+   * balance) and the screen told the payer "this wallet holds no USDC" over
+   * money that was really there. Hiding funds is a worse outcome than the stale
+   * figure this whole mechanism exists to fix.
+   */
+  const [withdrawal, setWithdrawal] = useState<{ before: bigint; amount: bigint } | null>(null);
+  /** Poll attempts, in a ref so counting one does not re-run the effect. */
+  const withdrawTries = useRef(0);
 
   /**
    * Read the wallet, and keep reading while it still shows the policy the payer
@@ -190,6 +210,53 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     // the very poll that just finished.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet, reloadNonce]);
+
+  /**
+   * Re-reads the wallet until it reports the balance the withdraw already took.
+   *
+   * Separate from the main read effect on purpose: that one waits on
+   * `policyFingerprint`, which excludes the balance, so it cannot express this
+   * condition. Bounded, and giving up leaves `withdrawn` set — the figure on
+   * screen is backed by a receipt either way, so what stops is the asking, not
+   * the claim.
+   */
+  useEffect(() => {
+    if (!withdrawal || !fresh) return;
+    // ANY movement ends the wait, not a specific figure. The read having
+    // changed at all means it now reflects a block at or after the withdraw,
+    // so from here the chain's own answer is better than anything derived —
+    // including when a top-up has left a remainder the receipt says nothing
+    // about.
+    if (BigInt(fresh.balance) !== withdrawal.before) {
+      setWithdrawal(null);
+      return;
+    }
+    if (withdrawTries.current >= FRESHNESS_ATTEMPTS) {
+      // Stop overriding, and SAY so. Falling back to the read can only show a
+      // figure that is behind; continuing to assert a computed one can hide
+      // money outright, which is the strictly worse failure.
+      console.warn(`gantry: ${wallet} still reads its pre-withdraw balance; showing the read`);
+      setWithdrawal(null);
+      setNotice({
+        tone: "sunken",
+        text: "Your withdrawal is on-chain, but we couldn't read the new balance back just now, so the figure below may be a moment old.",
+        recheck: true,
+      });
+      return;
+    }
+    const timer = setTimeout(() => {
+      withdrawTries.current += 1;
+      // Through the MAIN read effect rather than a second `api.agent` here.
+      // Two effects both calling `setFresh` on independent schedules is
+      // last-writer-wins over shared state, and the losing order is not
+      // theoretical: a lagging withdraw read landing after a revoke's read had
+      // settled would restore the pre-revoke snapshot and put an "Active" chip
+      // over a revoked wallet — the exact statement this screen exists to
+      // prevent. One owner of `fresh`, always.
+      setReloadNonce((n) => n + 1);
+    }, FRESHNESS_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [withdrawal, fresh, wallet]);
 
   const agent = fresh ?? listed;
   // The wallet's own label wins over the list's: this screen's read is the newer
@@ -267,7 +334,26 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   }
 
   const rate = BigInt(agent.rate);
-  const balance = BigInt(agent.balance);
+  /**
+   * What the wallet holds, as best this browser can know it.
+   *
+   * While a withdraw is settling that is `before − amount` — what the receipt
+   * proves, relative to the figure we withdrew against — and NOT a flat zero,
+   * which would be a claim about the whole wallet that no receipt supports.
+   * Clamped, because a stale-low `before` can make the subtraction negative and
+   * a negative balance is not a thing.
+   *
+   * EVERY renderer of a balance on this screen must use this, and that is not a
+   * style note: the "Balance" row was left reading `agent.balance` directly and
+   * the screen then stated two different balances at once, in the seconds right
+   * after a withdraw, when the payer is looking hardest.
+   */
+  const balance = withdrawal
+    ? (() => {
+        const settled = withdrawal.before - withdrawal.amount;
+        return settled > 0n ? settled : 0n;
+      })()
+    : BigInt(agent.balance);
   const status = agentStatus(agent, chainNow());
 
   /**
@@ -347,8 +433,13 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
    * what an owner write can change and NEVER the balance — by design, since the
    * balance moves on its own with every payment, and folding it in would make
    * every other expectation unsatisfiable. So a fingerprint recorded here would
-   * match immediately and prove nothing. The balance below can therefore read a
-   * moment stale, which the toast says rather than hides.
+   * match immediately and prove nothing.
+   *
+   * That is exactly why `withdrawn` exists. Without it the main read effect
+   * takes its `!expected` branch, reads ONCE, gets the pre-withdraw figure from
+   * a replica that has not seen the block, and never reads again — measured in
+   * the browser, where the card sat on the old balance indefinitely while the
+   * toast promised it would catch up. Only navigating away and back fixed it.
    */
   const onWithdraw = async () => {
     if (balance === 0n) return;
@@ -386,9 +477,12 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
 
     setConfirming(null);
     setNotice(null);
-    toast.success(
-      `Withdrawn to ${shortAddress(agent.owner)}. The balance here may take a moment to catch up.`,
-    );
+    // Before the re-read, so the settled figure is on screen the instant the
+    // toast is. Records what the receipt proves — this amount left a wallet
+    // that read this much — rather than a verdict about the wallet.
+    withdrawTries.current = 0;
+    setWithdrawal({ before: BigInt(agent.balance), amount: balance });
+    toast.success(`Withdrawn to ${shortAddress(agent.owner)}.`);
     // The agent's rules are untouched — this moved money, not permissions — so
     // there is nothing to re-arm and nothing to warn about. Just re-read.
     refresh();
@@ -440,7 +534,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
               </a>
             </KeyValue>
             <KeyValue label="Balance">
-              {formatUnits6(BigInt(agent.balance), 6)} {agent.token}
+              {formatUnits6(balance, 6)} {agent.token}
             </KeyValue>
             <KeyValue label="Per-payment cap">
               S${sgdFromCapUnits(agent.perTxCap, rate)}
@@ -493,7 +587,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
               would never come back for it. */}
           <p className="mt-3 text-meta text-muted">
             This is your money, parked where the agent can reach it under the rules above. Revoking
-            stops it spending — it does not send anything back. Withdrawing returns the balance to{" "}
+            stops it spending. It does not send anything back. Withdrawing returns the balance to{" "}
             {shortAddress(agent.owner)}, the address that owns this wallet.
           </p>
           {balance > 0n ? (
@@ -595,24 +689,59 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           >
             Edit rules
           </button>
+          {/*
+           * DISABLED when there is nothing to revoke, never removed.
+           *
+           * `revoke()` does not revert on an already-revoked wallet — it writes
+           * the same zeroes again — so nothing stops a second one but this. It
+           * would cost gas for no change AND re-stamp `policyUpdatedAt` through
+           * the internal path it shares with `setPolicy`, moving "Rules updated"
+           * to now for a change that changed nothing.
+           *
+           * But it must not VANISH, and an earlier version of this removed it.
+           * `status` comes from `agent = fresh ?? listed`, which past the
+           * give-up branch is data this screen has already told the payer may be
+           * behind — and `chainNow()` falls back to the device clock, so a
+           * laptop running fast can read a live policy as lapsed. This is the
+           * emergency stop for a leaked session key; hiding it on a verdict we
+           * have caveated is a far worse trade than the gas of a second revoke.
+           * Greyed-out and explained still tells the payer where it is.
+           *
+           * LAPSED stays enabled, which is not an oversight: expiry being in
+           * the past stops spending, but the caps and the category bitmap are
+           * still on-chain and still rendered above, and `revoke()` is what
+           * clears them.
+           */}
           <button
             type="button"
-            disabled={busy !== null}
+            disabled={busy !== null || status === "revoked"}
             onClick={() => (confirming === "revoke" ? void onRevoke() : setConfirming("revoke"))}
-            className="focus-ring h-12.5 flex-1 rounded-control-m bg-danger-tint text-btn-sm font-medium text-danger transition-colors hover:bg-danger-tint-hover disabled:text-faintest"
+            className="focus-ring h-12.5 flex-1 rounded-control-m bg-danger-tint text-btn-sm font-medium text-danger transition-colors hover:bg-danger-tint-hover disabled:bg-nav-active disabled:text-faintest"
           >
             {/* Only this button's own busy label. `busy ?? …` put the withdraw
                 text on the Revoke button, which reads as a revoke in flight. */}
             {busy?.what === "revoke"
               ? busy.label
-              : confirming === "revoke"
-                ? "Tap again to revoke"
-                : "Revoke"}
+              : status === "revoked"
+                ? "Revoked"
+                : confirming === "revoke"
+                  ? "Tap again to revoke"
+                  : "Revoke"}
           </button>
         </div>
+        {/* Silent while the figures above are known to be behind. Past the
+            give-up branch this screen renders a notice saying it could not read
+            the wallet back, and a sentence stating the agent's status as fact
+            directly under that notice is the two halves of the screen
+            disagreeing about how much it knows. */}
         <p className="px-1 text-center text-fine text-faint">
-          Revoking writes to the wallet on-chain, signed by you. Every payment after it reverts, and
-          no server can override it.
+          {waitedOut || fresh === null
+            ? "Revoking writes to the wallet on-chain, signed by you. No server can override it."
+            : status === "active"
+              ? "Revoking writes to the wallet on-chain, signed by you. Every payment after it reverts, and no server can override it."
+              : status === "revoked"
+                ? "This agent is revoked: every payment it attempts reverts on-chain. Editing its rules arms it again."
+                : "This agent's policy has expired, so every payment it attempts reverts. Revoking clears its caps and categories too; editing its rules arms it again."}
         </p>
       </div>
     </OverlayScreen>
