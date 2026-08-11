@@ -186,6 +186,50 @@ export function totalsOf(rows: readonly SettlementEvent[], cardFeeBps: number): 
   };
 }
 
+export interface DayTotals {
+  day: DayKey;
+  /** Midday in the display zone, for formatting only — never for comparison.
+   * Midday and not midnight so a formatter reading it back in any zone within
+   * twelve hours of SGT still lands on the same date. */
+  at: number;
+  count: number;
+  gross: bigint;
+  fees: bigint;
+  net: bigint;
+}
+
+/**
+ * The same settlements, grouped into the days a merchant thinks in — newest
+ * first.
+ *
+ * Bucketed on `dayKey`, so the boundary is SGT midnight and not the browser's:
+ * a shop that trades past midnight must see the same split as the header above
+ * it, and a laptop left on another zone would otherwise move takings between
+ * days. Sorted on the key rather than on the timestamp, because the key IS the
+ * bucket and a string compare on `YYYY-MM-DD` is the same ordering.
+ *
+ * Sums the rows it is given and nothing more. When pages remain, this is a floor
+ * for the oldest day on screen — that day is the one still being loaded into —
+ * which is why the screen renders it under the same "loaded so far" caveat as
+ * the total above it.
+ */
+export function totalsByDay(rows: readonly SettlementEvent[]): DayTotals[] {
+  const days = new Map<DayKey, DayTotals>();
+  for (const row of rows) {
+    const day = dayKey(row.blockTime);
+    let bucket = days.get(day);
+    if (!bucket) {
+      bucket = { day, at: dayKeyMiddayUnixSeconds(day), count: 0, gross: 0n, fees: 0n, net: 0n };
+      days.set(day, bucket);
+    }
+    bucket.count += 1;
+    bucket.gross += BigInt(row.xsgdOut);
+    bucket.fees += BigInt(row.feeXsgd);
+    bucket.net += netOf(row);
+  }
+  return [...days.values()].sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
+}
+
 /**
  * The rate this settlement actually cleared at, derived from the amounts on the
  * event: `xsgdOut / amountIn`, in 6dp units per 1e6 token units.
