@@ -1,11 +1,32 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import type { Address } from "viem";
 import { agentStatus, shortAddress, type AgentSummary } from "@gantry/shared";
 import { CapMeter, Card, Chip, Mono } from "@/components/primitives";
+import { cn } from "@/lib/utils";
 import { STATUS_LABEL } from "./agent-detail";
 import { categoryLabels, sgdFromCapUnits } from "./agent-rules";
 import { usePayer } from "./payer-context";
+
+/**
+ * Live agents versus the ones that can no longer spend, plus everything.
+ *
+ * "Inactive" covers BOTH revoked and lapsed, and that grouping is the whole
+ * point: `agentStatus` is tri-state because a policy that merely ran out denies
+ * every spend while `revoked` stays false, so a filter keyed on the `revoked`
+ * flag would leave an expired agent sitting in the Active tab claiming a daily
+ * cap it cannot honour. Split by what the wallet will DO, not by which field is
+ * set.
+ *
+ * `All` is listed first to match the Transactions door filter — one tab idiom
+ * in the app, not two — but **Active is the default**, which is the one place
+ * this deliberately differs. A revoked agent is history and the question this
+ * screen answers is "what can spend for me"; landing on All would put dead
+ * wallets in front of that answer. The counts sit in the labels so nothing is
+ * hidden by the choice.
+ */
+type AgentTab = "all" | "active" | "inactive";
 
 /**
  * The payer's agents, enumerated from the factory's `WalletCreated` logs.
@@ -31,6 +52,34 @@ export function AgentsScreen() {
   // Without an address there is no owner to enumerate wallets for, so the
   // skeletons would never resolve into anything.
   const noWallet = identity.ready && !identity.address;
+  const [tab, setTab] = useState<AgentTab>("active");
+
+  const now = chainNow();
+  const split = useMemo(() => {
+    const active: AgentSummary[] = [];
+    const inactive: AgentSummary[] = [];
+    for (const agent of agents ?? []) {
+      (agentStatus(agent, now) === "active" ? active : inactive).push(agent);
+    }
+    return { active, inactive };
+  }, [agents, now]);
+  /**
+   * The tab actually in force, which is not always the one that was tapped.
+   *
+   * The strip only renders while something is inactive, and `tab` outlives it:
+   * re-arming the LAST inactive agent — the flow the re-arming copy actively
+   * encourages — takes the strip off screen with `tab` still on "inactive",
+   * leaving the payer on "Nothing here" with no control to get back and their
+   * agents apparently gone. Clamped on render rather than reset in an effect,
+   * so there is no frame in which the wrong list is painted.
+   */
+  const effectiveTab: AgentTab = split.inactive.length === 0 ? "all" : tab;
+  const shown =
+    effectiveTab === "all"
+      ? (agents ?? [])
+      : effectiveTab === "active"
+        ? split.active
+        : split.inactive;
 
   return (
     <>
@@ -108,15 +157,75 @@ export function AgentsScreen() {
                 </Card>
               ) : null
             ) : (
-              agents.map((agent) => (
-                <AgentCard
-                  key={agent.wallet}
-                  agent={agent}
-                  name={agentName(agent.wallet) ?? shortAddress(agent.wallet)}
-                  now={chainNow()}
-                  onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
-                />
-              ))
+              <>
+                {/* Only once there is something to separate. One tab holding
+                    everything is a control that answers a question nobody has
+                    yet, and it costs the demo a row of chrome above the single
+                    agent the whole beat is about. */}
+                {split.inactive.length > 0 ? (
+                  <div
+                    role="group"
+                    aria-label="Filter agents"
+                    className="flex gap-1.5 rounded-nav bg-surface p-1"
+                  >
+                    <TabButton
+                      selected={effectiveTab === "all"}
+                      count={agents.length}
+                      onClick={() => setTab("all")}
+                    >
+                      All
+                    </TabButton>
+                    <TabButton
+                      selected={effectiveTab === "active"}
+                      count={split.active.length}
+                      onClick={() => setTab("active")}
+                    >
+                      Active
+                    </TabButton>
+                    <TabButton
+                      selected={effectiveTab === "inactive"}
+                      count={split.inactive.length}
+                      onClick={() => setTab("inactive")}
+                    >
+                      Inactive
+                    </TabButton>
+                  </div>
+                ) : null}
+                {shown.length === 0 ? (
+                  <Card radius="card-m" pad="m">
+                    {/* `all` is unreachable here — an empty list is caught by
+                        the branch above, which is the one that offers to
+                        create a wallet — but it is written out rather than
+                        left to a fallback, so a future tab cannot inherit
+                        someone else's sentence. */}
+                    {/* Qualified whenever a wallet could not be read. These are
+                        absolute claims over a set the screen has just admitted
+                        is incomplete — the notice above says those wallets may
+                        well be spending — and the counts in the tabs have the
+                        same shape. Same rule as the list-level empty state, one
+                        level down. */}
+                    <p className="text-body-sm text-muted">
+                      {effectiveTab === "active"
+                        ? agentsUnreadable.length > 0
+                          ? "None of the agents we could read can spend right now. The ones we couldn't read are not counted here and may well be active."
+                          : "No agent can spend right now. The ones under Inactive were revoked or have expired; opening one and editing its rules arms it again."
+                        : effectiveTab === "inactive"
+                          ? "Nothing here. Every agent you own can still spend."
+                          : "No agents to show."}
+                    </p>
+                  </Card>
+                ) : (
+                  shown.map((agent) => (
+                    <AgentCard
+                      key={agent.wallet}
+                      agent={agent}
+                      name={agentName(agent.wallet) ?? shortAddress(agent.wallet)}
+                      now={now}
+                      onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
+                    />
+                  ))
+                )}
+              </>
             )}
           </>
         )}
@@ -187,6 +296,35 @@ function UnreadableNotice({
         Try again
       </button>
     </Card>
+  );
+}
+
+/** Matches the Transactions door filter, which is the app's other tab strip —
+ * one idiom, not two. The count rides in the label because the reason to look
+ * at the other tab is that something is over there. */
+function TabButton({
+  selected,
+  count,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  count: number;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      className={cn(
+        "focus-ring rounded-chip-sm px-3.5 py-1.75 text-meta transition-colors",
+        selected ? "bg-fill-subtle text-ink" : "text-muted hover:text-ink",
+      )}
+    >
+      {children} {count}
+    </button>
   );
 }
 
