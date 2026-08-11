@@ -61,7 +61,7 @@ test("a row dated ahead of the clock is kept, not dropped", () => {
 test("an empty feed is never partial, however many pages remain", () => {
   // Without the loadedCount guard this returns true, and the screen renders
   // "no payments in the last 7 days" above "covers the 0 payments loaded so
-  // far" — on first paint and right after demo-reset's reset event.
+  // far" — on first paint, before the first page of history has landed.
   assert.equal(windowIsPartial(0, 0, true), false);
 });
 

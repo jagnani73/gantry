@@ -16,7 +16,6 @@ export const {
   insertIntentRow,
   getIntentRow,
   setIntentStatus,
-  setIntentAgentPayer,
   insertAgentWallet,
   agentWalletsBySigner,
   insertSettlementRow,

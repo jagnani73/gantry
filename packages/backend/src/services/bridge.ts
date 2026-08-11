@@ -16,7 +16,7 @@ import {
 } from "@gantry/shared";
 import { publicClient, relayerAccount, tokenDomain } from "../chain";
 import { config } from "../config";
-import { getIntentRow, setIntentAgentPayer, setIntentStatus } from "../db";
+import { getIntentRow, setIntentStatus } from "../db";
 import { ApiError } from "../errors";
 import { sendRelayerTx } from "../relayer";
 import { ExactEvmPayloadSchema, parseOrderPins, reasonForGantryError, splitSignature65 } from "./facilitator-core";
@@ -123,7 +123,13 @@ async function runBridge(
     const { reason, message } = reasonAndMessage(err);
     return failure(reason, message, authorization.from);
   }
-  setIntentAgentPayer(intent.intentId, authorization.from);
+  // The agent's own address is deliberately NOT recorded against the intent.
+  // It is nowhere on-chain — this hop is why the on-chain payer is the relayer —
+  // so only THIS process would ever have held it, which made the field null on
+  // every other host and lost on any cache rebuild. The UI derives `bridged`
+  // from the settlement event instead; see `SettlementEvent.bridged`. The
+  // address still travels to the client that paid, on `PAYMENT-RESPONSE`, taken
+  // from the authorization in hand rather than from storage.
   if (BigInt(intent.amountIn) !== BigInt(requirements.amount)) {
     await tryCancelIntent(intent.intentId);
     return failure(

@@ -18,8 +18,6 @@ export interface IntentRow {
   created_tx: string | null;
   settle_tx: string | null;
   created_at: number;
-  /** x402 payer behind a facilitator-bridged intent (on-chain payer = relayer). */
-  agent_payer: string | null;
 }
 
 export interface SettlementRow {
@@ -36,7 +34,6 @@ export interface SettlementRow {
   door: number;
   block_number: number;
   block_time: number;
-  agent_payer: string | null;
 }
 
 /**
@@ -84,22 +81,44 @@ export interface DenialRow {
  */
 export interface SettlementFilter {
   handle?: string;
-  /** Lowercased addresses; a row matches if `payer` OR `agent_payer` is in the
-   * list. One query therefore covers "me and my agents" for the payer app. */
+  /**
+   * Lowercased on-chain payers. One query therefore covers "me and my agents"
+   * for the payer app, which passes its own address AND its wallets — a PBM
+   * payment's payer is the wallet, not the human.
+   *
+   * It no longer also matches an `agentPayer`: see `SettlementEvent.bridged`.
+   * A bridged x402 row's on-chain payer is the relayer and the buyer's address
+   * is nowhere on-chain, so that arm could only ever match on the one backend
+   * that performed the hop.
+   */
   payers?: string[];
 }
 
 /**
- * Cache only — the chain is the source of truth, with no exception since the
- * merchant display record moved on-chain. Every table here is rebuilt by
- * sweeping from `BASE_SEPOLIA_DEPLOY_BLOCK`, so two hosts that have swept the
- * same range hold identical rows; that is the whole reason the contracts are
- * deployed together and share one block.
+ * Mostly a cache, and it is worth knowing exactly which tables are which.
+ *
+ * SWEPT from the chain, so any two hosts that have covered the same range hold
+ * identical rows — that is the whole reason the contracts are deployed together
+ * and share one `BASE_SEPOLIA_DEPLOY_BLOCK`:
+ *   - `settlements` (IntentSettled), `agent_wallets` (WalletCreated)
+ *
+ * BACKEND-WRITTEN, so they exist only on the host that did the work and a fresh
+ * disk comes up without them:
+ *   - `denials` — a policy revert is caught by simulate-before-send and NEVER
+ *     broadcast, so there is no event and no log to sweep. This row is the only
+ *     trace it happened, anywhere. See `DenialRow`.
+ *   - `intents` — `IntentCreated` exists but is deliberately not swept; the row
+ *     carries the requote path and the stored validBefore, and settlement
+ *     rebuilds the parts that matter from the event.
+ *
+ * Do not write "every table is rebuildable" over this. Only the swept two are,
+ * and `denials` in particular means `/api/denials` legitimately differs between
+ * a laptop that ran the rejection beat and a host that did not — the one
+ * remaining place two backends of the same chain can disagree.
  *
  * There is deliberately no runtime "clear" or "reset". Deleting the file is the
- * valid migration (in-flight intents lose the requote path and the stored
- * validBefore fallback until re-created), and a clean book comes from deploying
- * a fresh core — `pnpm contracts:fresh` — which every host then indexes from.
+ * valid migration, and a clean book comes from deploying a fresh core —
+ * `pnpm contracts:fresh` — which every host then indexes from.
  */
 export function createDatabase(path: string) {
   const db = new Database(path);
@@ -125,8 +144,7 @@ export function createDatabase(path: string) {
       valid_before INTEGER NOT NULL,
       created_tx   TEXT,
       settle_tx    TEXT,
-      created_at   INTEGER NOT NULL,
-      agent_payer  TEXT
+      created_at   INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS settlements (
@@ -143,7 +161,6 @@ export function createDatabase(path: string) {
       door         INTEGER NOT NULL,
       block_number INTEGER NOT NULL,
       block_time   INTEGER NOT NULL,
-      agent_payer  TEXT,
       PRIMARY KEY (tx_hash, log_index)
     );
 
@@ -158,10 +175,11 @@ export function createDatabase(path: string) {
      * creation log records who made a wallet, never who controls it now; the live
      * multicall in services/agents.ts decides.
      *
-     * Nothing in this file is ever deleted at runtime. Every table is derived
-     * from the chain, from the single BASE_SEPOLIA_DEPLOY_BLOCK, so any host
-     * that sweeps the same range holds the same rows — dropping the file and
-     * letting it backfill is the only "reset" there is.
+     * Nothing in this file is ever deleted at runtime. This table and
+     * settlements are the two the sweep rebuilds from the chain, so any host
+     * covering the same range holds the same rows; dropping the file and letting
+     * it backfill is the only "reset" there is. (denials and intents do NOT come
+     * back that way — see the header comment.)
      */
     CREATE TABLE IF NOT EXISTS agent_wallets (
       wallet       TEXT PRIMARY KEY,
@@ -198,22 +216,17 @@ export function createDatabase(path: string) {
       ON settlements (handle, block_number DESC, log_index DESC);
     CREATE INDEX IF NOT EXISTS idx_settlements_payer
       ON settlements (payer, block_number DESC, log_index DESC);
-    CREATE INDEX IF NOT EXISTS idx_settlements_agent_payer
-      ON settlements (agent_payer, block_number DESC, log_index DESC);
     CREATE INDEX IF NOT EXISTS idx_denials_wallet ON denials (wallet, created_at DESC);
     -- The agent CLI knows only its own session key, so this is the lookup that
     -- lets it find the wallets it acts for.
     CREATE INDEX IF NOT EXISTS idx_agent_wallets_signer ON agent_wallets (agent_signer);
   `);
 
-  // The cache is disposable, but ALTER beats deleting a db mid-demo: bring
-  // pre-M2 files up to the current shape in place.
-  for (const table of ["intents", "settlements"]) {
-    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-    if (!cols.some((c) => c.name === "agent_payer")) {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN agent_payer TEXT`);
-    }
-  }
+  // The cache is disposable, but ALTER beats deleting a db mid-demo: bring an
+  // older file up to the current shape in place. A DROPPED column needs no
+  // migration — every statement here names its columns explicitly, so a
+  // vestigial nullable `agent_payer` on a pre-existing file is simply never
+  // read or written again.
   {
     const cols = db.prepare("PRAGMA table_info(agent_wallets)").all() as { name: string }[];
     if (cols.length > 0 && !cols.some((c) => c.name === "factory")) {
@@ -227,10 +240,10 @@ export function createDatabase(path: string) {
   const insertIntentStmt = db.prepare(`
     INSERT OR REPLACE INTO intents (
       intent_id, merchant_id, handle, token_in, amount_in, xsgd_amount, rate,
-      expiry, door, status, valid_before, created_tx, settle_tx, created_at, agent_payer
+      expiry, door, status, valid_before, created_tx, settle_tx, created_at
     ) VALUES (
       @intent_id, @merchant_id, @handle, @token_in, @amount_in, @xsgd_amount, @rate,
-      @expiry, @door, @status, @valid_before, @created_tx, @settle_tx, @created_at, @agent_payer
+      @expiry, @door, @status, @valid_before, @created_tx, @settle_tx, @created_at
     )
   `);
   const getIntentStmt = db.prepare<[string], IntentRow>(
@@ -239,16 +252,13 @@ export function createDatabase(path: string) {
   const setIntentStatusStmt = db.prepare(
     "UPDATE intents SET status = ?, settle_tx = COALESCE(?, settle_tx) WHERE intent_id = ?",
   );
-  const setIntentAgentPayerStmt = db.prepare(
-    "UPDATE intents SET agent_payer = ? WHERE intent_id = ?",
-  );
   const insertSettlementStmt = db.prepare(`
     INSERT OR IGNORE INTO settlements (
       tx_hash, log_index, intent_id, merchant_id, handle, payer, token_in,
-      amount_in, xsgd_out, fee_xsgd, door, block_number, block_time, agent_payer
+      amount_in, xsgd_out, fee_xsgd, door, block_number, block_time
     ) VALUES (
       @tx_hash, @log_index, @intent_id, @merchant_id, @handle, @payer, @token_in,
-      @amount_in, @xsgd_out, @fee_xsgd, @door, @block_number, @block_time, @agent_payer
+      @amount_in, @xsgd_out, @fee_xsgd, @door, @block_number, @block_time
     )
   `);
   const recentSettlementsStmt = db.prepare<[number], SettlementRow>(
@@ -324,8 +334,8 @@ export function createDatabase(path: string) {
       }
       const holes = filter.payers.map(() => "?").join(", ");
       const lowered = filter.payers.map((a) => a.toLowerCase());
-      clauses.push(`(payer IN (${holes}) OR agent_payer IN (${holes}))`);
-      params.push(...lowered, ...lowered);
+      clauses.push(`payer IN (${holes})`);
+      params.push(...lowered);
     }
     return { sql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
   }
@@ -359,10 +369,6 @@ export function createDatabase(path: string) {
       setIntentStatusStmt.run(status, settleTx ?? null, intentId.toLowerCase());
     },
 
-    setIntentAgentPayer(intentId: string, agentPayer: string): void {
-      setIntentAgentPayerStmt.run(agentPayer.toLowerCase(), intentId.toLowerCase());
-    },
-
     /** Returns true when the row is new (dedup across watch + sweep paths). */
     insertSettlementRow(row: SettlementRow): boolean {
       return (
@@ -372,7 +378,6 @@ export function createDatabase(path: string) {
           merchant_id: row.merchant_id.toLowerCase(),
           payer: row.payer.toLowerCase(),
           token_in: row.token_in.toLowerCase(),
-          agent_payer: row.agent_payer?.toLowerCase() ?? null,
         }).changes > 0
       );
     },

@@ -6,7 +6,7 @@ import {
   tokenIdByAddress,
   type SettlementEvent,
 } from "@gantry/shared";
-import { publicClient, wsClient } from "./chain";
+import { publicClient, relayerAccount, wsClient } from "./chain";
 import { config } from "./config";
 import {
   getCursor,
@@ -92,7 +92,6 @@ async function processLog(log: CoreLog): Promise<void> {
       merchant_id: args.merchantId.toLowerCase(),
       handle,
       payer: args.payer.toLowerCase(),
-      agent_payer: cached?.agent_payer ?? null,
       token_in: args.tokenIn.toLowerCase(),
       amount_in: args.amountIn.toString(),
       xsgd_out: args.xsgdOut.toString(),
@@ -148,7 +147,11 @@ async function processLog(log: CoreLog): Promise<void> {
  * pinned directly rather than through a stand-in that drifts from it.
  */
 export function settlementEventOf(row: SettlementRow): SettlementEvent {
-  return toSettlementEvent(row, (token: Address) => tokenIdByAddress(config.addresses, token));
+  return toSettlementEvent(
+    row,
+    (token: Address) => tokenIdByAddress(config.addresses, token),
+    relayerAccount.address,
+  );
 }
 
 // Sized to the public sepolia.base.org node's 2,000-block getLogs ceiling, and

@@ -38,6 +38,25 @@ import type { SettlementFilter, SettlementRow } from "../db-core";
 export type TokenSymbolLookup = (token: Address) => TokenId | null;
 
 /**
+ * Did the facilitator bridge this one? See `SettlementEvent.bridged`.
+ *
+ * Derived from the two fields the `IntentSettled` event already carries, which
+ * is the entire point: the buyer's own address is nowhere on-chain for a bridged
+ * payment, so it could only ever be remembered by the backend that performed the
+ * hop — and was therefore null on every other host and lost on every rebuild.
+ *
+ * The relayer arrives as an argument for the same reason `tokenSymbolOf` does:
+ * this module stays free of `../config`, which exits the process when the
+ * environment is missing and would take the test suite with it.
+ */
+export function isBridged(
+  row: Pick<SettlementRow, "door" | "payer">,
+  relayer: Address,
+): boolean {
+  return doorToWire(row.door as Door) === "agent" && row.payer.toLowerCase() === relayer.toLowerCase();
+}
+
+/**
  * The ONE row→wire mapping: the live SSE push, the reconnect replay and the
  * paged read below all go through it, so a row a client received live and the
  * same row re-fetched from history cannot disagree about a field.
@@ -50,13 +69,14 @@ export type TokenSymbolLookup = (token: Address) => TokenId | null;
 export function toSettlementEvent(
   row: SettlementRow,
   tokenSymbolOf: TokenSymbolLookup,
+  relayer: Address,
 ): SettlementEvent {
   return {
     intentId: row.intent_id as Hex,
     merchantId: row.merchant_id as Hex,
     handle: row.handle,
     payer: row.payer as Address,
-    ...(row.agent_payer ? { agentPayer: row.agent_payer as Address } : {}),
+    bridged: isBridged(row, relayer),
     tokenIn: row.token_in as Address,
     tokenSymbol: tokenSymbolOf(row.token_in as Address),
     amountIn: row.amount_in,

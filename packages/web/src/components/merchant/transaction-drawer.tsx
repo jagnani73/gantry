@@ -95,11 +95,12 @@ export function TransactionDrawer() {
             <KeyValue label="Time">
               {shortDate(row.blockTime)} · {clockTime(row.blockTime)}
             </KeyValue>
-            <KeyValue label="Payer">{shortAddress(row.agentPayer ?? row.payer)}</KeyValue>
-            {row.agentPayer ? (
+            <KeyValue label="Payer">{shortAddress(row.payer)}</KeyValue>
+            {row.bridged ? (
               // A bridged vanilla-x402 payment hops agent → relayer → core, so
-              // the address the chain records as payer is ours, not the payer's.
-              // Saying so is about the rail; it reveals nothing about the agent.
+              // the address above is OURS, not the buyer's — and the buyer's is
+              // nowhere on-chain to show. Naming the hop is what keeps the row
+              // from reading as "the same customer paid every time".
               <KeyValue label="Settled by" mono={false}>
                 Gantry facilitator
               </KeyValue>

@@ -39,7 +39,6 @@ function base(block: number, logIndex: number): SettlementRow {
     door: 0,
     block_number: block,
     block_time: 1_785_900_000 + block,
-    agent_payer: null,
   };
 }
 
@@ -91,17 +90,11 @@ test("intent rows normalize ids to lowercase on write and read", () => {
     created_tx: "0xcreate",
     settle_tx: null,
     created_at: 1_785_900_000,
-    agent_payer: null,
   };
   store.insertIntentRow(row);
   const got = store.getIntentRow("0xAbCdEf"); // checksummed lookup must hit
   assert.equal(got?.intent_id, "0xabcdef");
   assert.equal(got?.token_in, "0xtoken");
-});
-
-test("setIntentAgentPayer records the bridged x402 payer lowercased", () => {
-  store.setIntentAgentPayer("0xABCDEF", "0xAgentPayer");
-  assert.equal(store.getIntentRow("0xabcdef")?.agent_payer, "0xagentpayer");
 });
 
 test("setIntentStatus preserves settle_tx via COALESCE", () => {
@@ -138,23 +131,28 @@ test("listSettlements cursor is exclusive within a block", () => {
   assert.ok(!page.rows.some((r) => r.block_number === 10 && r.log_index === 2));
 });
 
-test("payer filter matches the on-chain payer OR the bridged agent payer", () => {
-  // A vanilla x402 payment settles with the relayer as on-chain payer and the
-  // agent recorded separately — the payer app must still find it as "mine".
+test("the payer filter matches the on-chain payer, and only that", () => {
+  // A bridged x402 payment settles with the RELAYER as on-chain payer, and the
+  // buyer's own address exists nowhere on-chain — so it is nobody's row here.
+  // It used to be matched via a stored `agent_payer`, which only the backend
+  // that performed the hop ever held; see SettlementEvent.bridged.
   store.insertSettlementRow(
-    settlement(12, 0, { payer: "0xRelayer", agent_payer: "0xAgent", handle: "gadgethub-sg" }),
+    settlement(12, 0, { payer: "0xRelayer", handle: "gadgethub-sg" }),
   );
   store.insertSettlementRow(settlement(13, 0, { payer: "0xAgent", handle: "gadgethub-sg" }));
 
+  // Only block 13. The bridged row at 12 is the relayer's on every host, which
+  // is the on-chain truth — it is not silently the agent's here and nobody's
+  // elsewhere, which is what the stored column produced.
   const mine = store.listSettlements({ payers: ["0xagent"] }, null, 10);
   assert.deepEqual(
     mine.rows.map((r) => r.block_number),
-    [13, 12],
+    [13],
   );
-  assert.equal(store.countSettlements({ payers: ["0xAGENT"] }), 2); // case-insensitive
+  assert.equal(store.countSettlements({ payers: ["0xAGENT"] }), 1); // case-insensitive
 
   const scoped = store.listSettlements({ handle: "gadgethub-sg", payers: ["0xagent"] }, null, 10);
-  assert.equal(scoped.rows.length, 2);
+  assert.equal(scoped.rows.length, 1);
   assert.equal(store.countSettlements({ handle: "ah-hock-chicken-rice" }), 3);
 });
 

@@ -92,14 +92,14 @@ export function toActivityRows(
  * "I paid this myself", which is narrower than "my address is on it".
  *
  * A PBM payment's on-chain payer is the agent's wallet and a bridged x402
- * payment's is the relayer with the agent in `agentPayer` — both are agent
- * spending and belong under "My agents" even though the human owns the wallet
- * that moved. Only a row whose payer IS the human, with no agent behind it, is
- * a payment the human made.
+ * payment's is the relayer — both are agent spending and belong under "My
+ * agents" even though the human owns the wallet that moved. Only a row whose
+ * payer IS the human, with no facilitator behind it, is a payment the human
+ * made.
  */
 export function isOwnPayment(row: ActivityRow, payer: Address | null): boolean {
   if (row.kind !== "settlement" || !payer) return false;
-  if (row.settlement.agentPayer) return false;
+  if (row.settlement.bridged) return false;
   return row.settlement.payer.toLowerCase() === payer.toLowerCase();
 }
 

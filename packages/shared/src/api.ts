@@ -363,9 +363,27 @@ export interface SettlementEvent {
   handle: string;
   /** On-chain payer from IntentSettled — the relayer for bridged x402 rows. */
   payer: Address;
-  /** The x402 payer when the facilitator bridged a vanilla exact payment
-   * (funds hopped agent → relayer → core; on-chain payer is the relayer). */
-  agentPayer?: Address;
+  /**
+   * True when the facilitator bridged a vanilla x402 `exact` payment: funds
+   * hopped agent → relayer → core, so `payer` above is OUR key rather than the
+   * buyer's, and any UI naming it would credit us for someone else's purchase.
+   *
+   * DERIVED, never stored — `door === "agent" && payer === relayer`, both of
+   * which the `IntentSettled` event carries. It replaced an `agentPayer`
+   * address that could not be derived, because the buyer's address is nowhere
+   * on-chain: only the backend that performed the hop ever knew it, and it wrote
+   * that into its own SQLite. So the field was populated on the machine that
+   * bridged the payment and null on every other one, and any host rebuilding its
+   * cache from the chain lost it — the same "fact the chain cannot re-supply"
+   * class as the old `merchant_profiles` table, and the last thing making two
+   * backends of the same chain disagree.
+   *
+   * Nothing else produces the combination: `settleFromPBM`'s payer is the
+   * agent's wallet contract, and a nonce-pinning `exact` client's payer is the
+   * agent itself. Only the relayer acting as an end payer would false-positive,
+   * and nothing does that.
+   */
+  bridged: boolean;
   tokenIn: Address;
   tokenSymbol: TokenId | null;
   amountIn: string;
@@ -398,11 +416,17 @@ export type SettlementCursor = string;
 /**
  * GET /api/settlements?handle=&payer=&before=&limit=
  *
- * `payer` takes a COMMA-SEPARATED list, and a row matches if EITHER its `payer`
- * or its `agentPayer` is in it. That is what lets the payer app ask for "me and
- * my agents" in one query: a PBM payment's on-chain payer is the wallet, not
- * the human, so filtering on the human's address alone would hide exactly the
- * rows the agents screen exists to show. Parse it with `parsePayerFilter`.
+ * `payer` takes a COMMA-SEPARATED list matched against a row's on-chain `payer`.
+ * The list is what lets the payer app ask for "me and my agents" in one query: a
+ * PBM payment's on-chain payer is the wallet, not the human, so filtering on the
+ * human's address alone would hide exactly the rows the agents screen exists to
+ * show — the caller passes its own address AND its wallets. Parse it with
+ * `parsePayerFilter`.
+ *
+ * It no longer also matches an `agentPayer`, because that column is gone: see
+ * `SettlementEvent.bridged`. A bridged row's on-chain payer is the relayer, so
+ * it belongs to no payer's feed — which is correct, and is what it already did
+ * on any host that had not performed the hop itself.
  *
  * `before` is a cursor — omit it for the newest page. `limit` defaults to 50
  * and caps at 200. Rows are newest-first, ordered by (blockNumber, logIndex);

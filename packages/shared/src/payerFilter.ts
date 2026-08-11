@@ -2,12 +2,19 @@ import { isAddress, type Address } from "viem";
 
 /**
  * The `payer` filter on `GET /api/settlements` — a comma-separated address
- * list, matched against a row's `payer` OR its `agentPayer`.
+ * list, matched against a row's on-chain `payer`.
  *
- * The OR is the whole point. A PBM payment's on-chain payer is the agent's
- * wallet and a bridged x402 payment's is the relayer, so a payer app that
- * filtered on the human's address alone would show them an activity feed
- * missing every payment their agents made on their behalf.
+ * The LIST is the whole point. A PBM payment's on-chain payer is the agent's
+ * wallet, so a payer app that filtered on the human's address alone would show
+ * them an activity feed missing every payment their agents made on their
+ * behalf. The caller passes its own address and its wallets together.
+ *
+ * It used to match an `agentPayer` column too, for bridged x402 rows whose
+ * on-chain payer is the relayer. That column is gone (see
+ * `SettlementEvent.bridged`): the buyer's address is nowhere on-chain, so only
+ * the backend that performed the hop ever held it, and the arm silently matched
+ * nothing everywhere else. A bridged row now belongs to no payer's feed on
+ * every host equally, which is what it already did on most of them.
  *
  * The backend turns the parsed list into an IN-list; `matchesPayerFilter` below
  * is the row-side half of the same rule, for a caller holding rows already.
@@ -85,21 +92,15 @@ export function parsePayerFilter(raw: string | null | undefined): PayerFilterRes
  *
  * UNUSED so far, and do NOT reach for it as "the client-side payer filter": the
  * payer app's `isOwnPayment` (components/payer/activity.ts) answers a different
- * question and deliberately NEGATES on `agentPayer` where this ORs on it. That
- * one is "I paid this myself", which excludes agent spending; this one is "my
- * address is on it", which is what the agents screen and the history endpoint
- * mean by mine. Same field, opposite semantics — pick by the question, and never
- * swap one for the other to remove a duplicate.
+ * question — "I paid this MYSELF", which excludes a payment an agent made from a
+ * wallet this filter would happily match. Same rows, different question; pick by
+ * the question, and never swap one for the other to remove a duplicate.
  */
 export function matchesPayerFilter(
-  row: { payer: Address; agentPayer?: Address | null },
+  row: { payer: Address },
   payers: readonly Address[] | null,
 ): boolean {
   if (payers === null) return true;
   const payer = row.payer.toLowerCase();
-  const agentPayer = row.agentPayer ? row.agentPayer.toLowerCase() : null;
-  return payers.some((candidate) => {
-    const needle = candidate.toLowerCase();
-    return needle === payer || needle === agentPayer;
-  });
+  return payers.some((candidate) => candidate.toLowerCase() === payer);
 }

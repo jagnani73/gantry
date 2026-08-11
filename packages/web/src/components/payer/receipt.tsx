@@ -217,15 +217,16 @@ export function findAgent(
  * Who spent the money, from the payer's point of view.
  *
  * A bridged x402 payment's on-chain payer is the RELAYER — naming it would
- * credit our own key for the agent's purchase — so `agentPayer` wins whenever
- * it is set, and the hop is labelled rather than hidden.
+ * credit our own key for the agent's purchase — so the hop is labelled instead.
+ * The buyer's own address is not an option: it exists nowhere on-chain, which is
+ * precisely why the hop happened.
  */
 function paidBy(
   settlement: SettlementEvent,
   self: Address | null,
   agentName: (wallet: Address) => string | null,
 ): string {
-  if (settlement.agentPayer) return `${shortAddress(settlement.agentPayer)} · via facilitator`;
+  if (settlement.bridged) return "via facilitator";
   if (self && settlement.payer.toLowerCase() === self.toLowerCase()) return "You";
   return agentName(settlement.payer) ?? shortAddress(settlement.payer);
 }

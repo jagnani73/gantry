@@ -43,7 +43,9 @@ const GRID =
 function haystackOf(row: SettlementEvent): string {
   return [
     row.payer,
-    row.agentPayer ?? "",
+    // Searchable by the label the row actually shows, since the buyer's own
+    // address does not exist on-chain for a bridged payment.
+    row.bridged ? "via facilitator" : "",
     row.txHash,
     row.intentId,
     row.tokenSymbol ?? "",
@@ -189,9 +191,13 @@ export function TransactionsScreen() {
               <span>
                 <DoorChip door={row.door} variant="pill" />
               </span>
-              <Mono size="md" tone="quiet" truncate>
-                {shortAddress(row.agentPayer ?? row.payer)}
-              </Mono>
+              {row.bridged ? (
+                <span className="truncate text-body-sm text-quiet">via facilitator</span>
+              ) : (
+                <Mono size="md" tone="quiet" truncate>
+                  {shortAddress(row.payer)}
+                </Mono>
+              )}
               <Money
                 variant="token"
                 size="md"

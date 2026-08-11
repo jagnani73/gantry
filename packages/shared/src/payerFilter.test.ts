@@ -5,6 +5,8 @@ import { MAX_PAYER_FILTER, matchesPayerFilter, parsePayerFilter } from "./payerF
 
 const HUMAN = "0x82513007C7eB93b54dC555Bdb74341b3084FC47B";
 const WALLET = "0xDD4bbed78B64715288bf10fabB2b62c659299D3E";
+/** A third party — the on-chain payer of a bridged row, which belongs to nobody's feed. */
+const RELAYER = "0xacAD9a1E3e5F0c0FC33F6AFfBf237Fe6C52E33F5";
 
 test("absent filter means every payer", () => {
   for (const raw of [null, undefined]) {
@@ -69,22 +71,22 @@ test("caps the list length on the raw item count", () => {
   assert.equal(!result.ok && result.reason, "too_many");
 });
 
-const row = (payer: string, agentPayer?: string) =>
-  ({ payer: payer as Address, agentPayer: agentPayer as Address | undefined });
+const row = (payer: string) => ({ payer: payer as Address });
 
 test("a null filter matches every row", () => {
   assert.equal(matchesPayerFilter(row(WALLET), null), true);
 });
 
-test("matches on payer or agentPayer", () => {
-  const mine = [HUMAN.toLowerCase() as Address];
+test("matches on the on-chain payer", () => {
+  const mine = [HUMAN.toLowerCase() as Address, WALLET.toLowerCase() as Address];
   // Human door: the payer signed it themselves.
   assert.equal(matchesPayerFilter(row(HUMAN), mine), true);
-  // Bridged x402: on-chain payer is the relayer, the human is the agentPayer —
-  // the row the agents screen exists to show.
-  assert.equal(matchesPayerFilter(row(WALLET, HUMAN), mine), true);
+  // A PBM payment: the agent's WALLET is the on-chain payer, and the payer app
+  // passes its wallets alongside its own address — which is why the filter is a
+  // list rather than a single address.
+  assert.equal(matchesPayerFilter(row(WALLET), mine), true);
   // Someone else's payment.
-  assert.equal(matchesPayerFilter(row(WALLET), mine), false);
+  assert.equal(matchesPayerFilter(row(RELAYER), mine), false);
 });
 
 test("row matching is case-insensitive on both sides", () => {
@@ -92,25 +94,13 @@ test("row matching is case-insensitive on both sides", () => {
   assert.equal(matchesPayerFilter(row(HUMAN.toLowerCase()), [HUMAN as Address]), true);
 });
 
-test("an entry that names nobody matches nothing, least of all an absent agentPayer", () => {
+test("an entry that names nobody matches nothing", () => {
   // The row-side half of what parsePayerFilter refuses: an entry naming nobody
-  // must not become "everything". It reaches the OR's weak spot — the row's
-  // agentPayer is normalised to null rather than left as-is, so an empty entry
-  // cannot pair off against an empty field and quietly claim every row an agent
-  // never touched. Only a caller that skipped parsePayerFilter gets here, which
-  // is exactly the caller this function promises to be total for.
+  // must not become "everything". Only a caller that skipped parsePayerFilter
+  // gets here, which is exactly the caller this function promises to be total
+  // for.
   const empty = "" as Address;
-  for (const noAgent of [
-    row(WALLET, undefined),
-    { payer: WALLET as Address, agentPayer: null },
-    { payer: WALLET as Address, agentPayer: empty },
-  ]) {
-    assert.equal(
-      matchesPayerFilter(noAgent, [empty]),
-      false,
-      `empty entry matched ${JSON.stringify(noAgent)}`,
-    );
-  }
+  assert.equal(matchesPayerFilter(row(WALLET), [empty]), false);
   // And it does not swallow the rest of the list either.
   assert.equal(matchesPayerFilter(row(WALLET), [empty, WALLET as Address]), true);
 });

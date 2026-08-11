@@ -83,8 +83,8 @@ export function rowsInOverviewWindow<T>(
  * warning, which is the exact failure this function exists to prevent.
  *
  * `loadedCount > 0` is load-bearing. Without it a feed that has loaded nothing
- * while `hasMore` is true — first paint, and the moment after the `reset` event
- * `demo-reset` fires — satisfies `0 === 0`, and the screen renders "no payments
+ * while `hasMore` is true — first paint, before the first page of
+ * history has landed — satisfies `0 === 0`, and the screen renders "no payments
  * in the last 7 days" directly above "covers the 0 payments loaded so far".
  */
 export function windowIsPartial(

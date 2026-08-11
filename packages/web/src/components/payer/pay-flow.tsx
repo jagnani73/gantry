@@ -778,6 +778,9 @@ function settledRow(
     merchantId: intent.merchantId,
     handle: intent.handle,
     payer,
+    // This payer signed the authorization themselves — the facilitator bridge is
+    // the vanilla-x402 agent path and never this one.
+    bridged: false,
     tokenIn: intent.tokenIn,
     tokenSymbol: intent.tokenSymbol,
     amountIn: intent.amountIn,

@@ -42,7 +42,7 @@ after(() => {
  * green.
  */
 const toEvent = (row: SettlementRow): SettlementEvent =>
-  toSettlementEvent(row, (token) => tokenIdByAddress(BASE_SEPOLIA_ADDRESSES, token));
+  toSettlementEvent(row, (token) => tokenIdByAddress(BASE_SEPOLIA_ADDRESSES, token), RELAYER);
 
 const deps: SettlementHistoryDeps = { store, toEvent };
 
@@ -81,7 +81,6 @@ function settlement(
     door: Door.Human,
     block_number: block,
     block_time: 1_785_900_000 + block,
-    agent_payer: null,
     ...overrides,
   };
 }
@@ -89,11 +88,10 @@ function settlement(
 // Five settlements, newest last: 10:0, 10:2, 11:0, 12:0, 13:1.
 store.insertSettlementRow(settlement(10, 0, { token_in: UNLISTED_TOKEN }));
 store.insertSettlementRow(settlement(10, 2));
-// A bridged vanilla-x402 payment: on-chain payer is the relayer, the agent that
-// actually paid is recorded beside it.
-store.insertSettlementRow(
-  settlement(11, 0, { payer: RELAYER, agent_payer: AGENT_WALLET, door: Door.Agent }),
-);
+// A bridged vanilla-x402 payment. Nothing records the agent that actually paid:
+// its address is nowhere on-chain, which is exactly why `bridged` is derived
+// from these two fields instead of stored.
+store.insertSettlementRow(settlement(11, 0, { payer: RELAYER, door: Door.Agent }));
 // A gantry-pbm payment: the wallet IS the on-chain payer, no bridge hop.
 store.insertSettlementRow(
   settlement(12, 0, { payer: AGENT_WALLET, handle: GADGETHUB, door: Door.Agent }),
@@ -195,26 +193,26 @@ test("a present-but-empty payer filter is refused", () => {
   assert.deepEqual(malformed.args, ["malformed"]);
 });
 
-test("a payer filter matches the on-chain payer OR the bridged agent payer", () => {
-  // 12:0 is the wallet paying directly; 11:0 is the same wallet behind the
-  // facilitator bridge, where the on-chain payer is the relayer. A feed that
-  // showed only the first is the bug this OR exists to prevent.
+test("a payer filter matches the on-chain payer, and a bridged row is nobody's", () => {
+  // 12:0 is the wallet paying directly, so it is the wallet's row. 11:0 is a
+  // BRIDGED payment: the on-chain payer is the relayer and the buyer's address
+  // is nowhere on-chain, so it belongs to no payer's feed — on every host
+  // equally, which is the point. It used to match here via a stored
+  // `agent_payer` that only the backend performing the hop ever held, so this
+  // same query answered differently on two backends of the same chain.
   const mine = listSettlementHistory(deps, { payer: AGENT_WALLET });
-  assert.deepEqual(positions(mine), [
-    [12, 0],
-    [11, 0],
-  ]);
-  assert.equal(mine.total, 2);
+  assert.deepEqual(positions(mine), [[12, 0]]);
+  assert.equal(mine.total, 1);
 
-  // "me and my agents" in one query — the payer app's activity feed.
+  // "me and my agents" in one query — the payer app's activity feed. A PBM
+  // wallet's payments are still found, because the wallet IS the on-chain payer.
   const meAndMine = listSettlementHistory(deps, { payer: `${HUMAN},${AGENT_WALLET}` });
   assert.deepEqual(positions(meAndMine), [
     [12, 0],
-    [11, 0],
     [10, 2],
     [10, 0],
   ]);
-  assert.equal(meAndMine.total, 4);
+  assert.equal(meAndMine.total, 3);
 });
 
 test("a payer filter that names nobody we know returns an honest empty page", () => {
@@ -239,9 +237,17 @@ test("handle scopes the feed, and a nonsense handle is refused", () => {
 });
 
 test("handle and payer combine as AND", () => {
+  // The wallet's one payment is at gadgethub (12:0).
+  assert.deepEqual(
+    positions(listSettlementHistory(deps, { handle: GADGETHUB, payer: AGENT_WALLET })),
+    [[12, 0]],
+  );
+  // Same payer, different shop — empty, because the two narrow rather than widen.
+  // ah-hock DOES hold an agent-door row (11:0, the bridged one), so this would
+  // pass on an OR by accident; it is empty only because the wallet did not pay it.
   assert.deepEqual(
     positions(listSettlementHistory(deps, { handle: AH_HOCK, payer: AGENT_WALLET })),
-    [[11, 0]],
+    [],
   );
 });
 
@@ -321,10 +327,20 @@ test("rows carry the fields a client merges the live stream on", () => {
   assert.equal(newest?.tokenIn, USDC.toLowerCase());
   assert.equal(newest?.tokenSymbol, "USDC");
 
+  // Agent door + the relayer as on-chain payer IS the bridge signature, and it
+  // is the whole of it — derived on every host from the event, where the stored
+  // `agentPayer` it replaced existed only on the one that performed the hop.
   const bridged = listSettlementHistory(deps, { before: "12:0", limit: "1" }).rows[0];
   assert.equal(bridged?.payer, RELAYER.toLowerCase());
-  assert.equal(bridged?.agentPayer, AGENT_WALLET.toLowerCase());
   assert.equal(bridged?.door, "agent");
+  assert.equal(bridged?.bridged, true);
+
+  // The two neighbours that must NOT read as bridged: a PBM payment is the agent
+  // door with the WALLET paying, and a human payment is the relayer's door never.
+  const pbm = listSettlementHistory(deps, { before: "13:1", limit: "1" }).rows[0];
+  assert.equal(pbm?.door, "agent");
+  assert.equal(pbm?.bridged, false, "a PBM wallet is not the relayer");
+  assert.equal(newest?.bridged, false, "a human-door row is never bridged");
 });
 
 test("an unlisted token renders as no symbol, never as a guess", () => {
