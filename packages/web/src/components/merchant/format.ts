@@ -50,6 +50,13 @@ const SHORT_DATE = new Intl.DateTimeFormat("en-SG", {
   year: "numeric",
 });
 
+/** "8 Aug" — the day on a Transactions row. */
+const TABLE_DAY = new Intl.DateTimeFormat("en-SG", {
+  timeZone: DISPLAY_TIME_ZONE,
+  day: "numeric",
+  month: "short",
+});
+
 const COUNT = new Intl.NumberFormat("en-SG");
 
 export function clockTime(unixSeconds: number): string {
@@ -98,6 +105,23 @@ export function dayRangeLabel(startDay: DayKey, endDay: DayKey): string {
 
 export function shortDate(unixSeconds: number): string {
   return SHORT_DATE.format(unixSeconds * 1000);
+}
+
+/**
+ * "8 Aug" — the day above a Transactions row's clock.
+ *
+ * No year, deliberately, and it is the one place that omission is safe: the
+ * drawer and the CSV export both carry `shortDate`, so the full date is one
+ * click or one download away, while a year repeated down every row of a book
+ * that spans weeks is the noise `feedWhen` avoids for the same reason.
+ *
+ * Unlike `feedWhen` this does NOT go quiet for today. That rule fits a live
+ * feed, where nearly every row is today and a date would be the exception;
+ * Transactions is the whole book, where a column the eye scans has to say the
+ * same kind of thing on every line.
+ */
+export function tableDay(unixSeconds: number): string {
+  return TABLE_DAY.format(unixSeconds * 1000);
 }
 
 export function monthDay(unixSeconds: number): string {

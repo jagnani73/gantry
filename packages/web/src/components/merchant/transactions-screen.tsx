@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { downloadCsv, settlementsCsv } from "./csv";
 import { EmptyPanel } from "./empty-panel";
-import { clockTime, monthDay, netOf, plural, totalsOf } from "./format";
+import { clockTime, monthDay, netOf, plural, shortDate, tableDay, totalsOf } from "./format";
 import { useMerchantContext } from "./merchant-context";
 import { ScreenHeader } from "./screen-header";
 import { settlementKey } from "./use-merchant-feed";
@@ -52,6 +52,12 @@ function haystackOf(row: SettlementEvent): string {
     formatUnits6(BigInt(row.xsgdOut), 6),
     formatUnits6(BigInt(row.amountIn), 6),
     formatUnits6(netOf(row), 2),
+    // Both spellings of the day, because the row shows one ("8 Aug") and the
+    // drawer and CSV show the other ("8 Aug 2026") — a column the merchant can
+    // read is a column they will type into.
+    tableDay(row.blockTime),
+    shortDate(row.blockTime),
+    clockTime(row.blockTime),
   ]
     .join(" ")
     .toLowerCase();
@@ -127,7 +133,7 @@ export function TransactionsScreen() {
       <Card radius="card" pad="none" className="p-2 pb-3.5">
         <div className={cn(GRID, "border-b border-fill-subtle px-4 pt-3.5 pb-2.5")}>
           <Label size="col-header" tone="faintest">
-            Time
+            When
           </Label>
           <Label size="col-header" tone="faintest">
             Door
@@ -166,9 +172,20 @@ export function TransactionsScreen() {
               onClick={() => select(row)}
               className={GRID}
             >
-              <Mono size="sm" tone="muted">
-                {clockTime(row.blockTime)}
-              </Mono>
+              {/* Stacked rather than widened: this table already gives its two
+                  mono detail columns up below `lg`, so the width a one-line
+                  "8 Aug 14:32:07" needs would come out of the payer column the
+                  table exists to show. Both lines are Mono, so the day and the
+                  clock stay on one tabular grid and the column does not shimmer
+                  as seconds tick. */}
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <Mono size="3xs" tone="faintest">
+                  {tableDay(row.blockTime)}
+                </Mono>
+                <Mono size="sm" tone="muted">
+                  {clockTime(row.blockTime)}
+                </Mono>
+              </div>
               <span>
                 <DoorChip door={row.door} variant="pill" />
               </span>
