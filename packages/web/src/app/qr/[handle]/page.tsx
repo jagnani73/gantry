@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DEMO_MERCHANTS, resolveScope } from "@gantry/shared";
+import { resolveScope } from "@gantry/shared";
 import { Card } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { PrintButton } from "@/components/print-button";
@@ -14,19 +14,24 @@ import { appUrl } from "@/lib/env";
  * not print.
  *
  * The shop's name is fetched here rather than passed in, and a failed fetch
- * falls back to the seed record and then to the handle itself. This page exists
- * to be printed, often from a laptop on a venue hotspot: a cold backend must
- * cost the standee its display name, never the code itself, which depends on
- * nothing but the handle.
+ * falls back to the handle. This page exists to be printed, often from a laptop
+ * on a venue hotspot: a cold backend must cost the standee its display name,
+ * never the code itself, which depends on nothing but the handle.
+ *
+ * It deliberately does NOT fall back to `DEMO_MERCHANTS`. The display record
+ * lives in GantryCore now, and a seed constant is a name no screen in the app
+ * would agree with — so a laminated standee could carry a shop name that the
+ * payer page, the receipt and the merchant's own back-office all deny. The
+ * handle is the honest degradation, because it is the one thing the printed QR
+ * itself encodes.
  */
 export default async function QrPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle: raw } = await params;
   const handle = resolveScope(raw) ?? raw;
   const payUrl = `${appUrl()}/pay/${handle}`;
 
-  const seed = DEMO_MERCHANTS[handle];
-  let name = seed?.displayName ?? handle;
-  let location = seed?.location;
+  let name = handle;
+  let location: string | undefined;
   try {
     const merchant = await api.merchant(handle);
     name = merchant.displayName ?? name;
