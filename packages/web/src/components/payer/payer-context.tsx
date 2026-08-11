@@ -412,7 +412,7 @@ export function PayerProvider({
 
      A failure here does not blank a working history — the declined rows are
      additive — but it can never be silent either: a refused agent payment
-     produces no event and no log to sweep, so this row is the ONLY trace it
+     produces no settle transaction, so its record rides on the CANCEL — it
      happened. Dropping it on the floor is how the rejection beat would simply
      not appear on stage, with nothing on screen saying why. */
   const agentWalletsKey = (agents ?? []).map((agent) => agent.wallet).join(",");

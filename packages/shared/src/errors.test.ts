@@ -6,6 +6,7 @@ import {
   decodeRawError,
   gantryErrorsAbi,
   isStaleStateRevert,
+  rawRevertData,
   serializeArgs,
   type DecodedGantryError,
 } from "./errors";
@@ -124,4 +125,48 @@ test("stale-state retry predicate matches exactly the replica-lag shapes", () =>
   assert.ok(!isStaleStateRevert(custom("CategoryNotAllowed"))); // M3 denial must NOT retry
   assert.ok(!isStaleStateRevert({ kind: "string", reason: "FiatTokenV2: invalid signature" }));
   assert.ok(!isStaleStateRevert({ kind: "unknown", message: "timeout" }));
+});
+
+test("rawRevertData hands back the verbatim bytes, which decodeRawError round-trips", () => {
+  // The agent-denial path depends on this pair being exact inverses. A policy
+  // revert never reaches the chain on its own — it dies in simulation — so the
+  // relayer carries THESE bytes into cancelIntentWithReason and the indexer
+  // decodes them back. If the bytes were re-encoded from a decoded form instead,
+  // the two ends could disagree about a wallet error and nothing would notice.
+  const data = encodeErrorResult({
+    abi: gantryErrorsAbi,
+    errorName: "CategoryNotAllowed",
+    args: [2],
+  });
+  const err = new ContractFunctionRevertedError({
+    abi: gantryErrorsAbi,
+    data,
+    functionName: "settleFromPBM",
+  });
+
+  const raw = rawRevertData(err);
+  assert.equal(raw, data, "the bytes must survive untouched — not re-encoded");
+  assert.deepEqual(decodeRawError(raw!), { kind: "custom", name: "CategoryNotAllowed", args: [2] });
+  // 36 bytes: a 4-byte selector plus one word. Well inside GantryCore's 256-byte
+  // bound on a denial reason, which the backend mirrors before sending.
+  assert.equal((raw!.length - 2) / 2, 36);
+});
+
+test("rawRevertData returns null when there are no revert bytes to carry", () => {
+  // Each of these reaches the denial path as a failure, and none of them is a
+  // policy denial. Returning something here would put a fabricated on-chain
+  // claim in front of a payer; returning null degrades to a plain cancel.
+  assert.equal(rawRevertData(new Error("transport blew up")), null);
+  assert.equal(rawRevertData(undefined), null);
+  assert.equal(rawRevertData("not an error"), null);
+  assert.equal(
+    rawRevertData(
+      new ContractFunctionRevertedError({
+        abi: gantryErrorsAbi,
+        functionName: "settleFromPBM",
+        message: "reverted with no data",
+      }),
+    ),
+    null,
+  );
 });

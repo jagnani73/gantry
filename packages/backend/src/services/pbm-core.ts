@@ -5,6 +5,8 @@ import {
   buildSpendAuthorization,
   checksummed,
   decodeGantryError,
+  MAX_DENIAL_REASON_BYTES,
+  rawRevertData,
   serializeArgs,
   type DenialEvent,
   type DenialListResponse,
@@ -206,7 +208,7 @@ export const POLICY_DENIAL_ERRORS = [
   "InvalidAgentSignature",
 ] as const satisfies readonly GantryErrorName[];
 
-const POLICY_DENIAL_NAMES: ReadonlySet<string> = new Set(POLICY_DENIAL_ERRORS);
+export const POLICY_DENIAL_NAMES: ReadonlySet<string> = new Set(POLICY_DENIAL_ERRORS);
 
 export interface PolicyDenial {
   /** Verbatim, e.g. "CategoryNotAllowed" — it is read aloud on stage, and the
@@ -241,7 +243,7 @@ export function policyDenialOf(err: unknown): PolicyDenial | null {
  * so the UI renders them with the same formatter and never has to know they
  * came out of a revert.
  */
-function namedErrorArgs(
+export function namedErrorArgs(
   name: string,
   args: readonly unknown[],
 ): Record<string, unknown> | undefined {
@@ -329,4 +331,44 @@ export function listAgentDenials(
     rows: store.listDenials(wallet, DENIAL_PAGE_LIMIT).map(denialEventOf),
     total: store.countDenials(wallet),
   };
+}
+
+/**
+ * The bytes that make a refusal recordable on-chain, or null.
+ *
+ * Pure, and here rather than beside its caller so it can be tested without an
+ * environment — every defect this gate prevents is invisible in production. It
+ * returns null for anything that is not a decoded WALLET POLICY error, because a
+ * transport blip or a core-level revert recorded as a denial would put a
+ * fabricated claim about the chain on a payer's screen.
+ *
+ * The bound is checked HERE, not left to the contract: `cancelIntentWithReason`
+ * reverts past it, which would cost the cancellation as well as the record, so a
+ * payload we cannot send must degrade to a plain cancel rather than break one.
+ *
+ * `onRefusal` reports WHY nothing will be recorded. Every exit is otherwise
+ * silent by construction — a null return means the caller cannot tell a refused
+ * payload from an error that was never a denial.
+ */
+export function denialReasonBytes(
+  err: unknown,
+  onRefusal: (why: string) => void,
+): Hex | null {
+  try {
+    if (!policyDenialOf(err)) return null;
+    const reason = rawRevertData(err);
+    if (!reason) {
+      onRefusal("decoded as a policy denial but carries no revert bytes");
+      return null;
+    }
+    const bytes = (reason.length - 2) / 2;
+    if (bytes === 0 || bytes > MAX_DENIAL_REASON_BYTES) {
+      onRefusal(`revert payload is ${bytes} bytes, outside the core's ${MAX_DENIAL_REASON_BYTES}-byte bound`);
+      return null;
+    }
+    return reason;
+  } catch (err2) {
+    onRefusal(`could not read the revert payload (${err2 instanceof Error ? err2.message : String(err2)})`);
+    return null;
+  }
 }

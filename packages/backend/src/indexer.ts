@@ -1,8 +1,10 @@
 import type { Address, Hex } from "viem";
 import {
+  IntentStatus,
   LOG_CHUNK_SPAN,
   agentPbmWalletFactoryAbi,
   gantryCoreAbi,
+  decodeRawError,
   tokenIdByAddress,
   type SettlementEvent,
 } from "@gantry/shared";
@@ -14,9 +16,11 @@ import {
   getIntentRow,
   setIntentStatus,
   insertAgentWallet,
+  insertDenial,
   insertSettlementRow,
   type SettlementRow,
 } from "./db";
+import { POLICY_DENIAL_NAMES, namedErrorArgs } from "./services/pbm-core";
 import { cursorOf, toSettlementEvent } from "./services/settlements";
 import { broadcast } from "./sse";
 
@@ -113,6 +117,25 @@ async function processLog(log: CoreLog): Promise<void> {
     return;
   }
 
+  // The ONLY on-chain trace a refused agent payment leaves. The wallet's policy
+  // revert dies in simulation and is never broadcast (and a reverted tx carries
+  // no logs anyway), so the successful CANCEL is where the reason rides — see
+  // GantryCore.cancelIntentWithReason. Sweeping it is what makes the denials
+  // table chain-derived, so every host holds the same refusals instead of only
+  // the one that happened to refuse the payment.
+  if (log.eventName === "IntentDenied") {
+    const args = log.args as { intentId?: Hex; wallet?: Address; reason?: Hex };
+    // Same non-strict decode hazard as WalletCreated below: a topic0 match whose
+    // data does not decode arrives with undefined fields, and a throw here would
+    // leave setCursor unreached and wedge the sweep for good.
+    if (!args.intentId || !args.wallet || !args.reason) {
+      console.warn(`indexer: undecodable IntentDenied in ${log.transactionHash}, skipped`);
+      return;
+    }
+    await recordDenial(args.intentId, args.wallet, args.reason, log);
+    return;
+  }
+
   // From the FACTORY, not the core — the sweep now covers both addresses in one
   // pass. This replaced a separate chunked scanner in services/agents.ts that
   // re-walked the same block range on every cold process, grew ~22 windows a day,
@@ -138,6 +161,88 @@ async function processLog(log: CoreLog): Promise<void> {
       factory: config.addresses.agentPbmFactory,
     });
   }
+}
+
+/** The denials table stores args as JSON text or null — never "undefined". */
+function jsonArgs(args: Record<string, unknown> | undefined): string | null {
+  return args ? JSON.stringify(args) : null;
+}
+
+/**
+ * Rebuild a denial row from the chain alone.
+ *
+ * Everything a row needs is either on the event or still readable off the
+ * cancelled intent: cancellation does not delete it, so `getIntent` still holds
+ * the merchant, the token and both amounts. That is why the event carries only
+ * what cannot be recovered — the wallet that refused, and why.
+ *
+ * PERMANENT defects return; TRANSIENT ones THROW, and the split is the whole
+ * design of this function. A throw escaping `processLog` leaves `setCursor`
+ * unreached, so the next 15s pass retries the same log — which is exactly what
+ * the `IntentSettled` branch above already relies on, since it calls the same
+ * `resolveHandle` and `blockTime` with no catch of its own. Swallowing an RPC
+ * blip here instead would advance the cursor past a refusal and lose it forever,
+ * with `lastSweepError` still null and /health still reporting lag 0: the payer's
+ * screen would show no declined row, indistinguishable from a refusal that never
+ * happened, on the one screen that exists to show them.
+ */
+async function recordDenial(intentId: Hex, wallet: Address, reason: Hex, log: CoreLog): Promise<void> {
+  // --- permanent: retrying can never help, so advancing past it is correct.
+  const decoded = decodeRawError(reason);
+  if (!decoded || decoded.kind !== "custom") {
+    console.warn(`indexer: IntentDenied ${intentId} carries an undecodable reason ${reason}`);
+    return;
+  }
+  // Re-checked here and not merely trusted from the writer. `decodeRawError`
+  // resolves against the WHOLE union — core, swap, wallet, EIP-3009 — so a
+  // core-level revert like IntentExpired would decode happily and render on the
+  // payer's receipt under "Your agent tried, the contract said no", with args
+  // named against the wallet ABI it does not belong to. A stale quote is not the
+  // agent being refused, and this table is the only thing that says which it was.
+  if (!POLICY_DENIAL_NAMES.has(decoded.name)) {
+    console.warn(
+      `indexer: IntentDenied ${intentId} names ${decoded.name}, which is not a wallet ` +
+        "policy error — refusing to render it as a refusal",
+    );
+    return;
+  }
+
+  // --- transient from here down: every line is an RPC or a disk write.
+  const intent = await publicClient.readContract({
+    address: config.addresses.gantryCore,
+    abi: gantryCoreAbi,
+    functionName: "getIntent",
+    args: [intentId],
+  });
+  // getIntent returns the ZERO STRUCT for an unknown id rather than reverting —
+  // the contract's own natspec says callers must check. This read is unpinned and
+  // lands milliseconds after a WS log through a fallback transport, so a replica
+  // that has not seen the block answers "None". Writing that would store a denial
+  // at a nameless merchant for S$0.00, and `INSERT OR REPLACE` would let it
+  // overwrite a correct row the other delivery path had already written.
+  if (intent.status === IntentStatus.None) {
+    throw new Error(
+      `indexer: getIntent(${intentId}) is empty at a block that denied it — replica lag, retrying`,
+    );
+  }
+  const handle = await resolveHandle(intent.merchantId);
+  const createdAt = await blockTime(log.blockNumber);
+  insertDenial({
+    intent_id: intentId,
+    handle,
+    merchant_id: intent.merchantId,
+    wallet,
+    token_in: intent.tokenIn,
+    amount_in: intent.amountIn.toString(),
+    xsgd_amount: intent.xsgdAmount.toString(),
+    error_name: decoded.name,
+    // Reuses the wallet-ABI naming the backend already applies, so a denial
+    // swept from the chain and one recorded live render identically.
+    error_args: jsonArgs(namedErrorArgs(decoded.name, decoded.args)),
+    // The cancel IS this transaction — the one the payer's receipt links to.
+    cancel_tx: log.transactionHash,
+    created_at: createdAt,
+  });
 }
 
 /**
@@ -170,7 +275,10 @@ const SWEEP_CHUNK = LOG_CHUNK_SPAN;
 const SWEPT_EVENTS = [
   ...gantryCoreAbi.filter(
     (entry): entry is Extract<(typeof gantryCoreAbi)[number], { type: "event" }> =>
-      entry.type === "event" && (entry.name === "IntentSettled" || entry.name === "IntentCancelled"),
+      entry.type === "event" &&
+      (entry.name === "IntentSettled" ||
+        entry.name === "IntentCancelled" ||
+        entry.name === "IntentDenied"),
   ),
   ...agentPbmWalletFactoryAbi.filter(
     (entry): entry is Extract<(typeof agentPbmWalletFactoryAbi)[number], { type: "event" }> =>
@@ -179,16 +287,17 @@ const SWEPT_EVENTS = [
 ] as const;
 
 /**
- * Three, always. `pnpm abis` regenerates these ABIs from the contracts, so a
+ * Four, always. `pnpm abis` regenerates these ABIs from the contracts, so a
  * renamed or removed event silently yields a shorter array — the sweep would
  * stop indexing it while the cursor kept advancing, which is unrecoverable
  * without a manual rewind. The live settlement feed is the one thing CLAUDE.md
  * says is never cut, so it fails at boot instead. Same shape as the accepts[0]
  * assertion in routes/order.ts.
  */
-if (SWEPT_EVENTS.length !== 3) {
+if (SWEPT_EVENTS.length !== 4) {
   throw new Error(
-    `indexer: expected 3 swept events (IntentSettled, IntentCancelled, WalletCreated), got ${SWEPT_EVENTS.length}`,
+    "indexer: expected 4 swept events (IntentSettled, IntentCancelled, IntentDenied, " +
+      `WalletCreated), got ${SWEPT_EVENTS.length}`,
   );
 }
 

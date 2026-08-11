@@ -48,3 +48,16 @@ export const DEMO_POLICY = {
   categoryBitmap: 1n << 1n,
   policyTtlSeconds: 30 * 24 * 60 * 60,
 } as const;
+
+/**
+ * `GantryCore.MAX_DENIAL_REASON_BYTES`, mirrored for the backend that has to
+ * respect it BEFORE sending.
+ *
+ * Mirrored rather than read from the chain because the denial path must not grow
+ * an RPC call — but a mirror that drifts is worse than no mirror: if the
+ * contract's bound ever drops below this, the backend sends a payload the core
+ * refuses, `cancelIntentWithReason` reverts, and the retry loses the reason. A
+ * backend test pins this against the regenerated ABI's own constant so the two
+ * cannot part company silently.
+ */
+export const MAX_DENIAL_REASON_BYTES = 256;

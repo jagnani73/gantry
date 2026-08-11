@@ -327,6 +327,16 @@ export type CancelOutcome = "cancelled" | "already_settled" | "failed";
 
 export interface CancelResult {
   outcome: CancelOutcome;
+  /**
+   * True ONLY when a cancel carrying a denial reason mined, i.e. `IntentDenied`
+   * is now on-chain for the indexer to sweep.
+   *
+   * Not derivable from `outcome`: a reason the core refuses is retried as a
+   * PLAIN cancel, which succeeds — so "cancelled" alone would tell a caller the
+   * refusal was recorded when it was not, and the local fallback that exists to
+   * catch exactly that would never fire.
+   */
+  denialRecorded: boolean;
   /** The cancel tx, and ONLY when one landed. A denied agent purchase leaves no
    * other transaction behind — its policy revert dies in simulation — so this
    * is the single hash its receipt can link. null on every other outcome:
@@ -334,33 +344,73 @@ export interface CancelResult {
   txHash: Hex | null;
 }
 
-/** Cancels a pending bridge intent, branching on WHY a cancel could not land —
- * IntentAlreadySettled is load-bearing evidence for the settle resolver. */
-export async function tryCancelIntentWithTx(intentId: Hex): Promise<CancelResult> {
+/**
+ * Cancels a pending intent, branching on WHY a cancel could not land —
+ * IntentAlreadySettled is load-bearing evidence for the settle resolver.
+ *
+ * `denial` turns the cancellation into the on-chain record of a refusal. A policy
+ * revert is caught in simulation and never broadcast, and a reverted transaction
+ * would carry no logs even if it were, so this successful cancel is the ONLY
+ * place a denial can leave something an indexer can sweep. Pass the wallet that
+ * refused and its verbatim revert bytes and the core emits `IntentDenied`
+ * beside `IntentCancelled`; omit it and this is an ordinary cancel, unchanged.
+ */
+export async function tryCancelIntentWithTx(
+  intentId: Hex,
+  denial?: { wallet: Address; reason: Hex },
+): Promise<CancelResult> {
   let txHash: Hex;
   try {
-    const { receipt } = await sendRelayerTx({
-      address: config.addresses.gantryCore,
-      abi: gantryCoreAbi,
-      functionName: "cancelIntent",
-      args: [intentId],
-    });
+    const { receipt } = await sendRelayerTx(
+      denial
+        ? {
+            address: config.addresses.gantryCore,
+            abi: gantryCoreAbi,
+            functionName: "cancelIntentWithReason",
+            args: [intentId, denial.wallet, denial.reason],
+          }
+        : {
+            address: config.addresses.gantryCore,
+            abi: gantryCoreAbi,
+            functionName: "cancelIntent",
+            args: [intentId],
+          },
+    );
     txHash = receipt.transactionHash;
   } catch (err) {
     const decoded = decodeGantryError(err);
     if (decoded.kind === "custom" && decoded.name === "IntentAlreadySettled") {
       console.error(`bridge: cancel of ${intentId} reverted IntentAlreadySettled — settlement landed`);
-      return { outcome: "already_settled", txHash: null };
+      return { outcome: "already_settled", txHash: null, denialRecorded: false };
+    }
+    // A reason the core refuses must not cost the CANCELLATION. Carrying one adds
+    // two revert conditions a plain cancel does not have (InvalidDenialReason,
+    // ZeroAddress), so without this retry a malformed payload would leave the
+    // intent Pending until expiry AND record nothing — strictly worse than either
+    // failure alone. Retry bare: the record is the part we can afford to lose.
+    if (
+      denial &&
+      decoded.kind === "custom" &&
+      (decoded.name === "InvalidDenialReason" || decoded.name === "ZeroAddress")
+    ) {
+      console.error(
+        `bridge: cancelIntentWithReason(${intentId}) refused the reason payload (${decoded.name}) — ` +
+          "retrying as a plain cancel; this denial will NOT be recorded on-chain",
+      );
+      return tryCancelIntentWithTx(intentId);
     }
     console.error(`bridge: cancel of intent ${intentId} failed (it will expire on its own):`, err);
-    return { outcome: "failed", txHash: null };
+    return { outcome: "failed", txHash: null, denialRecorded: false };
   }
   try {
     setIntentStatus(intentId, "cancelled");
   } catch (dbErr) {
     console.error(`bridge: cancel landed but cache update failed for ${intentId}:`, dbErr);
   }
-  return { outcome: "cancelled", txHash };
+  // Recorded exactly when THIS call carried a reason and mined. The plain-cancel
+  // retry above returns through its own recursive call with denial undefined, so
+  // it can never report a record it did not make.
+  return { outcome: "cancelled", txHash, denialRecorded: denial !== undefined };
 }
 
 /** Outcome-only view for the compensation paths, which branch on WHY a cancel

@@ -54,10 +54,20 @@ export interface AgentWalletRow {
 }
 
 /**
- * An agent payment the PBM wallet refused. The policy revert is caught by
- * simulate-before-send and NEVER broadcast, so no event exists and no log can
- * be swept — this row is the only trace the denial ever happened. `cancel_tx`
- * is the tx that cancelled the intent, not a reverted settle: there isn't one.
+ * An agent payment the PBM wallet refused.
+ *
+ * The policy revert itself is caught by simulate-before-send and never
+ * broadcast, and a reverted transaction carries no logs anyway — so the refusal
+ * rides on the CANCEL, which succeeds. `GantryCore.cancelIntentWithReason`
+ * emits `IntentDenied` and the indexer sweeps it, so this row is chain-derived
+ * on every host rather than living only on the backend that refused the
+ * payment. `cancel_tx` is that cancellation, not a reverted settle: there is
+ * still no such thing.
+ *
+ * One row can be written locally instead: when the cancel does not land there is
+ * no event to sweep, so `services/pbm.ts` writes a fallback with `cancel_tx`
+ * null rather than losing the refusal entirely. The sweep replaces it in place if
+ * the cancel turns out to have mined.
  */
 export interface DenialRow {
   intent_id: string;
@@ -100,21 +110,18 @@ export interface SettlementFilter {
  * SWEPT from the chain, so any two hosts that have covered the same range hold
  * identical rows — that is the whole reason the contracts are deployed together
  * and share one `BASE_SEPOLIA_DEPLOY_BLOCK`:
- *   - `settlements` (IntentSettled), `agent_wallets` (WalletCreated)
+ *   - `settlements` (IntentSettled), `agent_wallets` (WalletCreated),
+ *     `denials` (IntentDenied, on the cancel — see `DenialRow`)
  *
- * BACKEND-WRITTEN, so they exist only on the host that did the work and a fresh
- * disk comes up without them:
- *   - `denials` — a policy revert is caught by simulate-before-send and NEVER
- *     broadcast, so there is no event and no log to sweep. This row is the only
- *     trace it happened, anywhere. See `DenialRow`.
+ * BACKEND-WRITTEN, so it exists only on the host that did the work:
  *   - `intents` — `IntentCreated` exists but is deliberately not swept; the row
  *     carries the requote path and the stored validBefore, and settlement
  *     rebuilds the parts that matter from the event.
  *
- * Do not write "every table is rebuildable" over this. Only the swept two are,
- * and `denials` in particular means `/api/denials` legitimately differs between
- * a laptop that ran the rejection beat and a host that did not — the one
- * remaining place two backends of the same chain can disagree.
+ * `denials` has one backend-written case left: a refusal whose CANCEL failed
+ * emits no event, so the row is written locally with a null `cancel_tx` rather
+ * than lost. That is the only way two hosts can now disagree about a refusal,
+ * and it is a failure path rather than the normal one.
  *
  * There is deliberately no runtime "clear" or "reset". Deleting the file is the
  * valid migration, and a clean book comes from deploying a fresh core —
@@ -175,11 +182,11 @@ export function createDatabase(path: string) {
      * creation log records who made a wallet, never who controls it now; the live
      * multicall in services/agents.ts decides.
      *
-     * Nothing in this file is ever deleted at runtime. This table and
-     * settlements are the two the sweep rebuilds from the chain, so any host
+     * Nothing in this file is ever deleted at runtime. This table, settlements
+     * and denials are what the sweep rebuilds from the chain, so any host
      * covering the same range holds the same rows; dropping the file and letting
-     * it backfill is the only "reset" there is. (denials and intents do NOT come
-     * back that way — see the header comment.)
+     * it backfill is the only "reset" there is. (intents does NOT come back that
+     * way — see the header comment.)
      */
     CREATE TABLE IF NOT EXISTS agent_wallets (
       wallet       TEXT PRIMARY KEY,

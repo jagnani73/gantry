@@ -100,10 +100,10 @@ wallet · no fiat off-ramp.
 ### 8. Built so far — feasibility evidence
 Basescan links for all four contracts · the live merchant back-office URL
 (<https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview>,
-backed by <https://gantry-backend.onrender.com>) · 180
-Foundry tests (175 run in CI; the 5 real-USDC and PBM fork tests skip themselves
-without a fork RPC URL and are run locally) plus 229 TypeScript tests (110 shared,
-119 backend) · the commit graph with `m1`/`m2`/`m3`/`m4` tags. Screening risk this
+backed by <https://gantry-backend.onrender.com>) · 191
+Foundry tests (186 run in CI; the 5 real-USDC and PBM fork tests skip themselves
+without a fork RPC URL and are run locally) plus 234 TypeScript tests (114 shared,
+120 backend) · the commit graph with `m1`/`m2`/`m3`/`m4` tags. Screening risk this
 counters: "solo builder, will never ship."
 
 ### 9. Regulation posture

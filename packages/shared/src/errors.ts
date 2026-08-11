@@ -69,6 +69,31 @@ export function decodeGantryError(err: unknown): DecodedGantryError {
   return { kind: "unknown", message: err instanceof Error ? err.message : String(err) };
 }
 
+/**
+ * The VERBATIM revert bytes behind a viem error — selector plus encoded args — or
+ * null when the failure carried none (a transport error, a gas estimate, a plain
+ * string revert with no data).
+ *
+ * `decodeGantryError` above answers "what went wrong" for a human; this answers
+ * "what exactly did the contract return", which is what you need when the bytes
+ * have to travel somewhere and be decoded again. That is the agent-denial path:
+ * a policy revert is caught in simulation and never broadcast, so the only way it
+ * reaches the chain at all is for the relayer to carry these bytes into
+ * `cancelIntentWithReason`, where the indexer reads them back with
+ * `decodeRawError`. Same bytes, same decoder, both ends — so a wallet error can
+ * never mean one thing to the backend and another to the feed.
+ *
+ * viem sets `raw` to the original data on `ContractFunctionRevertedError` before
+ * attempting to decode it, so this survives errors it could not decode as well as
+ * ones it could.
+ */
+export function rawRevertData(err: unknown): Hex | null {
+  if (!(err instanceof BaseError)) return null;
+  const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
+  if (!(revert instanceof ContractFunctionRevertedError)) return null;
+  return revert.raw ?? null;
+}
+
 /** Decode bare revert data (0x…) against the Gantry error union. */
 export function decodeRawError(data: Hex): DecodedGantryError | null {
   try {

@@ -74,8 +74,8 @@ export function ActivityScreen() {
         </Card>
       ) : null}
 
-      {/* A refused agent payment produces no event and no log to sweep, so the
-          denials row is the ONLY trace it happened. If that page failed to load,
+      {/* A refused agent payment produces no settle transaction to sweep, so the
+          denials row is its only record here. If that page failed to load,
           the list below is quietly missing declines rather than showing none. */}
       {denialsError ? (
         <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">

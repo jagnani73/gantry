@@ -70,6 +70,8 @@ contract GantryCore is Ownable2Step {
     // ---------------------------------------------------------------- storage
 
     uint16 public constant MAX_FEE_BPS = 200; // 2% governance ceiling
+    /// @dev Every wallet policy error fits in 100 bytes (selector + <=3 words).
+    uint256 public constant MAX_DENIAL_REASON_BYTES = 256;
 
     IERC20 public immutable XSGD;
     address public relayer;
@@ -109,6 +111,7 @@ contract GantryCore is Ownable2Step {
     error NotMerchantPayout(bytes32 merchantId);
     error FeeTooHigh(uint16 feeBps);
     error OwnershipCannotBeRenounced();
+    error InvalidDenialReason(uint256 length);
 
     // ---------------------------------------------------------------- events
 
@@ -125,6 +128,11 @@ contract GantryCore is Ownable2Step {
         Door door
     );
     event IntentCancelled(bytes32 indexed intentId);
+    /// @dev Emitted ALONGSIDE IntentCancelled when the cancellation is a policy
+    ///      denial. `wallet` is the agent wallet that refused, indexed because it
+    ///      is what a payer's denial list filters on; `reason` is the wallet's
+    ///      verbatim revert data. See `cancelIntentWithReason`.
+    event IntentDenied(bytes32 indexed intentId, address indexed wallet, bytes reason);
     /// @dev xsgdOut is the gross conversion; the merchant receives xsgdOut - feeXsgd.
     event IntentSettled(
         bytes32 indexed intentId,
@@ -280,7 +288,76 @@ contract GantryCore is Ownable2Step {
 
     /// @notice Cancellation stays possible after expiry so the relayer can clean up.
     function cancelIntent(bytes32 intentId) external onlyRelayer {
-        PaymentIntent storage intent = _requirePending(intentId);
+        _cancelIntent(intentId);
+    }
+
+    /// @notice Cancel, and record WHY on-chain — for the one outcome that otherwise
+    ///         leaves no trace at all: an agent wallet's policy refusing a spend.
+    ///
+    /// @dev    The refusal itself never reaches the chain. `authorizeSpend` reverts,
+    ///         the relayer catches that in simulation and never broadcasts it, so
+    ///         there is no failed transaction — and a reverted one would carry no
+    ///         logs anyway, since a revert rolls its events back. The cancellation,
+    ///         which DOES succeed, is therefore the only place a denial can leave a
+    ///         swept record. Without it the sole evidence was a row in whichever
+    ///         backend happened to refuse the payment, so two indexers of the same
+    ///         chain disagreed about whether it ever happened.
+    ///
+    ///         `reason` is the wallet's VERBATIM revert data — selector plus args,
+    ///         e.g. `CategoryNotAllowed(uint16)` — not a string or an enum, so the
+    ///         indexer decodes it with the same decoder the backend already uses and
+    ///         no second error vocabulary can drift from the first.
+    ///
+    ///         HONEST LABEL. The relayer supplies both `wallet` and `reason`, so
+    ///         this record is relayer-ATTESTED, not chain-proven. Be precise about
+    ///         what that does and does not mean:
+    ///
+    ///         - The refusal itself is real: the wallet did revert. But it is NOT
+    ///           reproducible by a third party. `authorizeSpend` checks the agent's
+    ///           signature FIRST, and that signature is never stored, never emitted
+    ///           and not in this record — so anyone re-simulating gets
+    ///           `InvalidAgentSignature`, whatever the true reason was.
+    ///         - What IS checkable against public state at this block: a
+    ///           `CategoryNotAllowed` against `wallet.policy().categoryBitmap` and
+    ///           the merchant's `categoryId`; a `PerTxCapExceeded` against
+    ///           `policy().perTxCap` and `getIntent().amountIn`; a `PolicyExpired`
+    ///           against `policy().expiry`. `DailyCapExceeded` needs archive
+    ///           `spentToday()`, and `InsufficientWalletBalance` is not checkable.
+    ///         - The intent stores no wallet, so the `wallet`↔intent binding cannot
+    ///           be verified on-chain at all. It is the relayer's word.
+    ///
+    ///         `cancelIntent` was already `onlyRelayer`, so this widens no one's
+    ///         access — but it does widen what that key can WRITE: a status change
+    ///         becomes a permanent, replicated, attributed record naming a third
+    ///         party. The Agent-door guard below is what keeps that from being
+    ///         pointed at an arbitrary address on an arbitrary intent.
+    function cancelIntentWithReason(bytes32 intentId, address wallet, bytes calldata reason)
+        external
+        onlyRelayer
+    {
+        if (wallet == address(0)) revert ZeroAddress();
+        // Bounded because calldata is the cost here and the relayer pays it. Every
+        // policy error in the wallet fits in 100 bytes (a selector plus at most
+        // three words); 256 leaves room without leaving a hole to stuff a payload
+        // through on a key the whole demo depends on.
+        if (reason.length == 0 || reason.length > MAX_DENIAL_REASON_BYTES) {
+            revert InvalidDenialReason(reason.length);
+        }
+        // Agent-door only, the same invariant settleFromPBM enforces and for the
+        // same reason: a denial recorded against a human QR intent would render on
+        // a payer's screen as their agent being refused, on an intent no agent was
+        // ever party to. Checked AFTER _cancelIntent so the lifecycle answer wins —
+        // a settled or unknown intent must still revert IntentAlreadySettled /
+        // UnknownIntent, which the bridge's resolver reads as evidence.
+        if (_cancelIntent(intentId).door != Door.Agent) revert NotAgentIntent(intentId);
+        // Emitted BESIDE IntentCancelled, never instead of it: everything that
+        // already follows cancellations keeps working untouched, and only the
+        // indexer needs to know this second event exists.
+        emit IntentDenied(intentId, wallet, reason);
+    }
+
+    function _cancelIntent(bytes32 intentId) internal returns (PaymentIntent storage intent) {
+        intent = _requirePending(intentId);
         intent.status = IntentStatus.Cancelled;
         emit IntentCancelled(intentId);
     }

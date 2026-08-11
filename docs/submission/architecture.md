@@ -80,12 +80,12 @@ instance and can never be serverless or autoscaled.
 
 | Contract | Address |
 |---|---|
-| `GantryCore` | `0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61` |
-| `AgentPBMWalletFactory` | `0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a` |
-| `FixedRateSwap` | `0x2590C808C08819Fa47129e02bE3460d3165Ad14c` |
-| `MockXSGD` | `0xDD922ede4103467449B3626Ff97b674c84761ab7` |
+| `GantryCore` | `0xE6289ceA9232af61d7e4F30A67a848c0C322cc93` |
+| `AgentPBMWalletFactory` | `0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1` |
+| `FixedRateSwap` | `0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d` |
+| `MockXSGD` | `0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503` |
 
-All four are Basescan-verified and were deployed in a single run at block **45307715**, so they share one floor block. That is deliberate rather than tidy: the indexer sweeps the core's settlement events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, which needs one starting block, and it replaced a separate chunked scanner that re-walked the same range on every cold start.
+All four are Basescan-verified and were deployed in a single run at block **45328301**, so they share one floor block. That is deliberate rather than tidy: the indexer sweeps the core's settlement events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, which needs one starting block, and it replaced a separate chunked scanner that re-walked the same range on every cold start.
 
 The factory is permissionless and agent wallets are created by the payer, so their addresses are not constants — there is none worth listing here.
 

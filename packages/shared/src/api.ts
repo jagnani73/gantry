@@ -444,7 +444,8 @@ export interface SettlementListResponse {
 /**
  * An agent payment the PBM wallet REFUSED. The policy revert is caught in
  * simulation, before anything is broadcast (services/pbm.ts), so there is no
- * settlement, no transfer, and no on-chain event: this record is the only trace
+ * settlement and no transfer: the refusal is recorded on the CANCEL, whose
+ * IntentDenied event every host sweeps. This record is the only trace
  * the attempt ever happened.
  */
 export interface DenialEvent {

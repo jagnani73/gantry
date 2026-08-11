@@ -17,9 +17,9 @@ import {
   tryCancelIntent,
   tryCancelIntentWithTx,
 } from "./bridge";
-import { parseOrderPins } from "./facilitator-core";
 import { verifyPbm } from "./facilitator";
-import { GantryPbmPayloadSchema, policyDenialOf } from "./pbm-core";
+import { GantryPbmPayloadSchema, denialReasonBytes, policyDenialOf } from "./pbm-core";
+import { parseOrderPins } from "./facilitator-core";
 import { settlePbm } from "./settlement";
 
 /**
@@ -98,10 +98,22 @@ async function resolveFailedPbmSettle(
   const { reason, message } = reasonAndMessage(err);
 
   if (isDefiniteFailure(err)) {
-    // The cancel is the only tx a denial leaves behind, so take its hash on the
-    // way past — the payer's receipt has nothing else to link to.
-    const cancel = await tryCancelIntentWithTx(intentId);
-    recordPbmDenial(err, intentId, pbmWallet, requirements, cancel.txHash);
+    // The cancel is the only transaction a denial leaves behind — so when this
+    // failure IS a policy denial, the cancel is also where it gets recorded. The
+    // wallet's verbatim revert bytes ride along and the core emits IntentDenied,
+    // which the indexer sweeps into the denials table on EVERY host. Before this,
+    // the only record was a row written here, on whichever backend happened to
+    // refuse the payment; nothing on-chain, so no other host could ever learn of
+    // it and a rebuilt cache lost it. `denialReasonOf` returns null for anything
+    // that is not a decoded wallet policy error, so an ordinary failure still
+    // takes the plain cancel and writes nothing.
+    const denial = denialReasonOf(err, intentId, pbmWallet);
+    const cancel = await tryCancelIntentWithTx(intentId, denial ?? undefined);
+    // `already_settled` is not a refusal at all — the payment landed, and the old
+    // code's unconditional write put a "Declined on-chain" row over a settlement.
+    if (denial && !cancel.denialRecorded && cancel.outcome !== "already_settled") {
+      recordDenialLocally(err, intentId, pbmWallet, requirements, cancel.txHash);
+    }
     return failure(reason, message, pbmWallet);
   }
 
@@ -120,28 +132,48 @@ async function resolveFailedPbmSettle(
 }
 
 /**
- * A refused purchase is the one payment outcome that leaves NOTHING on-chain:
- * the wallet's policy revert is caught by simulate-before-send and never
- * broadcast, so no event exists and no log can be swept. This row is the only
- * trace it happened, and the payer's activity renders it as "Declined
- * on-chain" — which is why `policyDenialOf` returns null for anything that is
- * not a decoded wallet policy error. Writing a row for a transport blip or a
- * core-level revert would put a fabricated claim about the chain on a screen.
- * The caller's isDefiniteFailure gate is the other half of that: an outcome
- * that might still mine is not a denial either.
+ * A refused purchase reaches the chain ONLY through its cancellation.
  *
- * Order facts come from the server-pinned requirements.extra, never a client
- * echo (the bridge's trust rule) — and verification already proved they match
- * the intent, so no read is needed to restate them.
+ * The wallet's policy revert is caught by simulate-before-send and never
+ * broadcast — and a reverted transaction carries no logs even when one is, since
+ * a revert rolls its events back — so there is no failed transaction to sweep.
+ * The cancel DOES succeed, so `cancelIntentWithReason` carries these bytes into
+ * an `IntentDenied` event and every host's indexer writes the row from it. It
+ * used to be written straight into this process's SQLite, which meant the only
+ * evidence a payment had been refused lived on whichever backend refused it.
  *
- * The guard wraps the WHOLE body, decode and all. Its caller has already
- * computed the reason it is about to return, and the only catch above it is
- * settlePbmScheme's, which discards that and answers `settlement_failed` — so a
- * throw anywhere in here (a malformed revert the decoder chokes on, a pin that
- * is not a string) would collapse `CategoryNotAllowed` into noise and take the
- * sharpest beat in the demo with it. Nothing here may fail loudly.
+ * The gating is in `pbm-core` so it is unit-testable without an environment.
  */
-function recordPbmDenial(
+function denialReasonOf(
+  err: unknown,
+  intentId: Hex,
+  pbmWallet: Address,
+): { wallet: Address; reason: Hex } | null {
+  const reason = denialReasonBytes(err, (why) =>
+    console.error(`pbm: intent ${intentId} ${why} — cancelling without a reason`),
+  );
+  return reason ? { wallet: pbmWallet, reason } : null;
+}
+
+/**
+ * The refusal happened; its ON-CHAIN record did not. Write the row here so it is
+ * not lost entirely.
+ *
+ * The chain is the primary path — every host sweeps `IntentDenied` and agrees —
+ * but it depends on a transaction landing, and when that fails the alternative is
+ * a payer whose agent narrated `CategoryNotAllowed` while their activity feed
+ * shows nothing at all. This row is host-local, exactly as the whole table used
+ * to be, and `insertDenial` is INSERT OR REPLACE keyed by intent, so the indexer
+ * upgrades it in place if the cancel turns out to have mined after all.
+ *
+ * `cancel_tx` is null when no cancel landed, and the payer's receipt renders that
+ * honestly rather than inventing a hash — the branch that says "the cancel did
+ * not land, so the intent expires on its own" exists for precisely this row.
+ *
+ * Nothing here may throw: the caller has already computed the response it is
+ * about to return, and the only catch above answers `settlement_failed`.
+ */
+function recordDenialLocally(
   err: unknown,
   intentId: Hex,
   pbmWallet: Address,
@@ -151,13 +183,15 @@ function recordPbmDenial(
   try {
     const denial = policyDenialOf(err);
     if (!denial) return;
-
     const pins = parseOrderPins(requirements.extra);
     if (!pins) {
       console.error(`pbm: denial of intent ${intentId} not recorded — requirements pin no order facts`);
       return;
     }
-
+    console.error(
+      `pbm: denial of intent ${intentId} may not have reached the chain — recorded locally. ` +
+        "If the cancel mined after all, the indexer will replace this row.",
+    );
     insertDenial({
       intent_id: intentId,
       handle: pins.handle,
@@ -172,11 +206,7 @@ function recordPbmDenial(
       created_at: Math.floor(Date.now() / 1000),
     });
   } catch (recordErr) {
-    // The payment outcome is authoritative and already decided; this row is a
-    // convenience. Nothing on this path — decoding the revert, reading the pins
-    // or the cache write itself — may turn a handled x402 failure into a thrown
-    // one, nor change the response the agent gets.
-    console.error(`pbm: recording the denial of intent ${intentId} failed`, recordErr);
+    console.error(`pbm: recording the denial of intent ${intentId} locally failed`, recordErr);
   }
 }
 

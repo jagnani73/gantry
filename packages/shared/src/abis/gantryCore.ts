@@ -18,6 +18,19 @@ export const gantryCoreAbi = [
   },
   {
     "type": "function",
+    "name": "MAX_DENIAL_REASON_BYTES",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_FEE_BPS",
     "inputs": [],
     "outputs": [
@@ -57,6 +70,29 @@ export const gantryCoreAbi = [
         "name": "intentId",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cancelIntentWithReason",
+    "inputs": [
+      {
+        "name": "intentId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "wallet",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "reason",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [],
@@ -629,6 +665,31 @@ export const gantryCoreAbi = [
   },
   {
     "type": "event",
+    "name": "IntentDenied",
+    "inputs": [
+      {
+        "name": "intentId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "wallet",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "reason",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "IntentSettled",
     "inputs": [
       {
@@ -947,6 +1008,17 @@ export const gantryCoreAbi = [
         "name": "categoryId",
         "type": "uint16",
         "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidDenialReason",
+    "inputs": [
+      {
+        "name": "length",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },

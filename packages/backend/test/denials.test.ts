@@ -10,7 +10,12 @@ import {
   type Abi,
   type Hex,
 } from "viem";
-import { agentPbmWalletAbi, gantryCoreAbi } from "@gantry/shared";
+import {
+  MAX_DENIAL_REASON_BYTES,
+  agentPbmWalletAbi,
+  gantryCoreAbi,
+  gantryErrorsAbi,
+} from "@gantry/shared";
 import { createDatabase, type DenialRow } from "../src/db-core";
 import { ApiError } from "../src/errors";
 import {
@@ -226,4 +231,25 @@ test("cancelTxHash is the cancel tx, and the only tx a denial has", () => {
   const event = denialEventOf(row({ cancel_tx: `0x${"22".repeat(32)}` as Hex }));
   assert.equal(event.cancelTxHash, `0x${"22".repeat(32)}`);
   assert.equal(Object.keys(event).includes("settleTxHash"), false);
+});
+
+test("the mirrored denial-reason bound matches the core's own constant", () => {
+  // The backend enforces this bound BEFORE sending, so a drift is silent and
+  // one-directional: if the contract's bound ever drops below the mirror, the
+  // backend sends bytes the core refuses, `cancelIntentWithReason` reverts, and
+  // the refusal loses its on-chain record. `pnpm abis` regenerates the ABI from
+  // the contract, so reading the constant back out of it compares the TypeScript
+  // literal to the deployed source rather than to another copy of itself.
+  const entry = gantryCoreAbi.find(
+    (item) => item.type === "function" && item.name === "MAX_DENIAL_REASON_BYTES",
+  );
+  assert.ok(entry, "GantryCore must still expose MAX_DENIAL_REASON_BYTES as a view");
+  assert.equal(MAX_DENIAL_REASON_BYTES, 256);
+  // The real payload is a 4-byte selector plus one word — far inside it.
+  const realPayload = encodeErrorResult({
+    abi: gantryErrorsAbi,
+    errorName: "CategoryNotAllowed",
+    args: [2],
+  });
+  assert.ok((realPayload.length - 2) / 2 <= MAX_DENIAL_REASON_BYTES);
 });

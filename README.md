@@ -37,10 +37,10 @@ funding is capped rather than closed.
 
 🚧 **In development** for Stage 1 submission (14 Aug 2026).
 
-- [x] `GantryCore` — merchant registry (handle, payout, category **and** the shop's display name, location and blurb) + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61))
+- [x] `GantryCore` — merchant registry (handle, payout, category **and** the shop's display name, location and blurb) + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xE6289ceA9232af61d7e4F30A67a848c0C322cc93))
 - [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` via the bridge AND the non-custodial `gantry-pbm` scheme; unmodified `@x402/fetch` still pays end-to-end)
-- [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents, minted per payer by a [permissionless factory](https://sepolia.basescan.org/address/0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a)
+- [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents, minted per payer by a [permissionless factory](https://sepolia.basescan.org/address/0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1)
 - [x] Stablecoin-in → XSGD-out atomic FX behind the `IGantrySwap` seam — shipping on `FixedRateSwap`, which accepts any token with an owner-listed rate (USDC today). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
 - [x] Merchant onboarding — one form, live handle availability, on-chain registration, printable QR (`/onboard`)
 - [x] Merchant back-office — an overview with the live feed, transactions, payouts, QR/standee, profile and settings, with a live SSE feed carrying Human/Agent badges and one feed for both doors
@@ -51,12 +51,12 @@ funding is capped rather than closed.
 
 | Contract | Address |
 |---|---|
-| [`GantryCore`](https://sepolia.basescan.org/address/0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61) | `0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61` |
-| [`FixedRateSwap`](https://sepolia.basescan.org/address/0x2590C808C08819Fa47129e02bE3460d3165Ad14c) | `0x2590C808C08819Fa47129e02bE3460d3165Ad14c` |
-| [`MockXSGD`](https://sepolia.basescan.org/address/0xDD922ede4103467449B3626Ff97b674c84761ab7) | `0xDD922ede4103467449B3626Ff97b674c84761ab7` |
-| [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a) | `0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a` |
+| [`GantryCore`](https://sepolia.basescan.org/address/0xE6289ceA9232af61d7e4F30A67a848c0C322cc93) | `0xE6289ceA9232af61d7e4F30A67a848c0C322cc93` |
+| [`FixedRateSwap`](https://sepolia.basescan.org/address/0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d) | `0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d` |
+| [`MockXSGD`](https://sepolia.basescan.org/address/0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503) | `0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503` |
+| [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1) | `0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1` |
 
-All four were deployed in a single run on 11 Aug 2026 and share one floor block, **45307715**. That is the point of deploying them together: the indexer sweeps the core's settlement events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, and one constant is what makes that possible.
+All four were deployed in a single run on 11 Aug 2026 and share one floor block, **45328301**. That is the point of deploying them together: the indexer sweeps the core's settlement events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, and one constant is what makes that possible.
 
 The factory is permissionless: agent wallets are created *by the payer*, from the payer's own key, so their addresses are not constants — there is no wallet worth pinning here.
 
@@ -127,10 +127,9 @@ A persistent disk is *not* required for correctness — an indexer with no store
 cursor re-sweeps from the deploy block in 1,999-block chunks (growing ~22 a day),
 and that rebuilds the settlement feed and the agent-wallet index, including the
 merchant's display record, which lives in `GantryCore` rather than in a local
-table. Two tables are backend-written and do *not* come back: `intents`, and
-`denials` — a refused agent payment is caught in simulation and never
-broadcast, so no event exists to sweep and that row is its only trace. A wiped
-disk therefore loses the record of declined payments. One caveat worth knowing: those
+table, and refused agent payments too — a denial rides on the cancellation as an
+`IntentDenied` event. One table is backend-written and does *not* come back:
+`intents`. One caveat worth knowing: those
 chunks are sized for the public node's 2,000-block ceiling, and Alchemy's free
 tier caps `eth_getLogs` at **ten** blocks, so every chunk is refused by the paid
 endpoint and served by the rate-limited public one.

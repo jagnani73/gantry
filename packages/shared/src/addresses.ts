@@ -32,11 +32,11 @@ export interface GantryAddresses {
  * — `pnpm demo:reset` provisions the rehearsal one.
  */
 export const BASE_SEPOLIA_ADDRESSES: GantryAddresses = {
-  gantryCore: "0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61",
-  fixedRateSwap: "0x2590C808C08819Fa47129e02bE3460d3165Ad14c",
-  mockXsgd: "0xDD922ede4103467449B3626Ff97b674c84761ab7",
+  gantryCore: "0xE6289ceA9232af61d7e4F30A67a848c0C322cc93",
+  fixedRateSwap: "0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d",
+  mockXsgd: "0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503",
   realUsdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-  agentPbmFactory: "0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a",
+  agentPbmFactory: "0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1",
 };
 
 /**
@@ -56,7 +56,7 @@ export const BASE_SEPOLIA_ADDRESSES: GantryAddresses = {
  * MOVE IT WITH THE ADDRESSES. A redeploy left on an old floor sends every cold
  * backfill over blocks that cannot hold one of these contracts' logs.
  */
-export const BASE_SEPOLIA_DEPLOY_BLOCK = 45307715n;
+export const BASE_SEPOLIA_DEPLOY_BLOCK = 45328301n;
 
 /**
  * Factories this project has retired, oldest first.
@@ -72,6 +72,8 @@ export const BASE_SEPOLIA_DEPLOY_BLOCK = 45307715n;
  * core and reverts on every payment. This is a recovery list, not a registry.
  */
 export const BASE_SEPOLIA_RETIRED_FACTORIES: readonly Address[] = [
+  "0x0cbDFEfF733289f790a930112Cc653c602cf52d3", // retired 2026-08-11
+  "0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a", // retired 2026-08-11
   "0x172905F26F09b41636854338360315971240c1cf", // M3, 7 Aug 2026
   "0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05", // 10 Aug 2026, on-chain label + policyUpdatedAt
 ];
