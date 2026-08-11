@@ -62,7 +62,7 @@ Why the hop exists: spec-compliant x402 clients generate their own random EIP-30
 
 | Layer | Stack | Notes |
 |---|---|---|
-| Contracts | Solidity ^0.8.24, Foundry | `GantryCore`, `AgentPBMWallet` + factory, `FixedRateSwap`, mocks. 162 tests incl. fuzz + real-USDC fork tests |
+| Contracts | Solidity ^0.8.24, Foundry | `GantryCore`, `AgentPBMWallet` + factory, `FixedRateSwap`, mocks. 191 tests incl. fuzz + real-USDC fork tests (186 in CI; the 5 fork tests skip without a fork RPC URL) |
 | Backend | Node 22, Express 5, viem | merchant API, relayer (sole gas key), x402 facilitator (`/verify` + `/settle`), SSE indexer, paged settlement/denial/agent reads |
 | Web | Next.js 15, Tailwind v4, wagmi | two surfaces on one token-based design system: merchant back-office (`/merchant/[handle]/…`) and payer app (`/app/…`), plus the landing page, onboarding, payer page and printable QR |
 | Agent | Vercel AI SDK + Gemini `gemini-flash-latest` | terminal CLI; tools do all HTTP and signing, the model only decides and narrates |

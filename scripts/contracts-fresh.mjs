@@ -398,11 +398,13 @@ for (const [name, address] of Object.entries(deployed)) console.log(`${name.padE
 console.log(`${"deploy block".padEnd(22)} ${deployBlock}`);
 console.log("");
 console.log("NEXT");
-console.log("  1. packages/contracts/.env — repoint GANTRY_CORE_ADDRESS at the new core");
-console.log("  2. pnpm abis && pnpm lint && pnpm typecheck && pnpm test:contracts");
-console.log("  3. restart the backend, then pnpm demo:reset (registers the demo shops)");
-console.log("  4. update the address tables in CLAUDE.md, README.md and docs/submission/");
-console.log("  5. commit and push — BOTH hosts inline these at build time, so Vercel and");
+// No .env to repoint: addresses.ts was rewritten above, and it is the only
+// thing anything reads. The scripts that took a core address in their env
+// (SeedDemo, DeployPBM) were deleted on 11 Aug 2026.
+console.log("  1. pnpm abis && pnpm lint && pnpm typecheck && pnpm test:contracts");
+console.log("  2. restart the backend, then pnpm demo:reset (registers the demo shops)");
+console.log("  3. update the address tables in CLAUDE.md, README.md and docs/submission/");
+console.log("  4. commit and push — BOTH hosts inline these at build time, so Vercel and");
 console.log("     Render each serve the dead core until they rebuild");
 
 if (degraded) {
