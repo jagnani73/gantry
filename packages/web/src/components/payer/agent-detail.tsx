@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Address, Hex } from "viem";
 import {
+  BASE_SEPOLIA_ADDRESSES,
   agentStatus,
   basescanAddress,
   basescanTx,
   formatUnits6,
   shortAddress,
+  tokenAddress,
   type AgentStatus,
   type AgentSummary,
 } from "@gantry/shared";
@@ -31,12 +33,17 @@ import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
 
 /**
- * One agent's on-chain allowance, and the two writes that change it.
+ * One agent's on-chain allowance, and the writes that change it.
  *
- * Both writes are signed by the payer: `setPolicy` and `revoke` are `onlyOwner`
- * and the owner is this browser's key, so there is no server route that could
- * override them. That is the claim the screen makes and it has to be literally
- * true — which is why the note under Revoke says so.
+ * Every one of them is signed by the payer: `setPolicy`, `revoke` and `withdraw`
+ * are `onlyOwner` and the owner is this browser's key, so there is no server
+ * route that could override them. That is the claim the screen makes and it has
+ * to be literally true — which is why the note under Revoke says so.
+ *
+ * Revoke and withdraw are DIFFERENT actions and the copy must keep them apart:
+ * revoking stops the agent spending and moves nothing, so a wallet that is
+ * revoked still holds its balance until someone takes it out. Collapsing the two
+ * would leave a payer believing a revoke had returned their money.
  */
 
 export const STATUS_LABEL: Record<AgentStatus, string> = {
@@ -64,7 +71,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     popOverlay,
     pushOverlay,
   } = usePayer();
-  const { revoke } = useAgentWrites();
+  const { revoke, withdraw } = useAgentWrites();
   const toast = useToast();
 
   const listed = useMemo(
@@ -87,10 +94,15 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
    * prevent: a chip reading "Active" over a wallet that reverts every spend.
    */
   const [waitedOut, setWaitedOut] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  /** What the last revoke attempt resolved to. `danger` is a proven failure;
+  /** Which write is in flight, and what to call it while it is.
+   *
+   * Carries the action and not just the label because two buttons read this:
+   * a bare string put "Withdrawing on-chain…" on the Revoke button, which
+   * states that a revoke is under way when none is. */
+  const [busy, setBusy] = useState<{ what: "revoke" | "withdraw"; label: string } | null>(null);
+  /** What the last write attempt resolved to. `danger` is a proven failure;
    * `sunken` is everything we cannot call one — a broadcast we could not
-   * confirm, or a revoke that landed whose read-back did not. */
+   * confirm, or a write that landed whose read-back did not. */
   const [notice, setNotice] = useState<{
     tone: "danger" | "sunken";
     text: string;
@@ -99,7 +111,10 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
      * to settle — re-reading a proven failure answers nothing. */
     recheck?: boolean;
   } | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  /** Which destructive action is one tap from firing. Two of them share this
+   * screen and they must never share a confirmation: arming Revoke and then
+   * tapping Withdraw would otherwise fire whichever the flag was last set for. */
+  const [confirming, setConfirming] = useState<"revoke" | "withdraw" | null>(null);
 
   /**
    * Read the wallet, and keep reading while it still shows the policy the payer
@@ -252,6 +267,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   }
 
   const rate = BigInt(agent.rate);
+  const balance = BigInt(agent.balance);
   const status = agentStatus(agent, chainNow());
 
   /**
@@ -269,12 +285,12 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
    */
   const onRevoke = async () => {
     setNotice(null);
-    setBusy("Revoking on-chain…");
+    setBusy({ what: "revoke", label: "Revoking on-chain…" });
     try {
       await revoke(wallet);
     } catch (err) {
       if (err instanceof UnknownOutcomeError) {
-        setConfirming(false);
+        setConfirming(null);
         setNotice({
           tone: "sunken",
           text: "Your revoke was submitted and we couldn't confirm it in time. It may still be landing. Don't send it again: only the chain can answer this, and the status above is what it last said.",
@@ -288,13 +304,18 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         setReloadNonce((n) => n + 1);
         refresh();
       } else {
+        // Disarm. A proven failure used to leave `confirming` set, so the next
+        // SINGLE tap re-fired the action with no second confirmation — and for
+        // withdraw that is the entire balance. The unresolved and success paths
+        // both clear it; this one was the odd branch out, not a decision.
+        setConfirming(null);
         setNotice({ tone: "danger", text: err instanceof Error ? err.message : String(err) });
       }
       setBusy(null);
       return;
     }
 
-    setConfirming(false);
+    setConfirming(null);
     // Cleared before the re-read so the poll's own notice is the one that stands.
     // The read-back is a REFRESH, not part of the outcome: the revoke is mined.
     setNotice(null);
@@ -304,11 +325,73 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     // Recorded before the re-read is triggered so the poll below can see it.
     // The wallet keeps its label through a revoke, so the expectation carries the
     // one already on-chain rather than claiming the name went too.
-    expectAgentPolicy(wallet, revokedFingerprint(agent.label));
+    expectAgentPolicy(wallet, revokedFingerprint(agent.label, agent.agentSigner));
     refresh();
     // Through the same effect as every other read, rather than a bare `api.agent`
     // here: that one-shot read was itself the too-early one, and it landed
     // beside a status chip that would then keep saying "Active".
+    setReloadNonce((n) => n + 1);
+    setBusy(null);
+  };
+
+  /**
+   * Takes the whole balance back to the owner.
+   *
+   * The full amount rather than a typed one, and no destination field: the only
+   * address allowed to call this is the owner, so the only destination that
+   * needs no verification is the owner's own. A free-text `to` on a screen whose
+   * whole point is that funds cannot go astray would be the one place in the app
+   * a typo loses money outright.
+   *
+   * Deliberately does NOT set a policy expectation. `policyFingerprint` covers
+   * what an owner write can change and NEVER the balance — by design, since the
+   * balance moves on its own with every payment, and folding it in would make
+   * every other expectation unsatisfiable. So a fingerprint recorded here would
+   * match immediately and prove nothing. The balance below can therefore read a
+   * moment stale, which the toast says rather than hides.
+   */
+  const onWithdraw = async () => {
+    if (balance === 0n) return;
+    setNotice(null);
+    setBusy({ what: "withdraw", label: "Withdrawing on-chain…" });
+    try {
+      await withdraw({
+        wallet,
+        token: tokenAddress(BASE_SEPOLIA_ADDRESSES, agent.token),
+        to: agent.owner,
+        amount: balance,
+      });
+    } catch (err) {
+      if (err instanceof UnknownOutcomeError) {
+        setConfirming(null);
+        setNotice({
+          tone: "sunken",
+          text: "Your withdrawal was submitted and we couldn't confirm it in time. It may still be landing. Don't send it again before looking: if it did land, a second one asks for a balance the wallet no longer has and simply reverts.",
+          txHash: err.txHash,
+          recheck: true,
+        });
+        setReloadNonce((n) => n + 1);
+        refresh();
+      } else {
+        // Disarm. A proven failure used to leave `confirming` set, so the next
+        // SINGLE tap re-fired the action with no second confirmation — and for
+        // withdraw that is the entire balance. The unresolved and success paths
+        // both clear it; this one was the odd branch out, not a decision.
+        setConfirming(null);
+        setNotice({ tone: "danger", text: err instanceof Error ? err.message : String(err) });
+      }
+      setBusy(null);
+      return;
+    }
+
+    setConfirming(null);
+    setNotice(null);
+    toast.success(
+      `Withdrawn to ${shortAddress(agent.owner)}. The balance here may take a moment to catch up.`,
+    );
+    // The agent's rules are untouched — this moved money, not permissions — so
+    // there is nothing to re-arm and nothing to warn about. Just re-read.
+    refresh();
     setReloadNonce((n) => n + 1);
     setBusy(null);
   };
@@ -394,6 +477,50 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           rate of 1 {agent.token} = {formatUnits6(rate, 4)} XSGD.
         </p>
 
+        <Card radius="card-m" pad="md">
+          <div className="text-card-title-xs">Funds in this wallet</div>
+          <div className="mt-3 flex items-end justify-between gap-4">
+            <Mono size="md" className="block">
+              {formatUnits6(balance, 6)} {agent.token}
+            </Mono>
+            <span className="text-meta text-faint">
+              ≈ S${formatUnits6(sgdUnits(balance, rate))}
+            </span>
+          </div>
+          {/* The distinction the Revoke button below cannot make on its own.
+              Revoking zeroes the policy; it moves nothing, so a revoked wallet
+              sits on its balance indefinitely and a payer who assumed otherwise
+              would never come back for it. */}
+          <p className="mt-3 text-meta text-muted">
+            This is your money, parked where the agent can reach it under the rules above. Revoking
+            stops it spending — it does not send anything back. Withdrawing returns the balance to{" "}
+            {shortAddress(agent.owner)}, the address that owns this wallet.
+          </p>
+          {balance > 0n ? (
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => (confirming === "withdraw" ? void onWithdraw() : setConfirming("withdraw"))}
+              className="focus-ring mt-4 h-12 w-full rounded-control-m bg-fill-hover text-btn-sm font-medium text-ink transition-colors hover:bg-fill-hover-strong disabled:text-faintest"
+            >
+              {busy?.what === "withdraw"
+                ? busy.label
+                : confirming === "withdraw"
+                  ? `Tap again to withdraw ${formatUnits6(balance, 6)} ${agent.token}`
+                  : "Withdraw to my wallet"}
+            </button>
+          ) : (
+            // There is no in-app way to fund an agent wallet — the earlier
+            // version of this line sent the payer to "the agent's card on your
+            // wallet screen", which does not exist. Funding is a transfer to
+            // the wallet address, done outside this app.
+            <p className="mt-4 text-meta text-faint">
+              Nothing to withdraw. This wallet holds no {agent.token}; funding it means sending
+              some to {shortAddress(agent.wallet)}.
+            </p>
+          )}
+        </Card>
+
         <Card radius="card-m" pad="none" className="px-5 pt-4.5 pb-2.5">
           <div className="text-card-title-xs">Recent spend</div>
           {history.length === 0 ? (
@@ -471,10 +598,16 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           <button
             type="button"
             disabled={busy !== null}
-            onClick={() => (confirming ? void onRevoke() : setConfirming(true))}
+            onClick={() => (confirming === "revoke" ? void onRevoke() : setConfirming("revoke"))}
             className="focus-ring h-12.5 flex-1 rounded-control-m bg-danger-tint text-btn-sm font-medium text-danger transition-colors hover:bg-danger-tint-hover disabled:text-faintest"
           >
-            {busy ?? (confirming ? "Tap again to revoke" : "Revoke")}
+            {/* Only this button's own busy label. `busy ?? …` put the withdraw
+                text on the Revoke button, which reads as a revoke in flight. */}
+            {busy?.what === "revoke"
+              ? busy.label
+              : confirming === "revoke"
+                ? "Tap again to revoke"
+                : "Revoke"}
           </button>
         </div>
         <p className="px-1 text-center text-fine text-faint">

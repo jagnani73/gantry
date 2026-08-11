@@ -1,3 +1,4 @@
+import type { Address } from "viem";
 import {
   CATEGORY_LABELS,
   categoryName,
@@ -67,8 +68,25 @@ export function sgdFromCapUnits(units: string | bigint, rate: bigint): string {
  * changes ONLY the name would otherwise match the fingerprint immediately and
  * paint the old name as though it were current.
  *
+ * **The agent signer is in it for the same reason and a sharper one.** Rotating
+ * the session key is its own transaction too, so a signer-only save would match
+ * instantly — and the field it leaves stale is the one a payer rotating a leaked
+ * key is on that screen specifically to check. A Signer row still showing the
+ * key you just replaced is the worst single line this screen can render.
+ *
+ * Compared LOWERCASE as defence, not because the two sides are known to differ:
+ * both are EIP-55 today (the write side checksums through `getAddress`, and
+ * `AgentSummary.agentSigner` comes off a live `agentSigner()` multicall, which
+ * viem returns checksummed — it is NOT read from the lowercased swept table).
+ * An earlier version of this note claimed the swept table was the source and
+ * that a literal compare would never match; both halves were false. What the
+ * normalisation genuinely buys is that a fingerprint cannot start disagreeing
+ * with itself if either side's casing ever changes, which is cheap insurance on
+ * a comparison whose failure is invisible.
+ *
  * `spentToday` and the balance are deliberately out: they move on their own, so
- * folding them in would make the expectation unsatisfiable.
+ * folding them in would make the expectation unsatisfiable. `withdraw` therefore
+ * records no expectation at all rather than a satisfiable-but-meaningless one.
  */
 export function policyFingerprint(state: {
   dailyCap: bigint | string;
@@ -76,23 +94,30 @@ export function policyFingerprint(state: {
   expiry: number;
   categoryBitmap: bigint | string;
   label: string;
+  /** `Address`, not `string`: the form holds the signer as raw input state, and
+   * the difference between the correct `getAddress(signer.trim())` and the raw
+   * field was invisible to the compiler. Passing the raw one would produce a
+   * fingerprint that can NEVER match, whose symptom is not an error but the
+   * detail screen waiting out all six polls and then blaming the RPC. */
+  agentSigner: Address;
 }): string {
   return [state.dailyCap, state.perTxCap, state.expiry, state.categoryBitmap]
     .map(String)
-    .concat(state.label)
+    .concat(state.label, state.agentSigner.toLowerCase())
     .join("|");
 }
 
 /** What `revoke()` leaves behind: the policy zeroed, expiry included. The label
- * survives a revoke untouched, so the caller supplies the one already on-chain
- * rather than assuming the wallet also lost its name. */
-export function revokedFingerprint(label: string): string {
+ * and the signer both survive a revoke untouched, so the caller supplies the
+ * ones already on-chain rather than assuming the wallet lost them too. */
+export function revokedFingerprint(label: string, agentSigner: Address): string {
   return policyFingerprint({
     dailyCap: 0n,
     perTxCap: 0n,
     expiry: 0,
     categoryBitmap: 0n,
     label,
+    agentSigner,
   });
 }
 

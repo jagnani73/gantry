@@ -21,9 +21,14 @@ import {
   agentPbmWalletFactoryAbi,
 } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
+import { confirmTx, UnknownOutcomeError, type WriteName } from "@/lib/confirm-tx";
 import { getDemoAccount } from "@/lib/demo-account";
 import { demoKeyMalformed } from "@/lib/env";
 import { usePayerIdentity } from "./identity";
+
+// Re-exported because the two screens that branch on it import it from here,
+// and the class is the same one the merchant's payout rotation throws.
+export { UnknownOutcomeError };
 
 /**
  * Agent configuration is signed by the PAYER, not by a server.
@@ -59,16 +64,6 @@ export interface WalletPolicy {
 const GAS_FLOOR = 300_000_000_000_000n; // 0.0003 ETH
 
 /**
- * How long to wait for an owner transaction's receipt.
- *
- * Explicit, because viem's default is three minutes and the payer is holding a
- * phone. Base Sepolia mines in about two seconds, so anything still unconfirmed
- * here is not slow — it is unresolved, which is a different answer and gets a
- * different type below.
- */
-const RECEIPT_TIMEOUT_MS = 45_000;
-
-/**
  * `usePublicClient()` returns nothing only when Base Sepolia is missing from the
  * wagmi config — a build-time fact. The message this replaces said "reload the
  * page", which names the one action that can never change it.
@@ -95,65 +90,6 @@ async function gasBalance(
   } catch (err) {
     console.warn("gantry: could not read the gas balance; assuming a top-up is needed", err);
     return 0n;
-  }
-}
-
-/**
- * The transaction is BROADCAST and its outcome is not known.
- *
- * Distinct from a failure, and never to be rendered as one. Two ways to get
- * here, and neither is a verdict: the wait ran out while the transaction sits in
- * the mempool, or a transaction with the same nonce mined in its place. This is
- * the same split the pay flow draws between `failed` and `unknown`, applied to
- * the writes the payer signs themselves. Revoke is the one that makes it
- * load-bearing — the screen promises that every payment after it reverts, so a
- * red "it failed" over a revoke that lands is that promise inverted in the other
- * direction.
- *
- * Callers must offer no blind retry against it and must re-read the wallet: the
- * chain is the only thing that can settle the question. The `cause` string says
- * which of the two happened; the screens deliberately give the same advice for
- * both, because looking before resending is the safe move either way.
- */
-export class UnknownOutcomeError extends Error {
-  readonly txHash: Hex;
-  /** "revoke", "setPolicy", "setLabel", "createWallet" — what was being sent.
-   * Screens branch on this, so a new write MUST be added to their branches too:
-   * `unresolvedText` fell through to the policy sentence when `setLabel` arrived,
-   * and told the payer the wrong transaction was unresolved. */
-  readonly what: string;
-
-  constructor(what: string, txHash: Hex, cause: string) {
-    super(`${what} was submitted and its outcome is unconfirmed: ${cause}`);
-    this.name = "UnknownOutcomeError";
-    this.what = what;
-    this.txHash = txHash;
-  }
-}
-
-/**
- * viem RESOLVES a receipt whose `status` is "reverted" — it does not throw.
- *
- * Every write here simulates first, so a revert is rare; but a policy that
- * changed between the simulation and the block, or a gas-limit failure, mines
- * as a reverted transaction and this is the only thing standing between that
- * and the screen reporting success. Revoke is the one that matters: its own
- * copy promises "Every payment after it reverts, and no server can override
- * it", and a revoke reported as done when it was not is that promise inverted.
- * `relayer.ts` does exactly this check for the same reason.
- *
- * The wait itself is bounded and its failure is NOT a revert — see
- * `UnknownOutcomeError`.
- */
-function assertMined(what: string, receipt: { status: "success" | "reverted" }, txHash: Hex): void {
-  if (receipt.status !== "success") {
-    // No decoded reason is available here and none can be: a receipt carries no
-    // revert data, and the simulation that WOULD have decoded it passed. Saying
-    // that is more useful than a bare hash — it tells the payer the wallet's
-    // state moved between the two, which is the only way to get here.
-    throw new Error(
-      `${what} simulated cleanly but reverted when it mined, so the wallet's state changed in between: ${txHash}`,
-    );
   }
 }
 
@@ -236,7 +172,32 @@ export interface AgentWrites {
    * on-chain and `setPolicy` deliberately does not carry it (that call resets
    * the daily counter, and a rename must never cost the agent its budget). */
   setLabel(wallet: Address, label: string): Promise<Hex>;
+  /** Rotates the agent's session key.
+   *
+   * Its own transaction for the same reason `setLabel` is: `setPolicy` resets
+   * the daily counter, and replacing a leaked key must not hand the new one a
+   * fresh allowance on the way in. The contract agrees — it deliberately does
+   * not stamp `policyUpdatedAt` here, because that field dates the RULES and
+   * every screen renders it as "rules updated". */
+  setAgentSigner(wallet: Address, signer: Address): Promise<Hex>;
   revoke(wallet: Address): Promise<Hex>;
+  /** Moves tokens out of the wallet to `to`.
+   *
+   * The owner's own money, not a rescue path: a payer funds an agent wallet up
+   * front and revoking only stops the agent spending — it does not hand the
+   * balance back. Without this the app is a one-way door, which is the one
+   * property a spending-limit product must not have.
+   *
+   * An options object, not four positionals, because three of them were
+   * consecutive `Address`es: `withdraw(wallet, owner, token, amount)` compiles
+   * and sends the balance TO THE TOKEN CONTRACT. Named fields make that
+   * transposition unrepresentable, and this call has one caller. */
+  withdraw(args: {
+    wallet: Address;
+    token: Address;
+    to: Address;
+    amount: bigint;
+  }): Promise<Hex>;
   /** Chain seconds. `setPolicy` expiries and status badges both need it. */
   chainNow(): Promise<number>;
 }
@@ -340,60 +301,17 @@ export function useAgentWrites(): AgentWrites {
     return Number(block.timestamp);
   }, [publicClient]);
 
-  /** Waits for THIS transaction's receipt, bounded.
+  /** Waits for THIS transaction's receipt, bounded — see `lib/confirm-tx`.
    *
-   * Two things it refuses to call a failure: a wait that ran out, and a receipt
-   * that turns out to belong to a different transaction. Both are unresolved
-   * outcomes, and only the chain can close them. */
+   * `demo` is passed through so a nonce collision explains itself: on a deployed
+   * build every visitor signs as the same account, which is the usual reason a
+   * payer's transaction is replaced by one they did not send. */
   const confirm = useCallback(
-    async (what: string, txHash: Hex): Promise<TransactionReceipt> => {
+    async (what: WriteName, txHash: Hex): Promise<TransactionReceipt> => {
       if (!publicClient) throw new Error(RPC_MISSING);
-      let receipt: TransactionReceipt;
-      // Held in an object rather than a `let`: TypeScript's control-flow
-      // analysis does not follow assignments made inside a callback, so a plain
-      // variable reads back as `null` after the await.
-      const replaced: { by: { reason: string; hash: Hex } | null } = { by: null };
-      try {
-        receipt = await publicClient.waitForTransactionReceipt({
-          hash: txHash,
-          timeout: RECEIPT_TIMEOUT_MS,
-          // Without this handler viem SILENTLY substitutes a different
-          // transaction's receipt. When the hash we sent yields nothing it scans
-          // the block for one with the same `from` and `nonce` and resolves with
-          // that receipt instead — so `assertMined` would grade a stranger's
-          // transaction and we would return a hash that never mined, as success.
-          // `createWallet` is worse still: it parses the substitute's logs, so it
-          // could hand back someone else's newly deployed wallet.
-          //
-          // Not exotic here. The demo key is ONE account shared by every visitor
-          // of a deployed build, so two people configuring an agent at the same
-          // time collide on a nonce by construction.
-          onReplaced: (replacement) => {
-            replaced.by = { reason: replacement.reason, hash: replacement.transaction.hash };
-          },
-        });
-      } catch (err) {
-        throw new UnknownOutcomeError(
-          what,
-          txHash,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-      if (replaced.by) {
-        // Unknown, not failed: ours never mined, and the receipt in hand belongs
-        // to a different transaction, so nothing here can say what became of it.
-        // The chain is the only thing that can settle it — which is exactly the
-        // contract `UnknownOutcomeError` already carries to the screens.
-        throw new UnknownOutcomeError(
-          what,
-          txHash,
-          `another transaction with the same nonce mined instead (${replaced.by.reason}: ${replaced.by.hash}). The demo account is shared, so another visitor may have signed over it`,
-        );
-      }
-      assertMined(what, receipt, txHash);
-      return receipt;
+      return confirmTx(publicClient, what, txHash, demo);
     },
-    [publicClient],
+    [publicClient, demo],
   );
 
   const createWallet = useCallback(
@@ -522,6 +440,39 @@ export function useAgentWrites(): AgentWrites {
     [confirm, publicClient, signer],
   );
 
+  const setAgentSigner = useCallback(
+    // `newSigner`, never `signer`: the hook's own `signer()` returns the wallet
+    // client, and a parameter of that name shadows it — the call below would
+    // then try to invoke an address.
+    async (wallet: Address, newSigner: Address) => {
+      const { client, gasRefusal } = await signer();
+      if (!publicClient) throw new Error(RPC_MISSING);
+      try {
+        const args = [newSigner] as const;
+        await publicClient.simulateContract({
+          address: wallet,
+          abi: agentPbmWalletAbi,
+          functionName: "setAgentSigner",
+          args,
+          account: client.account,
+        });
+        const txHash = await client.writeContract({
+          address: wallet,
+          abi: agentPbmWalletAbi,
+          functionName: "setAgentSigner",
+          args,
+          account: client.account,
+          chain: baseSepolia,
+        });
+        await confirm("setAgentSigner", txHash);
+        return txHash;
+      } catch (err) {
+        rethrowWithWriteContext(err, gasRefusal, client.account.type === "local");
+      }
+    },
+    [confirm, publicClient, signer],
+  );
+
   const revoke = useCallback(
     async (wallet: Address) => {
       const { client, gasRefusal } = await signer();
@@ -549,5 +500,51 @@ export function useAgentWrites(): AgentWrites {
     [confirm, publicClient, signer],
   );
 
-  return { createWallet, setPolicy, setLabel, revoke, chainNow };
+  const withdraw = useCallback(
+    async ({
+      wallet,
+      token,
+      to,
+      amount,
+    }: {
+      wallet: Address;
+      token: Address;
+      to: Address;
+      amount: bigint;
+    }) => {
+      const { client, gasRefusal } = await signer();
+      if (!publicClient) throw new Error(RPC_MISSING);
+      try {
+        const args = [token, to, amount] as const;
+        // The simulation is load-bearing here in a way it is not for a policy
+        // write: the amount comes from a balance read, and a spend that lands
+        // between that read and this call makes it larger than the wallet
+        // holds. That reverts inside SafeERC20 rather than at a Gantry error,
+        // so catching it in simulation is the difference between a legible
+        // message and a burnt transaction.
+        await publicClient.simulateContract({
+          address: wallet,
+          abi: agentPbmWalletAbi,
+          functionName: "withdraw",
+          args,
+          account: client.account,
+        });
+        const txHash = await client.writeContract({
+          address: wallet,
+          abi: agentPbmWalletAbi,
+          functionName: "withdraw",
+          args,
+          account: client.account,
+          chain: baseSepolia,
+        });
+        await confirm("withdraw", txHash);
+        return txHash;
+      } catch (err) {
+        rethrowWithWriteContext(err, gasRefusal, client.account.type === "local");
+      }
+    },
+    [confirm, publicClient, signer],
+  );
+
+  return { createWallet, setPolicy, setLabel, setAgentSigner, revoke, withdraw, chainNow };
 }

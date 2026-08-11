@@ -141,7 +141,7 @@ function AgentFormFields({
     popOverlay,
     replaceOverlay,
   } = usePayer();
-  const { createWallet, setPolicy, setLabel, chainNow } = useAgentWrites();
+  const { createWallet, setPolicy, setLabel, setAgentSigner, chainNow } = useAgentWrites();
   const toast = useToast();
 
   const rate = existing ? BigInt(existing.rate) : chainRate;
@@ -210,7 +210,14 @@ function AgentFormFields({
     categoryBitmapOf(categories) === BigInt(existing.categoryBitmap);
 
   const labelUnchanged = existing !== undefined && name.trim() === existing.label;
-  const writesNothing = policyUnchanged && labelUnchanged;
+  /** Compared checksum-insensitively, because the field is prefilled from a
+   * chain read in EIP-55 and a payer who retypes the same address in lowercase
+   * has not asked for a rotation — sending one would cost gas to write the value
+   * already there. `isAddress` has already passed by the time this matters; an
+   * unparseable string fails `validate` and never reaches a write. */
+  const signerUnchanged =
+    existing !== undefined && signer.trim().toLowerCase() === existing.agentSigner.toLowerCase();
+  const writesNothing = policyUnchanged && labelUnchanged && signerUnchanged;
 
   // `setPolicy` zeroes `_spentToday`. That is deliberate — it is what makes the
   // rehearsal re-arm work — but it is also an allowance the agent gets back, so
@@ -239,7 +246,7 @@ function AgentFormFields({
      * time. Hoisted out of the `try` for the same reason `target` is: the catch
      * needs it.
      */
-    const landed: string[] = [];
+    const landed: FormWrite[] = [];
     try {
       const label = name.trim();
 
@@ -272,40 +279,68 @@ function AgentFormFields({
       };
 
       if (wallet) {
-        // Up to two transactions, and only the ones that change something. The
-        // policy goes first: it is the write with consequences, so if the payer
-        // rejects the second prompt or it fails, what landed is the rules —
-        // never a rename over rules that stayed as they were.
+        // Up to three transactions, and only the ones that change something.
+        // The order is by consequence, so that whatever a rejected later prompt
+        // leaves behind is the half that matters: rules, then who may spend
+        // under them, then the display name. Never a rename over rules that
+        // stayed as they were.
+        //
+        // EVERY branch records the expectation as soon as its write mines, and
+        // there is deliberately no single call after all three. A terminal call
+        // is unreachable the moment any earlier write fails, which is exactly
+        // when the expectation matters most — and the version of this code that
+        // had one left `setAgentSigner` recording nothing at all, so a rotation
+        // followed by a failed rename left the store naming the OLD signer. The
+        // detail screen can never match that, so it hid itself for its whole
+        // poll and then blamed the RPC for a bug in this function.
+        //
+        // The three locals track what the chain holds as we go, so each call
+        // states the whole record rather than a fragment of it.
+        let expectedPolicy: {
+          dailyCap: bigint | string;
+          perTxCap: bigint | string;
+          expiry: number;
+          categoryBitmap: bigint | string;
+        } = existing!;
+        let expectedSigner = existing!.agentSigner;
+        let expectedLabel = existing!.label;
+        const record = () =>
+          expectAgentPolicy(
+            wallet,
+            policyFingerprint({
+              ...expectedPolicy,
+              label: expectedLabel,
+              agentSigner: expectedSigner,
+            }),
+          );
+
         if (!policyUnchanged) {
           setBusy("Updating the policy on-chain…");
           await setPolicy(wallet, policy);
-          // Recorded the instant it mines, NOT after both writes. A rename that
+          // Recorded the instant it mines, NOT after every write. A rename that
           // then fails used to leave this unset, so the very next read was the
           // ungated too-early one this whole mechanism exists to catch — and the
           // payer was returned to the caps they had just replaced.
           landed.push("policy");
-          expectAgentPolicy(wallet, policyFingerprint({ ...policy, label: existing!.label }));
+          expectedPolicy = policy;
+          record();
+        }
+        if (!signerUnchanged) {
+          setBusy("Rotating the session key on-chain…");
+          const rotated = getAddress(signer.trim());
+          await setAgentSigner(wallet, rotated);
+          landed.push("signer");
+          expectedSigner = rotated;
+          record();
         }
         if (!labelUnchanged) {
           setBusy("Saving the name on-chain…");
           await setLabel(wallet, label);
           landed.push("name");
+          expectedLabel = label;
+          record();
         }
-        toast.success(
-          landed.length === 2
-            ? "Rules and name updated on-chain."
-            : policyUnchanged
-              ? "Name saved on-chain."
-              : "Rules updated on-chain.",
-        );
-        // Both writes are in, so the expectation covers both. The detail screen
-        // this returns to reads through the backend, whose RPC is not the
-        // provider that confirmed the receipts, so its first read can still
-        // answer with the state that was just replaced.
-        expectAgentPolicy(
-          wallet,
-          policyFingerprint({ ...(policyUnchanged ? existing! : policy), label }),
-        );
+        toast.success(savedText(landed));
         refresh();
         popOverlay();
         return;
@@ -329,7 +364,12 @@ function AgentFormFields({
       setBusy("Arming its spend policy…");
       await setPolicy(target, policy);
       toast.success("Agent created and its rules armed.");
-      expectAgentPolicy(target, policyFingerprint({ ...policy, label }));
+      // The signer went into the constructor, so it is the typed one by
+      // definition — there is no `existing` on this path to read it from.
+      expectAgentPolicy(
+        target,
+        policyFingerprint({ ...policy, label, agentSigner: getAddress(signer.trim()) }),
+      );
       refresh();
       replaceOverlay({ kind: "agent", wallet: target });
     } catch (err) {
@@ -397,15 +437,24 @@ function AgentFormFields({
             />
           </Field>
 
-          {/* Locked once a wallet exists — including one this form just deployed.
-              The signer is baked in at construction, so editing it after the
-              deploy would describe a wallet that is not the one being armed. */}
+          {/* Editable on an existing wallet, because `setAgentSigner` is
+              `onlyOwner` and the payer is the owner — this field used to say
+              "Fixed for the life of this wallet", which the contract flatly
+              contradicts and which left a leaked session key with no answer
+              but abandoning the wallet and its balance.
+
+              Still locked on a wallet this form JUST deployed: the signer went
+              into the constructor moments ago, the policy behind it is not
+              armed yet, and rotating between those two writes describes a
+              wallet that is not the one being armed. */}
           <Field
             label="Agent signer"
             hint={
-              wallet || createdWallet
-                ? "Fixed for the life of this wallet."
-                : "The public address of the software that will act as this agent."
+              createdWallet
+                ? "Set when this wallet was created a moment ago."
+                : wallet
+                  ? "Rotating this is its own transaction. It replaces who may spend and leaves the caps, categories and today's spend exactly as they are."
+                  : "The public address of the software that will act as this agent."
             }
           >
             <Input
@@ -414,7 +463,7 @@ function AgentFormFields({
               placeholder="0x…"
               spellCheck={false}
               autoComplete="off"
-              disabled={Boolean(wallet) || createdWallet !== null}
+              disabled={createdWallet !== null}
               className="font-mono text-mono"
             />
           </Field>
@@ -573,33 +622,79 @@ function AgentFormFields({
 function unresolvedText(
   err: UnknownOutcomeError,
   created: Address | null,
-  landed: readonly string[],
+  landed: readonly FormWrite[],
 ): string {
-  if (err.what === "createWallet") {
-    return "The wallet deploy was submitted and we couldn't confirm it in time. It may still land. Check your agents list before trying again. Creating another would deploy a second wallet for the same signer.";
+  // A switch over the closed `WriteName` union, so an eighth write fails to
+  // compile here instead of silently taking the policy sentence — which is the
+  // bug this function shipped once already.
+  switch (err.what) {
+    case "createWallet":
+      return "The wallet deploy was submitted and we couldn't confirm it in time. It may still land. Check your agents list before trying again. Creating another would deploy a second wallet for the same signer.";
+    // Its own branch, because falling through to the policy sentence said the
+    // wrong thing twice at once: it reported a write that had ALREADY been
+    // confirmed as unresolved, and never mentioned the rename that actually
+    // was — then advised re-sending, which would reset the daily counter for a
+    // stalled rename.
+    case "setLabel":
+      return `${landedText(landed)} The rename was submitted and we couldn't confirm it in time. It only changes the display name — the spend rules are unaffected either way — so open the agent and see which name the chain holds before sending it again.`;
+    // The one unresolved write where doing nothing is not the safe default. If
+    // the rotation was prompted by a leaked key, the old key keeps spending for
+    // as long as this stays unresolved — so the advice is to look now.
+    case "setAgentSigner":
+      return `${landedText(landed)} The session-key rotation was submitted and we couldn't confirm it in time. Open the agent and check which signer the chain holds: if the old key is still there and you were replacing one you don't trust, revoke the policy — that stops every key at once — and rotate afterwards.`;
+    case "setPolicy":
+      return created
+        ? `The wallet is deployed at ${shortAddress(created)} and the policy write was submitted without being confirmed in time. An unarmed wallet can't spend anything, because every authorization reverts, so open it and see what the chain says before sending another.`
+        : `${landedText(landed)} The policy write was submitted and we couldn't confirm it in time. Open the agent to see what the chain holds before sending it again.`;
+    // This form sends none of these, so reaching them means a caller changed.
+    // A true, unspecific sentence rather than a confident wrong one — and the
+    // union is what guarantees this list stays complete.
+    case "revoke":
+    case "withdraw":
+    case "setMerchantPayout":
+      return `${landedText(landed)} That transaction was submitted and we couldn't confirm it in time. Open the agent and see what the chain holds before sending it again.`;
   }
-  // Its own branch, because falling through to the policy sentence below said
-  // the wrong thing twice at once: it reported a write that had ALREADY been
-  // confirmed as unresolved, and never mentioned the rename that actually was —
-  // then advised re-sending, which would reset the daily counter for a stalled
-  // rename. In edit mode `created` is null, so this is the branch it hit.
-  if (err.what === "setLabel") {
-    return `${landedText(landed)} The rename was submitted and we couldn't confirm it in time. It only changes the display name — the spend rules are unaffected either way — so open the agent and see which name the chain holds before sending it again.`;
-  }
-  if (created) {
-    return `The wallet is deployed at ${shortAddress(created)} and the policy write was submitted without being confirmed in time. An unarmed wallet can't spend anything, because every authorization reverts, so open it and see what the chain says before sending another.`;
-  }
-  return "The policy write was submitted and we couldn't confirm it in time. Open the agent to see what the chain holds before sending it again.";
+}
+
+/** The three writes this form can send. A union, not `string`, so a typo in a
+ * `landed.push` is a compile error rather than a sentence that renders the raw
+ * key ("Your signer is on-chain"). */
+type FormWrite = "policy" | "signer" | "name";
+
+/** English for the writes a save sent, in the order it sent them. Three optional
+ * transactions make seven combinations, which is well past what a chain of
+ * ternaries can state without getting one of them wrong.
+ *
+ * `plural` is carried per noun because "rules" already IS plural, and agreeing
+ * the verb with the LIST LENGTH instead rendered "Your rules is on-chain." on
+ * the single most likely partial-failure path. Grammatical number is a property
+ * of the word, so it lives with the word. */
+const WRITES: Record<FormWrite, { noun: string; plural: boolean }> = {
+  policy: { noun: "rules", plural: true },
+  signer: { noun: "session key", plural: false },
+  name: { noun: "name", plural: false },
+};
+
+function writeList(landed: readonly FormWrite[]): string {
+  const nouns = landed.map((write) => WRITES[write].noun);
+  if (nouns.length <= 1) return nouns[0] ?? "";
+  return `${nouns.slice(0, -1).join(", ")} and ${nouns[nouns.length - 1]}`;
+}
+
+/** The toast after a save that fully succeeded. */
+function savedText(landed: readonly FormWrite[]): string {
+  const list = writeList(landed);
+  // Capitalised here rather than in the map, which is also read mid-sentence.
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)} updated on-chain.`;
 }
 
 /** What already mined, as a sentence to lead an error with. Empty when nothing
  * did, so callers can prepend it unconditionally. */
-function landedText(landed: readonly string[]): string {
+function landedText(landed: readonly FormWrite[]): string {
   if (landed.length === 0) return "";
-  if (landed.includes("policy") && landed.includes("name")) {
-    return "Your rules and name are on-chain.";
-  }
-  return landed.includes("policy") ? "Your rules are on-chain." : "Your name is on-chain.";
+  // A compound subject is always plural; a single one takes its own number.
+  const plural = landed.length > 1 || WRITES[landed[0]!].plural;
+  return `Your ${writeList(landed)} ${plural ? "are" : "is"} on-chain.`;
 }
 
 /**
@@ -668,7 +763,12 @@ function validate(input: {
   rate: bigint | null;
 }): string | null {
   if (!input.rate) return "The swap's rate could not be read, so caps cannot be converted yet.";
-  if (!input.wallet && !isAddress(input.signer.trim())) {
+  // Checked on an existing wallet too, now that the field is editable there.
+  // Gated on `!wallet` it validated only the create path, so an edit could send
+  // `setAgentSigner` whatever had been typed — and the contract's only guard is
+  // against the zero address, which means a valid-but-wrong key silently becomes
+  // the only key allowed to spend.
+  if (!isAddress(input.signer.trim())) {
     return "The agent signer must be a wallet address.";
   }
   // Checked here rather than left to the chain: `_setLabel` reverts LabelTooLong,
