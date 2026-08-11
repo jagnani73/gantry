@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 import {
   BASE_SEPOLIA_CHAIN_ID,
   CATEGORY_LABELS,
@@ -200,6 +201,34 @@ export function MerchantDrawer({
               {BASE_SEPOLIA_CHAIN_ID}.
             </p>
           </Card>
+
+          {/*
+           * The way out, and the reason the drawer exists rather than a tooltip.
+           * This page listed every shop on the rail and offered no way to pay
+           * one — a directory whose entries cannot be acted on is a phone book
+           * with the numbers removed. Both destinations are public payer
+           * surfaces, so linking them keeps the standing rule that this page
+           * never leads into an authenticated screen.
+           *
+           * `/pay/…` is the primary because it is what the printed QR opens: the
+           * point of finding a shop here is paying it, and the amount screen is
+           * where that starts. `/m/…` is the same shop's page for someone who
+           * wanted to look rather than to buy.
+           */}
+          <div className="flex flex-col gap-2.5">
+            <Link
+              href={`/pay/${merchant.handle}`}
+              className="focus-ring flex h-12.5 items-center justify-center rounded-control-m bg-ink text-btn-sm font-medium text-paper transition-colors hover:bg-ink-hover"
+            >
+              Pay this shop
+            </Link>
+            <Link
+              href={`/m/${merchant.handle}`}
+              className="focus-ring flex h-12.5 items-center justify-center rounded-control-m bg-fill-subtle text-btn-sm font-medium text-ink transition-colors hover:bg-fill-hover-strong"
+            >
+              Open its shop page
+            </Link>
+          </div>
         </div>
       </div>
     </div>
