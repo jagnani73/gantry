@@ -96,13 +96,26 @@ export function SettingsScreen() {
   const { handle, merchant, chime, replace } = useMerchantContext();
   const toast = useToast();
 
+  /**
+   * Keyed on the three profile FIELDS, never on the merchant object.
+   *
+   * The effect below resets the draft whenever this changes, and keying it on
+   * object identity meant any `replace` at all remade it — including one that
+   * touched nothing this form displays. Since the payout rotation moved onto
+   * this screen that is a live hazard rather than a theoretical one: rotating
+   * calls `replace` twice (optimistically, then again when the poll reconciles
+   * up to 12s later), and each one wiped whatever the merchant had typed here.
+   * The second is the bad one, because it lands with no user action at all —
+   * text vanishing mid-keystroke, `dirty` going false, Save disabling itself,
+   * and nothing on screen to explain it.
+   */
   const loaded = useMemo<MerchantProfile>(
     () => ({
       displayName: merchant?.displayName ?? "",
       location: merchant?.location ?? "",
       blurb: merchant?.blurb ?? "",
     }),
-    [merchant],
+    [merchant?.displayName, merchant?.location, merchant?.blurb],
   );
 
   const [draft, setDraft] = useState<MerchantProfile>(loaded);
@@ -130,7 +143,16 @@ export function SettingsScreen() {
     }
     setSave({ kind: "saving" });
     try {
-      replace(await api.updateMerchantProfile(handle, result.value));
+      const saved = await api.updateMerchantProfile(handle, result.value);
+      // The response's PAYOUT is not to be trusted, and only the payout. The
+      // route builds it as `{ ...merchant, ...profile }` from a `getMerchant`
+      // read taken BEFORE the write and served from a 60s TTL cache — and a
+      // payout rotation is signed in this browser, so the backend never saw it.
+      // Adopting the whole response therefore rolls a rotation performed on
+      // this very screen back to the old address, under a success card still
+      // naming the new one. What this browser holds is never older: it is
+      // either the same value or one backed by a receipt.
+      replace({ ...saved, payout: merchant?.payout ?? saved.payout });
       setSave({ kind: "idle" });
       // The toast carries WHY it matters, not just that it happened — that half
       // of the old inline line is the only part a merchant could not work out

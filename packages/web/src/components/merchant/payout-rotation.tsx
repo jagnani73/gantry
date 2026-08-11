@@ -131,6 +131,11 @@ export function PayoutRotationCard() {
     }
     setError(null);
     setUnresolved(null);
+    // `done` too. It is a claim about where money goes now, and leaving it up
+    // while a SECOND attempt is in flight puts two contradictory statements in
+    // one card: "Payouts now go to A" over "a change to B is unconfirmed, so
+    // this may no longer be current".
+    setDone(null);
     setBusy(true);
     try {
       const txHash = await setMerchantPayout(merchant.merchantId, parsed.address);
