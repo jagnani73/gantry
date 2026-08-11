@@ -18,8 +18,8 @@ import type { WireSpendAuthorization } from "./agentPolicy";
  * which is the one question the route can answer without asking anyone else. It
  * is deliberately not a verdict on the chain or the indexer — the deploy host
  * polls this path and restarts on a failure, so folding an RPC outage into it
- * would let a provider's bad minute wipe an instance whose SQLite cache (and
- * with it every off-chain merchant profile) lives on disk.
+ * would let a provider's bad minute wipe an instance mid-sweep and cost it the
+ * cache it had rebuilt.
  *
  * The diagnosis lives in `indexer` instead, where a human or a monitor can read
  * it without anything acting on it.
@@ -49,6 +49,20 @@ export interface HealthResponse {
     lag: number | null;
     headAt: number | null;
   };
+  /**
+   * The rehearsal window, or null when the host serves everything it has swept.
+   *
+   * Separate from `indexer` on purpose: the indexer neither reads nor honours
+   * this: it keeps sweeping the whole range and storing every row. The floor is
+   * a READ-surface bound written by `demo:reset`, and it is the only reason a
+   * demo box and a deployed host — indexing the same chain from the same block —
+   * legitimately show different feeds. Without it on this endpoint, "why is the
+   * dashboard empty" has no local answer.
+   *
+   * `block` is exclusive (settlements), `at` is inclusive unix seconds
+   * (denials, which have no block to be mined in).
+   */
+  displayFloor: { block: number; at: number } | null;
 }
 
 export interface MerchantResponse {

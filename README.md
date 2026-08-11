@@ -37,10 +37,10 @@ funding is capped rather than closed.
 
 🚧 **In development** for Stage 1 submission (14 Aug 2026).
 
-- [x] `GantryCore` — merchant registry + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0))
+- [x] `GantryCore` — merchant registry (handle, payout, category **and** the shop's display name, location and blurb) + PaymentIntent + dual-door settlement ([verified on Base Sepolia](https://sepolia.basescan.org/address/0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61))
 - [x] Human door — printed QR → mobile payer page → gasless EIP-3009 payment
 - [x] Agent door — x402 v2 endpoint + self-hosted facilitator (`exact` via the bridge AND the non-custodial `gantry-pbm` scheme; unmodified `@x402/fetch` still pays end-to-end)
-- [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents, minted per payer by a [permissionless factory](https://sepolia.basescan.org/address/0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05)
+- [x] `AgentPBMWallet` — on-chain Purpose-Bound-Money spend policies for agents, minted per payer by a [permissionless factory](https://sepolia.basescan.org/address/0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a)
 - [x] Stablecoin-in → XSGD-out atomic FX behind the `IGantrySwap` seam — shipping on `FixedRateSwap`, which accepts any token with an owner-listed rate (USDC today). A `GantrySwap` AMM was **deferred by decision (7 Aug 2026)**: a self-seeded toy pool is no closer to real FX than a fixed rate, and the interface is what makes the production path (real XSGD liquidity via aggregator/RFQ) a swap-in.
 - [x] Merchant onboarding — one form, live handle availability, on-chain registration, printable QR (`/onboard`)
 - [x] Merchant back-office — an overview with the live feed, transactions, payouts, QR/standee, profile and settings, with a live SSE feed carrying Human/Agent badges and one feed for both doors
@@ -51,14 +51,16 @@ funding is capped rather than closed.
 
 | Contract | Address |
 |---|---|
-| [`GantryCore`](https://sepolia.basescan.org/address/0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0) | `0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0` |
-| [`FixedRateSwap`](https://sepolia.basescan.org/address/0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713) | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
-| [`MockXSGD`](https://sepolia.basescan.org/address/0xd583FaB0Db5c543f5574780f8b899AEb74463361) | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
-| [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05) | `0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05` |
+| [`GantryCore`](https://sepolia.basescan.org/address/0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61) | `0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61` |
+| [`FixedRateSwap`](https://sepolia.basescan.org/address/0x2590C808C08819Fa47129e02bE3460d3165Ad14c) | `0x2590C808C08819Fa47129e02bE3460d3165Ad14c` |
+| [`MockXSGD`](https://sepolia.basescan.org/address/0xDD922ede4103467449B3626Ff97b674c84761ab7) | `0xDD922ede4103467449B3626Ff97b674c84761ab7` |
+| [`AgentPBMWalletFactory`](https://sepolia.basescan.org/address/0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a) | `0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a` |
+
+All four were deployed in a single run on 11 Aug 2026 and share one floor block, **45307715**. That is the point of deploying them together: the indexer sweeps the core's settlement events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, and one constant is what makes that possible.
 
 The factory is permissionless: agent wallets are created *by the payer*, from the payer's own key, so their addresses are not constants — there is no wallet worth pinning here.
 
-It was redeployed on 10 Aug 2026, when `AgentPBMWallet` gained an owner-set `label` and a `policyUpdatedAt` stamp. Wallets from the [previous factory](https://sepolia.basescan.org/address/0x172905F26F09b41636854338360315971240c1cf) still hold their funds and still enforce their policy on-chain; they are simply not enumerated, because the read path finds wallets through the current factory's `WalletCreated` logs.
+Wallets from a [previous factory](https://sepolia.basescan.org/address/0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05) still hold their funds and still enforce their policy on-chain; they are simply not enumerated, because the read path finds wallets through the current factory's logs.
 
 The pay token is Circle's real testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — settled against live, and fork-tested too. Demo merchants `ah-hock-chicken-rice` (food & beverage) and `gadgethub-sg` (electronics — the rejection beat) are registered on-chain.
 
@@ -98,7 +100,7 @@ The variables that change **what the app does** — payer key source, agent auto
 - **Agent-door interop proof:** `pnpm --filter @gantry/backend x402:buy` — pays the 402-protected order endpoint with the unmodified vanilla `@x402/fetch` client and prints the decoded challenge + on-chain receipt.
 - **Agent-door end-to-end:** `pnpm --filter @gantry/agent e2e:pbm` (note the package — it lives in the agent, not the backend), and the rejection beat with `pnpm --filter @gantry/agent e2e:pbm -- --handle gadgethub-sg --sgd 4 --expect-denial`.
 - **Reset between rehearsals:** `pnpm demo:reset` — clears the transaction cache, provisions and re-arms the demo agent, re-seeds the demo merchant profiles, and prints addresses + demo URLs. It waits on real receipts, so budget seconds rather than milliseconds; contracts persist, so nothing is redeployed.
-- **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), fill in the shop's name, location and one-line blurb, paste a payout address, register. The relayer pays the gas, so the merchant needs no ETH. The handle, payout and category go on-chain; the three display fields are stored off-chain and are editable afterwards from the Settings screen.
+- **Onboard a merchant:** open `/onboard`, pick a handle (availability is checked against the chain as you type), fill in the shop's name, location and one-line blurb, paste a payout address, register. The relayer pays the gas, so the merchant needs no ETH. All six fields go on-chain in that one transaction, and the three display fields are editable afterwards from the Settings screen — which is another relayer-signed transaction, so the merchant still never needs a wallet.
 - **Agent CLI:** `AGENT_SESSION_KEY` cannot be a freshly generated key — its address must be the `agentSigner` of a PBM wallet that already exists, or the CLI has nothing to pay from (`GET /api/agents?agentSigner=…` is how it finds its wallet) and a mismatched key fails every payment with `InvalidAgentSignature`. Create the wallet from the payer app's agents screen with that address as the signer, or rotate an existing wallet's signer on-chain via `setAgentSigner`.
 - Verify with `pnpm lint`, `pnpm typecheck`, `pnpm test:contracts`, `pnpm --filter @gantry/shared test`, `pnpm --filter @gantry/backend test`.
 
@@ -122,14 +124,13 @@ autoscaled, or two of them will claim the same nonce and every rate limit halves
 in effectiveness.
 
 A persistent disk is *not* required for correctness — SQLite is a disposable
-cache, and an indexer with no stored cursor re-sweeps from the deploy block in
-1,999-block chunks (~89 `getLogs` chunks today, growing ~22 a day). One
-caveat worth knowing: those chunks are sized for the public node's 2,000-block
-ceiling, and Alchemy's free tier caps `eth_getLogs` at **ten** blocks, so every
-chunk is refused by the paid endpoint and served by the rate-limited public one.
-The other caveat is that merchant display names live off-chain in
-`merchant_profiles`, the one table nothing can rebuild — losing the disk loses
-the names of any shop that onboarded on the deployed host.
+cache with no exception, and an indexer with no stored cursor re-sweeps from the
+deploy block in 1,999-block chunks (growing ~22 a day). Every table is
+rebuildable from the chain, including the merchant's display record, which lives
+in `GantryCore` rather than in a local table. One caveat worth knowing: those
+chunks are sized for the public node's 2,000-block ceiling, and Alchemy's free
+tier caps `eth_getLogs` at **ten** blocks, so every chunk is refused by the paid
+endpoint and served by the rate-limited public one.
 
 **The deployed instance is a shop window, not the demo.** The stage run happens
 on the laptop, because payer funding and self-service onboarding only work on a
@@ -207,7 +208,7 @@ What is not real, and why:
 - **`MockXSGD` — the only mocked token.** XSGD exists on no testnet (and not on Base), so testnet runs use a mock, labelled as such wherever it appears — the merchant settings screen lists it as "XSGD (testnet mock)". The mainnet path is real [XSGD](https://www.straitsx.com/) on a supported chain. Payments themselves settle in **real Circle USDC**: the payer signs an EIP-3009 authorization against Circle's own contract, and the demo payer account and agent wallets are funded by the relayer *transferring* real USDC rather than minting a mock.
 - **The FX rate is owner-set**, not market-derived — `FixedRateSwap` behind the `IGantrySwap` interface. Production means real XSGD liquidity through an aggregator or RFQ behind that same interface; the seam is the part that's meant to survive.
 - **One trusted relayer/facilitator key.** It pays all gas, and on the vanilla-x402 `exact` path it briefly custodies the agent's funds (one hop, PSP-style) because spec-compliant clients generate their own EIP-3009 nonce. The `gantry-pbm` path has no such hop. Merchant registration is relayer-paid too — permissionless on-chain, so it's faucet trust level.
-- **Merchant categories are self-attested,** and so is everything the shop pages display. No KYC — the badge says "Registered on-chain", not "Verified". `GantryCore` stores the handle, the payout address and the category; the name, location and blurb are off-chain rows nobody checks. And no fiat off-ramp.
+- **Merchant categories are self-attested,** and so is everything the shop pages display. No KYC — the badge says "Registered on-chain", not "Verified". `GantryCore` stores the whole record, name and location and blurb included, but storing text in a contract says nothing about whether it is true: registration is permissionless and nobody reviews it. And no fiat off-ramp.
 - **The merchant back-office has no login.** There is no merchant authentication anywhere in Gantry and we did not invent one, so anyone with the URL can read any shop's takings. On a demo host they can rewrite its profile text too; on a deployed host that write is closed, but the reads stay open.
 - **The demo payer is a single shared account.** When the deployed build is configured with `NEXT_PUBLIC_DEMO_KEY`, every visitor signs with the same key — so the balance, the activity feed and the agent list are shared, and the payment history is not private. The payer app says so on screen. Connecting your own wallet is the private path.
 

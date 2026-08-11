@@ -312,8 +312,9 @@ writeFileSync(addressesFile, source);
 // ------------------------------------------------------------- 4. local cache
 
 // Done here rather than asked for. Its cursor points into the old chain range,
-// and `agent_wallets` deliberately survives `clearCache` — so wallets minted by
-// the DEAD factory would keep answering the agent CLI's signer lookup, and
+// and nothing a reset does deletes a row any more — a display floor hides rows
+// from the FEED, and `agent_wallets` is not a feed. So wallets minted by the
+// DEAD factory would keep answering the agent CLI's signer lookup, and
 // `demo:reset` would arm one whose immutable CORE is the retired core.
 const db = resolve(repoRoot, "packages/backend/gantry.db");
 try {
@@ -326,8 +327,8 @@ try {
   // is not a reason to fail a deploy that already succeeded — the contracts are
   // live and pinned, and this step is belt-and-braces: `agent_wallets` rows are
   // scoped to the factory that minted them, so the dead factory's are already
-  // filtered out, and `demo:reset` clears the transaction tables and jumps the
-  // cursor. Never let cleanup undo the report of what was deployed.
+  // filtered out, and `demo:reset` floors the feed past everything the retired
+  // core settled. Never let cleanup undo the report of what was deployed.
   console.warn(`!  could not delete ${db} (${err instanceof Error ? err.message : err}).`);
   console.warn("   Almost certainly the backend is running and holding it open. Harmless:");
   console.warn("   stale wallets are filtered by factory and demo:reset clears the rest.");

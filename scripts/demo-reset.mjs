@@ -1,5 +1,9 @@
-// One-command demo reset. It clears the backend cache first (SQLite + SSE
-// `reset`, cursor jumped to head), then runs the numbered steps below. These
+// One-command demo reset. It marks the rehearsal window first (a server-side
+// display floor at the chain head, plus an SSE `reset` so open dashboards drop
+// what they are holding), then runs the numbered steps below. Nothing is
+// deleted and the sweep cursor is untouched: the feed starts empty because the
+// read surfaces skip below the floor, which is what lets this box and the
+// deployed host hold identical rows. These
 // numbers ARE the `// 1.` … `// 7.` markers in the file, deliberately — "step
 // 6b" is cross-referenced from here and from services/agents.ts, so a header
 // that counted differently would name a different step:
@@ -209,7 +213,7 @@ const health = await healthRes.json();
 let degraded = false;
 
 /** Every network call from here on is best-effort: a flake must not crash the
- * script after the cache was cleared and money moved, because the cheat sheet
+ * script after the feed was floored and money moved, because the cheat sheet
  * below is the whole point of running it. */
 async function call(method, path, json) {
   try {
@@ -624,7 +628,7 @@ let gadgetLine;
  * before going on stage. */
 const mark = (line) => (line.startsWith("⚠") ? line : `✓ ${line}`);
 
-console.log(`${mark(`dashboard cleared, indexer cursor → block ${health.indexer.cursor} (chain ${health.chainId})`)}
+console.log(`${mark(`feed floored at block ${health.displayFloor?.block ?? "—"}, indexer cursor ${health.indexer.cursor} (chain ${health.chainId})`)}
 ${mark(payerLine)}
 ${mark(profileLine)}
 ${mark(walletLine)}${signerLine ? `\n${signerLine}` : ""}

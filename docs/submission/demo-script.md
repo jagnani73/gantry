@@ -12,9 +12,11 @@ never venue wifi. Local Anvil was considered and deliberately not built; the
 hotspot covers the same failure mode without a second orchestration path to
 maintain.
 
-**Before every run:** `pnpm demo:reset` — it clears the transaction cache,
-provisions/tops up and re-arms the demo agent wallet, re-seeds the demo merchant
-profiles, checks `gadgethub-sg` is still registered, and prints the funder's ETH
+**Before every run:** `pnpm demo:reset` — it floors the merchant feed at the
+current block (nothing is deleted; the rows below simply stop being served),
+provisions/tops up and re-arms the demo agent wallet, registers the demo shops
+on-chain if they are missing, checks `gadgethub-sg` is still registered, and
+prints the funder's ETH
 **and** USDC balances, swapping ETH→USDC if the USDC has run low. Check both
 numbers. Every register and every settle spends ETH; every payer grant and wallet
 top-up spends USDC, which cannot be minted. The re-arm is signed by the **demo

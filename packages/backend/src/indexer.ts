@@ -15,7 +15,7 @@ import {
   setIntentStatus,
   insertAgentWallet,
   insertSettlementRow,
-  clearCache,
+  setDisplayFloor,
   type SettlementRow,
 } from "./db";
 import { cursorOf, toSettlementEvent } from "./services/settlements";
@@ -26,10 +26,11 @@ import { broadcast } from "./sse";
  *  - watchContractEvent over WS = the <2s latency path (lossy: WS can drop);
  *  - a 15s getLogs sweep from the persisted cursor = the correctness backstop
  *    (also does startup backfill).
- * The sweep owns the cursor; admin reset (resetIndexer) jumps it to head under
- * a new epoch, aborting any in-flight sweep before it can re-insert cleared
- * rows or rewind the cursor. SQLite PK dedup makes watch/sweep overlap
- * harmless for settlements; intent lifecycle logs only update cached status.
+ * The sweep owns the cursor outright — nothing else writes it. Admin reset
+ * (resetIndexer) no longer touches it or deletes anything; it records a display
+ * floor and lets the sweep carry on, so an in-flight pass is never a hazard and
+ * needs no epoch to abort it. SQLite PK dedup makes watch/sweep overlap harmless
+ * for settlements; intent lifecycle logs only update cached status.
  */
 
 type CoreLog = {
@@ -189,7 +190,6 @@ if (SWEPT_EVENTS.length !== 3) {
 }
 
 let inFlight: Promise<void> | null = null;
-let resetEpoch = 0;
 
 /**
  * Why the last sweep failed, or null if it succeeded.
@@ -285,7 +285,6 @@ export function indexerStatus(): IndexerStatus {
 }
 
 async function sweep(): Promise<void> {
-  const epoch = resetEpoch;
   try {
     const head = await publicClient.getBlockNumber();
     lastHead = head;
@@ -305,10 +304,8 @@ async function sweep(): Promise<void> {
         toBlock: to,
       });
       for (const log of logs) {
-        if (epoch !== resetEpoch) return; // reset landed mid-sweep — abandon
         await processLog(log as unknown as CoreLog);
       }
-      if (epoch !== resetEpoch) return;
       setCursor(to);
       from = to + 1n;
     }
@@ -356,17 +353,27 @@ export async function startIndexer(): Promise<void> {
 }
 
 /**
- * Admin reset: clear the cache and jump the cursor to the current head under a
- * new epoch. Head is fetched first so a failed RPC call leaves the cache
- * intact instead of cleared-but-rewound.
+ * Admin reset: start the rehearsal feed from here.
+ *
+ * This deletes nothing and does not move the cursor. It records a display floor
+ * at the current head, and the read surfaces skip what lies beneath it — so the
+ * cache remains a faithful projection of the chain, and this box and a deployed
+ * host converge on identical rows from the identical floor. See `DisplayFloor`
+ * in db-core for why emptiness is a rendering fact rather than a storage one.
+ *
+ * The head read comes first so a failing RPC leaves the previous floor in place
+ * rather than writing one built from a fallback — a floor is what the whole feed
+ * is measured against, and a wrong one is silent.
  */
 export async function resetIndexer(): Promise<void> {
   const head = await publicClient.getBlockNumber();
-  resetEpoch++;
-  clearCache();
-  setCursor(head);
+  const at = Math.floor(Date.now() / 1000);
+  // Exclusive on block, inclusive on time — see DisplayFloor. `head` is the last
+  // block that can hold a pre-reset settlement, and a denial written from here on
+  // carries a `created_at` at or after this second.
+  setDisplayFloor({ block: Number(head), at });
   // Same read the sweep records, so a reset does not leave /health reporting a
-  // lag against a head from before the cursor jumped.
+  // lag against a head from before this call.
   lastHead = head;
-  lastHeadAt = Math.floor(Date.now() / 1000);
+  lastHeadAt = at;
 }

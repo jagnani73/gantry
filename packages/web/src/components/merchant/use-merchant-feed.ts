@@ -202,8 +202,9 @@ export function useMerchantFeed(
       if (live) onLiveRef.current(row);
     });
 
-    // `demo-reset` clears the cache and bumps an epoch server-side; the feed has
-    // to forget the rows it is holding or a rehearsal starts with the last one.
+    // `demo-reset` records a server-side display floor; the rows below it still
+    // exist but stop being served, and this feed has to drop what it is already
+    // holding or a rehearsal starts with the last one's payments on screen.
     source.addEventListener("reset", () => retry());
 
     return () => {

@@ -80,11 +80,13 @@ instance and can never be serverless or autoscaled.
 
 | Contract | Address |
 |---|---|
-| `GantryCore` | `0x6F02501ed28Fe918b04fC285404C615f4Ab25Ce0` |
-| `AgentPBMWalletFactory` | `0xd827C3445660a4D2d68c5D411DAbAE71B7fdcA05` |
-| `FixedRateSwap` | `0xEdcD7AcABb610543e1626F4453c9c4Ec8ABab713` |
-| `MockXSGD` | `0xd583FaB0Db5c543f5574780f8b899AEb74463361` |
+| `GantryCore` | `0xd9A2F4A97d119d0dE6bfb90A2Ba2a601675F3e61` |
+| `AgentPBMWalletFactory` | `0x7E864606d6c86Fa1d7d6B1c7faE8CE555164a21a` |
+| `FixedRateSwap` | `0x2590C808C08819Fa47129e02bE3460d3165Ad14c` |
+| `MockXSGD` | `0xDD922ede4103467449B3626Ff97b674c84761ab7` |
 
-The factory is permissionless and agent wallets are created by the payer, so their addresses are not constants — the one listed is the original, created by the deploy script with the relayer as owner and kept for reference.
+All four are Basescan-verified and were deployed in a single run at block **45307715**, so they share one floor block. That is deliberate rather than tidy: the indexer sweeps the core's settlement events and the factory's `WalletCreated` logs in one `getLogs` pass over both addresses, which needs one starting block, and it replaced a separate chunked scanner that re-walked the same range on every cold start.
+
+The factory is permissionless and agent wallets are created by the payer, so their addresses are not constants — there is none worth listing here.
 
 The pay token is Circle's **real** testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) — payers sign EIP-3009 authorizations against Circle's own contract, and the relayer funds demo payer accounts by transferring real USDC rather than minting a mock. `MockXSGD` is the only mocked token, because XSGD exists on no testnet.
