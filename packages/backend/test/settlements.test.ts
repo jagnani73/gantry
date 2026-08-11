@@ -324,14 +324,19 @@ test("rows carry the fields a client merges the live stream on", () => {
   assert.equal(newest?.blockNumber, 13);
   // The token is NAMED, not just addressed: every amount on a receipt is
   // meaningless beside a bare 0x…, and the label comes from the address table.
-  assert.equal(newest?.tokenIn, USDC.toLowerCase());
+  // And it is CHECKSUMMED: the store lowercases every address column so a
+  // checksummed caller cannot miss a case-sensitive lookup, which makes
+  // lowercase the right key and the wrong answer — EIP-55 lives in the
+  // capitalisation, and a row that went through SQLite must not read
+  // differently from the same row pushed live off a decoded log.
+  assert.equal(newest?.tokenIn, USDC);
   assert.equal(newest?.tokenSymbol, "USDC");
 
   // Agent door + the relayer as on-chain payer IS the bridge signature, and it
   // is the whole of it — derived on every host from the event, where the stored
   // `agentPayer` it replaced existed only on the one that performed the hop.
   const bridged = listSettlementHistory(deps, { before: "12:0", limit: "1" }).rows[0];
-  assert.equal(bridged?.payer, RELAYER.toLowerCase());
+  assert.equal(bridged?.payer, RELAYER);
   assert.equal(bridged?.door, "agent");
   assert.equal(bridged?.bridged, true);
 
@@ -347,6 +352,11 @@ test("an unlisted token renders as no symbol, never as a guess", () => {
   // A row swept for a token the address table does not know still has to render
   // — with the address and no label. Inventing one (or falling back to "USDC")
   // would put a wrong currency beside a real amount.
+  //
+  // This fixture is also not a well-formed address, which pins the other half of
+  // the rule above: re-checksumming passes an unparseable value straight through
+  // rather than throwing. This mapper is the live feed's only path, so one bad
+  // row must cost one field and never the whole page.
   const [oldest] = listSettlementHistory(deps, { before: "10:2" }).rows;
   assert.equal(oldest?.tokenIn, UNLISTED_TOKEN);
   assert.equal(oldest?.tokenSymbol, null);

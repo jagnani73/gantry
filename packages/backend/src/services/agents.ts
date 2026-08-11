@@ -2,6 +2,7 @@ import { erc20Abi, type Address } from "viem";
 import {
   agentPbmWalletAbi,
   agentPbmWalletFactoryAbi,
+  checksummed,
   tokenAddress,
   type AgentListResponse,
   type AgentSummary,
@@ -97,7 +98,12 @@ async function candidates(filter: AgentFilter): Promise<Address[]> {
         );
       }
     }
-    return rows.map((row) => row.wallet as Address);
+    // Re-checksummed, because the swept table stores addresses lowercased and
+    // the owner branch above returns whatever `walletsOf` gives — i.e. EIP-55.
+    // One field must not arrive in two casings depending on which filter asked
+    // for it: this address is printed on stage by the agent CLI and used as an
+    // EIP-712 `verifyingContract`.
+    return rows.map((row) => checksummed(row.wallet));
   }
   return [];
 }

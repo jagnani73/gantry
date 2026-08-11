@@ -1,3 +1,4 @@
+import { getAddress, isAddress, type Address } from "viem";
 import { BASESCAN_BASE_URL } from "./addresses";
 
 /**
@@ -18,6 +19,29 @@ import { BASESCAN_BASE_URL } from "./addresses";
  */
 export function shortAddress(address: string, lead = 6, tail = 4): string {
   return address.length <= lead + tail + 1 ? address : `${address.slice(0, lead)}…${address.slice(-tail)}`;
+}
+
+/**
+ * A stored address → the form a person can check. The counterpart to the rule
+ * above, applied one layer earlier.
+ *
+ * Every id column in the backend store is lowercased on write, deliberately: the
+ * lookups are case-sensitive `=`, so a checksummed caller must not be able to
+ * cause a silent cache miss. That makes lowercase the right KEY and the wrong
+ * ANSWER — by the time a row reaches a receipt or a Basescan link, the
+ * capitalisation is the whole checksum and dropping it leaves nothing an eye can
+ * verify. Row→wire mappers call this so a row that went through SQLite reads
+ * identically to the same row pushed live off a decoded log.
+ *
+ * Anything that is not a 20-byte address comes back UNCHANGED rather than
+ * throwing. These callers sit on the live feed's only path, where one
+ * unrecognisable value must cost that one field and never the whole page — the
+ * same posture `tokenIdByAddress` already takes toward a token it cannot name.
+ * Hashes are not addresses and must not be passed here: keccak output carries no
+ * checksum, so lowercase already IS canonical for a txHash or an intentId.
+ */
+export function checksummed(address: string): Address {
+  return isAddress(address, { strict: false }) ? getAddress(address) : (address as Address);
 }
 
 /**

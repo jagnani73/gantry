@@ -187,12 +187,17 @@ test("denials are scoped to one wallet, newest first", () => {
   });
   store.insertDenial({ ...row(), intent_id: "0xdenial3", wallet: OTHER_WALLET, created_at: 300 });
 
-  // Checksummed in, lowercased rows out — a payer app holding a checksummed
-  // address must not read as a wallet with no history.
+  // Checksummed in, checksummed out — and lowercased in between. The store keys
+  // on the lowercase form so a checksummed caller cannot read as a wallet with
+  // no history; the wire re-checksums, because EIP-55 lives in the
+  // capitalisation and a receipt that drops it is one nobody can check against
+  // Basescan by eye.
   const mine = listAgentDenials(store, { wallet: WALLET });
   assert.deepEqual(mine.rows.map((r) => r.errorName), ["DailyCapExceeded", "CategoryNotAllowed"]);
   assert.equal(mine.total, 2);
   assert.deepEqual(mine.rows[0]?.errorArgs, { attempted: "67105000", cap: "50000000" });
+  assert.equal(mine.rows[0]?.wallet, WALLET);
+  assert.equal(listAgentDenials(store, { wallet: WALLET.toLowerCase() }).rows[0]?.wallet, WALLET);
 
   assert.equal(listAgentDenials(store, { wallet: OTHER_WALLET }).total, 1);
   assert.equal(listAgentDenials(store, { wallet: `0x${"99".repeat(20)}` }).total, 0);

@@ -2,6 +2,7 @@ import { parseEventLogs, type Hex } from "viem";
 import {
   Door,
   IntentStatus,
+  checksummed,
   doorToWire,
   fixedRateSwapAbi,
   gantryCoreAbi,
@@ -185,7 +186,10 @@ export async function getIntentStatusResponse(intentId: Hex): Promise<IntentStat
       status,
       handle: row.handle,
       merchantId: row.merchant_id as Hex,
-      tokenIn: row.token_in as `0x${string}`,
+      // Checksummed, so the cached answer matches both the chain fallback below
+      // and what `createIntent` returned for this same id — the store lowercases
+      // on write and one field must not read two ways.
+      tokenIn: checksummed(row.token_in),
       amountIn: row.amount_in,
       xsgdAmount: row.xsgd_amount,
       expiry: row.expiry,

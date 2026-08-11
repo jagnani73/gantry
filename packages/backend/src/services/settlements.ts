@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem";
 import {
+  checksummed,
   decodeCursor,
   doorToWire,
   encodeCursor,
@@ -65,6 +66,12 @@ export function isBridged(
  * `(txHash, logIndex)` is the store's primary key, so it is what a client
  * merging a history page into a running feed dedupes on. Drop it and the feed
  * renders every row it holds from both sources twice.
+ *
+ * Addresses are re-checksummed HERE, and this is the boundary that owes it — see
+ * `checksummed`, which also explains why an unparseable one passes through
+ * instead of throwing on a path the whole feed depends on. Hashes get no such
+ * treatment: keccak output has no checksum, so lowercase IS canonical for
+ * `txHash`, `intentId` and `merchantId`.
  */
 export function toSettlementEvent(
   row: SettlementRow,
@@ -75,9 +82,9 @@ export function toSettlementEvent(
     intentId: row.intent_id as Hex,
     merchantId: row.merchant_id as Hex,
     handle: row.handle,
-    payer: row.payer as Address,
+    payer: checksummed(row.payer),
     bridged: isBridged(row, relayer),
-    tokenIn: row.token_in as Address,
+    tokenIn: checksummed(row.token_in),
     tokenSymbol: tokenSymbolOf(row.token_in as Address),
     amountIn: row.amount_in,
     xsgdOut: row.xsgd_out,

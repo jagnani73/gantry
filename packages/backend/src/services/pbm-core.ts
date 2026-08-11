@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   agentPbmWalletAbi,
   buildSpendAuthorization,
+  checksummed,
   decodeGantryError,
   serializeArgs,
   type DenialEvent,
@@ -252,15 +253,17 @@ function namedErrorArgs(
   );
 }
 
-/** Stored row → wire event. */
+/** Stored row → wire event. Addresses are re-checksummed on the way out, for the
+ * reason `checksummed` documents: the wallet on a declined receipt is the field
+ * a payer would take to Basescan, and lowercase leaves nothing to check. */
 export function denialEventOf(row: DenialRow): DenialEvent {
   const errorArgs = parseErrorArgs(row);
   return {
     intentId: row.intent_id as Hex,
     handle: row.handle,
     merchantId: row.merchant_id as Hex,
-    wallet: row.wallet as Address,
-    tokenIn: row.token_in as Address,
+    wallet: checksummed(row.wallet),
+    tokenIn: checksummed(row.token_in),
     amountIn: row.amount_in,
     xsgdAmount: row.xsgd_amount,
     errorName: row.error_name,
