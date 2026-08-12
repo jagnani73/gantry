@@ -48,7 +48,8 @@ rendered as an HTTP `402 Payment Required` header. Then the punchline:
 > accept payments from machines and humans alike.
 
 ### 4. Architecture
-The diagram from `architecture.md`. Two coloured payer paths merging into one
+The diagram from the README's "How it works" section (the first mermaid block,
+which is also submission artifact #4). Two coloured payer paths merging into one
 intent, through `GantryCore._settle`, out through the `IGantrySwap` seam to an
 XSGD payout and one shared dashboard. Explicit callout that the agent door has
 two sub-paths with different trust: standard `exact` (one custodial hop) and
@@ -77,9 +78,10 @@ The point to land: **the denial is a contract revert, not a backend
 MAS Project Orchid's Purpose-Bound Money, applied to AI agents.
 
 ### 7. What's real vs what's mocked
-A two-column table, verbatim from the repo's honest-notes section. This slide
-exists to pre-empt the "vaporware" screening reflex — volunteering the mocks is
-what makes the rest of the deck credible.
+A two-column table. The source of truth is CLAUDE.md's "What's real vs mocked"
+section, condensed in the README's "Prototype scope" note. This slide exists to
+pre-empt the "vaporware" screening reflex — volunteering the mocks is what makes
+the rest of the deck credible.
 
 Real: contracts deployed and verified on Base Sepolia · x402 v2 wire format,
 paid end-to-end by an unmodified `@x402/fetch` client · EIP-3009 against real
@@ -150,6 +152,32 @@ the licensed-PSP line into slide 6 — do not simply drop them.
 
 ---
 
+## Devpost submission copy
+
+The deck is one of five artifacts; these are the fields around it.
+
+- **One-liner:** One rail, every payer: QR for humans, x402 for AI agents.
+- **Elevator paragraph:** lead with PayNow's tourist gap and the agent gap, close
+  on feasibility, "a working prototype runs on Base Sepolia today", with the
+  Basescan link inline.
+- **Track:** 1, Payments & Financial Infrastructure.
+- **Entry:** Student Group (solo). Claim Best Student Team explicitly.
+- **Artifacts:** deck PDF · 60–90s demo clip · the public repo · the architecture
+  diagram PNG (the first mermaid block in the README) · the live back-office URL
+  <https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview>.
+  Warm the backend before sending anyone a link; a cold Render instance takes
+  ~50s on the first hit.
+
+## Screening risks and what counters each
+
+| Risk | Counter, and where it lives |
+|---|---|
+| "Generic crypto payment gateway" | The payer-type × rail matrix leads the deck (slide 2) |
+| "The AI agent part is a gimmick" | x402 is a Linux Foundation standard, an unmodified client pays us, and the denial is a real revert (slide 6) |
+| "Vaporware" | Basescan links, live dashboard, commit graph, scannable QR on slide 1 (slides 1, 8) |
+| "Hand-waves regulation" | Slide 9's modest posture: licensed PSP in front, Gantry as rail |
+| "Solo builder can't execute" | Visible scope discipline — the skipped AMM is *documented as skipped*, not hidden |
+
 ## Facts to keep consistent across every slide
 
 These have all drifted at least once. Check them before export.
@@ -168,3 +196,5 @@ These have all drifted at least once. Check them before export.
 | Overview tiles | net S$5.97 ("Collected, **last 7 days**") and S$0.13 ("Saved vs cards") — the S$0.13 is the SAVING, not Gantry's cut. The middle tile is "Paid by", an agent/human split bar, **not** a money figure |
 | Agent wallet owner | the **payer**, on-chain. `setPolicy`/`revoke` are `onlyOwner`; revoke is in the payer app at `/app/agents`, not on the merchant screens |
 | Surfaces | merchant back-office `/merchant/[handle]/…` and payer app `/app/…`. There is no `/dashboard` screen any more — the path redirects |
+| Test counts | **Re-measure before quoting.** Slide 8 is the only place they appear, so nothing catches drift; they have silently gone wrong twice. `pnpm --filter @gantry/shared test` and `pnpm --filter @gantry/backend test` each print the real number in one line |
+| Agent-door e2e script | `pnpm --filter **@gantry/agent** e2e:pbm`. Its siblings `e2e:pay` and `x402:buy` are `@gantry/backend` |
