@@ -34,7 +34,7 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 | **API**    | <https://gantry-backend.onrender.com> and [`/health`](https://gantry-backend.onrender.com/health), which reports the indexer cursor, chain head and lag                                                                                                                                                                                                                                     |
 | **Deck**   | [Pitch deck (PDF, 10 slides)](docs/gantry-deck.pdf) — the problem, the architecture, both payer doors, and an explicit list of what is real and what is mocked                                                                                                                                                                                                                              |
 
-<sub>The backend is a free Render instance, so the first request after an idle period waits about 50s while it wakes.</sub>
+<sub>The backend is a free Render instance, kept awake by an external health ping every 10 minutes. If that ping ever lapses, the first request after an idle period waits about 50s while the instance wakes.</sub>
 
 ## Why this exists
 
