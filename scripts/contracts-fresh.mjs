@@ -403,7 +403,8 @@ console.log("NEXT");
 // (SeedDemo, DeployPBM) were deleted on 11 Aug 2026.
 console.log("  1. pnpm abis && pnpm lint && pnpm typecheck && pnpm test:contracts");
 console.log("  2. restart the backend, then pnpm demo:reset (registers the demo shops)");
-console.log("  3. update the address tables in CLAUDE.md, README.md and docs/submission/");
+console.log("  3. update the address tables in CLAUDE.md and README.md, and re-export");
+console.log("     docs/gantry-deck.pdf — slide 8 lists all four addresses");
 console.log("  4. commit and push — BOTH hosts inline these at build time, so Vercel and");
 console.log("     Render each serve the dead core until they rebuild");
 
