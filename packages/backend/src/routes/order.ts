@@ -4,7 +4,7 @@ import { TOKENS, caip2, formatUnits6, parseSgd, quoteAmountIn, tokenAddress } fr
 import { relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
-import { parseOrderResource } from "../services/facilitator-core";
+import { orderPin, parseOrderResource } from "../services/facilitator-core";
 import { readRate } from "../services/intents";
 import { getMerchant } from "../services/merchants";
 
@@ -42,15 +42,29 @@ async function buildOrderPrice(context: HTTPRequestContext) {
     if (err instanceof ApiError) throw err; // TokenUnsupported stays a 400
     throw new ApiError(503, "QuoteUnavailable", "rate source unreachable; retry shortly");
   }
+  // Same CEIL quote createIntent applies — keeps the bridge's equality guard true.
+  const amount = quoteAmountIn(xsgdAmount, rate).toString();
+  const asset = tokenAddress(config.addresses, token);
+  const pins = { handle: order.handle, xsgdAmount: xsgdAmount.toString() };
   return {
-    // Same CEIL quote createIntent applies — keeps the bridge's equality guard true.
-    amount: quoteAmountIn(xsgdAmount, rate).toString(),
-    asset: tokenAddress(config.addresses, token),
+    amount,
+    asset,
     extra: {
       name: TOKENS[token].eip712.name,
       version: TOKENS[token].eip712.version,
-      handle: order.handle,
-      xsgdAmount: xsgdAmount.toString(),
+      ...pins,
+      // Says these facts came from THIS server. handle and xsgdAmount decide
+      // which merchant gets paid, and on `exact` nothing else does — the
+      // custodial hop makes payTo the relayer for every order, so the payer's
+      // signature commits to an amount and a collector, never to a shop. The
+      // SDK path is already safe (it matches the client echo against this
+      // server-built entry), but POST /facilitator/settle takes requirements
+      // straight from the request body and checks only their shape.
+      //
+      // Deterministic, which this function is REQUIRED to be: the middleware
+      // rebuilds requirements and deep-equal-matches them, so the digest must
+      // cover only fixed facts — no timestamp, no nonce.
+      pin: orderPin({ ...pins, asset, amount }),
     },
   };
 }

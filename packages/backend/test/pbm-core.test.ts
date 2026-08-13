@@ -7,6 +7,7 @@ import {
   type X402PaymentPayload,
   type X402PaymentRequirements,
 } from "@gantry/shared";
+import { orderPin } from "../src/services/facilitator-core";
 import {
   GantryPbmPayloadSchema,
   PBM_EXPIRY_MARGIN_SECONDS,
@@ -32,6 +33,8 @@ const amount = "14529469";
 const network = "eip155:84532" as const;
 
 function requirements(overrides: Partial<X402PaymentRequirements> = {}): X402PaymentRequirements {
+  const handle = "ah-hock-chicken-rice";
+  const xsgdAmount = "19500000";
   return {
     scheme: "gantry-pbm",
     network,
@@ -42,9 +45,12 @@ function requirements(overrides: Partial<X402PaymentRequirements> = {}): X402Pay
     extra: {
       name: "Mock USDC",
       version: "1",
-      handle: "ah-hock-chicken-rice",
-      xsgdAmount: "19500000",
+      handle,
+      xsgdAmount,
       intentEndpoint: "/api/pbm/intent",
+      // Order facts are only trusted when this process pinned them — the raw
+      // POST /facilitator/settle surface validates requirements by shape alone.
+      pin: orderPin({ handle, xsgdAmount, asset: token, amount }),
     },
     ...overrides,
   };

@@ -150,7 +150,7 @@ export async function validatePbmPayment(inputs: PbmVerifyInputs): Promise<PbmVa
 
   // Order facts come ONLY from the server-pinned extra (the middleware hands
   // the handler its own rebuilt requirement) — same trust rule as the bridge.
-  const pins = parseOrderPins(requirements.extra);
+  const pins = parseOrderPins(requirements.extra, requirements);
   if (!pins) {
     return fail(
       "invalid_requirements",

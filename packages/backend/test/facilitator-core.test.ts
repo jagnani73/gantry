@@ -14,6 +14,7 @@ import {
 import {
   ExactEvmPayloadSchema,
   VERIFY_MARGIN_SECONDS,
+  orderPin,
   parseOrderPins,
   parseOrderResource,
   reasonForGantryError,
@@ -116,16 +117,82 @@ test("parseOrderResource rejects non-positive and malformed sgd amounts", () => 
   assert.equal(parseOrderResource("http://x/api/order/ah-hock?sgd=-5"), null);
 });
 
+const REQ = { asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", amount: "14529456" };
+/** Requirements as this server would have issued them. */
+const pinned = (handle: string, xsgdAmount: string, req = REQ) => ({
+  name: "USDC",
+  version: "2",
+  handle,
+  xsgdAmount,
+  pin: orderPin({ handle, xsgdAmount, asset: req.asset, amount: req.amount }),
+});
+
 test("parseOrderPins accepts server-pinned facts and rejects tampered shapes", () => {
-  assert.deepEqual(
-    parseOrderPins({ name: "USDC", version: "2", handle: "ah-hock", xsgdAmount: "19500000" }),
-    { handle: "ah-hock", xsgdAmount: 19500000n },
+  assert.deepEqual(parseOrderPins(pinned("ah-hock", "19500000"), REQ), {
+    handle: "ah-hock",
+    xsgdAmount: 19500000n,
+  });
+  assert.equal(parseOrderPins({ name: "USDC", version: "2" }, REQ), null, "missing pins");
+  assert.equal(parseOrderPins(pinned("AH-HOCK", "1"), REQ), null, "invalid handle");
+  assert.equal(parseOrderPins(pinned("ah-hock", "0"), REQ), null, "zero amount");
+  assert.equal(parseOrderPins(pinned("ah-hock", "19.50"), REQ), null, "not 6dp units");
+  assert.equal(
+    parseOrderPins({ ...pinned("ah-hock", "19500000"), xsgdAmount: 19500000 }, REQ),
+    null,
+    "number, not string",
   );
-  assert.equal(parseOrderPins({ name: "USDC", version: "2" }), null, "missing pins");
-  assert.equal(parseOrderPins({ handle: "AH-HOCK", xsgdAmount: "1" }), null, "invalid handle");
-  assert.equal(parseOrderPins({ handle: "ah-hock", xsgdAmount: "0" }), null, "zero amount");
-  assert.equal(parseOrderPins({ handle: "ah-hock", xsgdAmount: "19.50" }), null, "not 6dp units");
-  assert.equal(parseOrderPins({ handle: "ah-hock", xsgdAmount: 19500000 }), null, "number, not string");
+});
+
+test("parseOrderPins refuses order facts this server did not issue", () => {
+  // POST /facilitator/settle takes requirements straight from the request body
+  // and validates only their shape. On `exact` the custodial hop makes payTo the
+  // relayer for every order, so the payer's signature commits to an amount and a
+  // collector but never to a shop -- extra.handle is the only thing naming the
+  // merchant, and without the pin a caller could name any of them.
+  assert.equal(
+    parseOrderPins({ name: "USDC", version: "2", handle: "ah-hock", xsgdAmount: "19500000" }, REQ),
+    null,
+    "no pin at all",
+  );
+  assert.equal(
+    parseOrderPins({ ...pinned("ah-hock", "19500000"), pin: "0".repeat(64) }, REQ),
+    null,
+    "forged pin",
+  );
+  // The redirect the pin exists to stop: keep a genuine pin, swap the merchant.
+  assert.equal(
+    parseOrderPins({ ...pinned("ah-hock", "19500000"), handle: "gadgethub-sg" }, REQ),
+    null,
+    "handle swapped under a valid pin",
+  );
+  assert.equal(
+    parseOrderPins({ ...pinned("ah-hock", "19500000"), xsgdAmount: "1" }, REQ),
+    null,
+    "amount swapped under a valid pin",
+  );
+  // The pin binds the QUOTE too, so a pin issued for one price cannot be
+  // replayed against requirements naming another.
+  assert.equal(
+    parseOrderPins(pinned("ah-hock", "19500000"), { ...REQ, amount: "1" }),
+    null,
+    "replayed against a different amount",
+  );
+  assert.equal(
+    parseOrderPins(pinned("ah-hock", "19500000"), { ...REQ, asset: `0x${"ab".repeat(20)}` }),
+    null,
+    "replayed against a different asset",
+  );
+});
+
+test("orderPin is deterministic, which buildOrderPrice requires", () => {
+  // The middleware rebuilds requirements for the paid retry and deep-equal
+  // matches them against what the client echoed. A digest carrying a timestamp
+  // or a nonce would differ on the rebuild and fail every payment.
+  const facts = { handle: "ah-hock", xsgdAmount: "19500000", ...REQ };
+  assert.equal(orderPin(facts), orderPin(facts));
+  // Case-insensitive on the asset only: addresses arrive in mixed EIP-55 casing.
+  assert.equal(orderPin(facts), orderPin({ ...facts, asset: REQ.asset.toLowerCase() }));
+  assert.notEqual(orderPin(facts), orderPin({ ...facts, handle: "gadgethub-sg" }));
 });
 
 test("splitSignature65 normalizes both v and yParity final bytes", () => {

@@ -184,7 +184,7 @@ function recordDenialLocally(
   try {
     const denial = policyDenialOf(err);
     if (!denial) return;
-    const pins = parseOrderPins(requirements.extra);
+    const pins = parseOrderPins(requirements.extra, requirements);
     if (!pins) {
       console.error(`pbm: denial of intent ${intentId} not recorded — requirements pin no order facts`);
       return;

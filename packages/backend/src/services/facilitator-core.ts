@@ -1,3 +1,4 @@
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { parseSignature, verifyTypedData, type Address, type Hex } from "viem";
 import { z } from "zod";
 import {
@@ -53,15 +54,76 @@ export function parseOrderResource(url: string): { handle: string; sgd: string }
  * against the client echo), so a client cannot redirect the order to another
  * merchant by tampering with what it echoes. Vanilla clients ignore the extra
  * keys beyond the EIP-712 name/version. */
+/**
+ * The order facts, authenticated.
+ *
+ * `handle` and `xsgdAmount` decide WHICH MERCHANT gets paid, and on the vanilla
+ * `exact` scheme nothing else does: the custodial hop sets `payTo` to the
+ * relayer for every order, so the payer's EIP-3009 signature commits to an
+ * amount and a collector and says nothing about the shop. That is safe while
+ * the requirements come from `paymentRequired.accepts` — the SDK matches the
+ * client's echo against the server-built entry — but `POST /facilitator/settle`
+ * is a spec-shaped public route that validates only the SHAPE of the
+ * requirements it is handed. Without a pin, a caller holding an unused
+ * authorization made out to the relayer can name any merchant they like.
+ *
+ * A keyed digest is the smallest thing that closes it: the server can tell its
+ * own quote from a caller's, and a caller cannot mint one.
+ *
+ * The secret is per-process and random — deliberately NOT configuration. It
+ * never leaves the box, there is nothing to rotate or leak, and one host serves
+ * both halves of any single order. A restart between challenge and settle
+ * invalidates in-flight challenges, which is correct rather than unfortunate:
+ * the quote they carry is one this process never made.
+ */
+const ORDER_PIN_SECRET = randomBytes(32);
+
+export interface OrderPinFacts {
+  handle: string;
+  xsgdAmount: string;
+  asset: string;
+  amount: string;
+}
+
+export function orderPin(facts: OrderPinFacts): string {
+  // Length-prefixed, so no combination of field values can be re-partitioned
+  // into a different order that digests the same.
+  const message = [facts.handle, facts.xsgdAmount, facts.asset.toLowerCase(), facts.amount]
+    .map((part) => `${part.length}:${part}`)
+    .join("|");
+  return createHmac("sha256", ORDER_PIN_SECRET).update(message).digest("hex");
+}
+
+/**
+ * Read the order facts back out, and refuse them unless this process pinned
+ * them. Returns null on any failure, which every caller already treats as
+ * `invalid_requirements`.
+ */
 export function parseOrderPins(
   extra: Record<string, unknown>,
+  requirements: { asset: string; amount: string },
 ): { handle: string; xsgdAmount: bigint } | null {
   const handle = extra["handle"];
   const xsgd = extra["xsgdAmount"];
+  const pin = extra["pin"];
   if (typeof handle !== "string" || !isValidHandle(handle)) return null;
   if (typeof xsgd !== "string" || !/^\d+$/.test(xsgd)) return null;
+  if (typeof pin !== "string") return null;
   const xsgdAmount = BigInt(xsgd);
   if (xsgdAmount <= 0n) return null;
+
+  const expected = orderPin({
+    handle,
+    xsgdAmount: xsgd,
+    asset: requirements.asset,
+    amount: requirements.amount,
+  });
+  // Constant-time, and length-guarded because timingSafeEqual throws on a
+  // length mismatch rather than returning false.
+  const given = Buffer.from(pin, "utf8");
+  const want = Buffer.from(expected, "utf8");
+  if (given.length !== want.length || !timingSafeEqual(given, want)) return null;
+
   return { handle, xsgdAmount };
 }
 

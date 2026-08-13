@@ -101,7 +101,7 @@ async function runBridge(
   // The order facts come from the server-pinned requirements.extra — never
   // from the client-echoed resource URL (a client could echo a different
   // merchant's URL at the same price).
-  const pins = parseOrderPins(requirements.extra);
+  const pins = parseOrderPins(requirements.extra, requirements);
   if (!pins) {
     return failure(
       "invalid_requirements",
