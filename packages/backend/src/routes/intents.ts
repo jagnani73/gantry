@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { TOKEN_IDS } from "@gantry/shared";
+import { PAYABLE_TOKEN_IDS } from "@gantry/shared";
 import type { Hex } from "viem";
 import { createIntent, getIntentStatusResponse, requoteIntent } from "../services/intents";
 import { settle } from "../services/settlement";
@@ -16,8 +16,9 @@ const CreateIntentSchema = z.object({
   xsgdAmount: z.string(),
   // Required: every caller already pins it, and a server-side default would
   // silently decide which asset a payer signs for. Derived from TOKENS so the
-  // schema cannot drift from the token set.
-  token: z.enum(TOKEN_IDS),
+  // schema cannot drift from the token set — and from the PAYABLE subset,
+  // because this route is unauthenticated and MockXSGD has a public mint.
+  token: z.enum(PAYABLE_TOKEN_IDS),
 });
 
 const SettleSchema = z.object({

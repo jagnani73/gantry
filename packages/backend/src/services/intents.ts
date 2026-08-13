@@ -6,6 +6,7 @@ import {
   doorToWire,
   fixedRateSwapAbi,
   gantryCoreAbi,
+  isPayableToken,
   quoteAmountIn,
   toWireTypedData,
   tokenAddress,
@@ -61,6 +62,14 @@ export async function createIntent(
   }
 
   const token = req.token;
+  // Defence in depth behind the route schema. Every caller-choosable token
+  // arrives on the unauthenticated POST /api/intents, and MockXSGD's mint() is
+  // public — quoting it would let anyone settle a fabricated payment onto a
+  // merchant's live book for free. Enforced here as well so a future route
+  // cannot reopen the path by forgetting which enum to validate against.
+  if (!isPayableToken(token)) {
+    throw new ApiError(400, "TokenUnsupported", `${token} cannot be used to pay`);
+  }
   const tokenIn = tokenAddress(config.addresses, token);
   const rate = await readRate(token);
   const amountIn = token === "MockXSGD" ? xsgdAmount : quoteAmountIn(xsgdAmount, rate);
