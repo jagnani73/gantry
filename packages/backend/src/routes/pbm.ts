@@ -8,6 +8,7 @@ import {
 } from "@gantry/shared";
 import { config } from "../config";
 import { createIntent } from "../services/intents";
+import { inFlightGuard } from "../services/in-flight";
 
 /**
  * The `gantry-pbm` pre-signing step. The scheme's SpendAuthorization binds the
@@ -28,13 +29,21 @@ const BodySchema = z.object({
   xsgdAmount: z.string().regex(/^\d+$/, "expected 6dp XSGD units as a decimal string"),
 });
 
+/** Same bound as POST /api/intents: one relayer tx per call, one nonce queue. */
+const pbmIntentGuard = inFlightGuard(
+  "IntentCreationInProgress",
+  "an intent creation from this address is already in flight",
+);
+
 pbmRouter.post("/api/pbm/intent", async (req, res) => {
   const body = BodySchema.parse(req.body);
   // Door derived from the route, never client-supplied: this route exists
   // only for the agent scheme, so everything it creates is an Agent intent.
-  const intent = await createIntent(
-    { handle: body.handle, xsgdAmount: body.xsgdAmount, token: "USDC" as const },
-    Door.Agent,
+  const intent = await pbmIntentGuard.run(req.ip, () =>
+    createIntent(
+      { handle: body.handle, xsgdAmount: body.xsgdAmount, token: "USDC" as const },
+      Door.Agent,
+    ),
   );
   const response: PbmIntentResponse = {
     intentId: intent.intentId,

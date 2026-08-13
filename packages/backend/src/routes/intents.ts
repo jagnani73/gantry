@@ -4,6 +4,7 @@ import { PAYABLE_TOKEN_IDS } from "@gantry/shared";
 import type { Hex } from "viem";
 import { createIntent, getIntentStatusResponse, requoteIntent } from "../services/intents";
 import { settle } from "../services/settlement";
+import { inFlightGuard } from "../services/in-flight";
 import { fundPayer, fundPayerGas } from "../services/faucet";
 
 export const intentsRouter = Router();
@@ -30,9 +31,15 @@ const SettleSchema = z.object({
 
 const FaucetSchema = z.object({ address: hexAddress });
 
+/** Each call costs the relayer one createIntent tx on the shared nonce queue. */
+const createGuard = inFlightGuard(
+  "IntentCreationInProgress",
+  "an intent creation from this address is already in flight",
+);
+
 intentsRouter.post("/api/intents", async (req, res) => {
   const body = CreateIntentSchema.parse(req.body);
-  res.status(201).json(await createIntent(body));
+  res.status(201).json(await createGuard.run(req.ip, () => createIntent(body)));
 });
 
 intentsRouter.get("/api/intents/:intentId", async (req, res) => {
@@ -56,7 +63,7 @@ intentsRouter.post("/api/intents/:intentId/settle", async (req, res) => {
 
 intentsRouter.post("/api/intents/:intentId/requote", async (req, res) => {
   const intentId = hex32.parse(req.params.intentId) as Hex;
-  res.status(201).json(await requoteIntent(intentId));
+  res.status(201).json(await createGuard.run(req.ip, () => requoteIntent(intentId)));
 });
 
 intentsRouter.post("/api/faucet", async (req, res) => {
