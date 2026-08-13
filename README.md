@@ -159,35 +159,84 @@ Payments settle in Circle's real testnet USDC ([`0x036CbD53…8f3dCF7e`](https:/
 
 ## FAQ
 
-**Why not just use PayNow?**
+<details>
+<summary><strong>Why not just use PayNow?</strong></summary>
+
 For a Singaporean paying a Singaporean, you should. It is free and it works. PayNow needs a Singapore bank account, so it cannot serve the roughly 16 million international visitors who arrive each year, and it certainly cannot serve software. Gantry covers the payers PayNow structurally cannot reach, not the ones it already serves well.
 
-**Why does this need a blockchain at all?**
+</details>
+
+<details>
+<summary><strong>Why does this need a blockchain at all?</strong></summary>
+
 The QR half doesn't, strictly. A bank could build it. The agent half does, for one specific reason: the spending policy has to be enforced somewhere the agent's own software cannot reach. A cap that lives in the agent's code is a cap a compromised agent edits. On-chain it is a revert, so the funds cannot move and you can watch it fail.
 
-**What if the agent's session key is stolen?**
+</details>
+
+<details>
+<summary><strong>What if the agent's session key is stolen?</strong></summary>
+
 The attacker gets exactly what the policy allows: up to S$50 a day, at food merchants, until the expiry, and only until the owner revokes. The policy is the perimeter, not the key. That perimeter is not ours to move either, because `setPolicy` and `revoke` are `onlyOwner` and Gantry holds no key that can call them, so compromising Gantry does not widen an agent's allowance.
 
-**Where does the FX rate come from?**
+</details>
+
+<details>
+<summary><strong>Where does the FX rate come from?</strong></summary>
+
 On testnet, from us. It is an owner-set fixed rate at 1.3421, labelled as such everywhere, because XSGD exists on no testnet. That is why settlement talks to an `IGantrySwap` interface rather than to a pool: production swaps in real XSGD liquidity through an aggregator or an RFQ quote. `GantryCore` enforces its own minimum-out by measuring its balance delta, so that guarantee does not depend on trusting whatever sits behind the interface.
 
-**Is agent commerce real, or speculative?**
+</details>
+
+<details>
+<summary><strong>Where does the XSGD a merchant receives actually come from?</strong></summary>
+
+A reserve. The deploy script minted 1,000,000 MockXSGD into `FixedRateSwap`, and every merchant is paid out of that balance; nothing is minted on demand. A settlement pushes the payer's USDC in and pulls XSGD out, so the pile only shrinks, and the USDC collecting on the other side is what `rescueERC20` exists to sweep. There is no curve and no slippage. The price is the owner-set rate, and a swap either pays in full or reverts, because an empty reserve just fails the ERC-20 transfer. Tokens without an owner-listed rate are refused outright, which is what stops anyone draining the reserve by offering it something they minted themselves.
+
+We skipped the AMM on purpose. Seeding our own pool and pricing it through a curve would dress the same invented XSGD up as a market; a reserve labelled as a reserve claims less. `IGantrySwap` is the seam, and real XSGD liquidity is what goes behind it in production.
+
+</details>
+
+<details>
+<summary><strong>Is agent commerce real, or speculative?</strong></summary>
+
 Partly speculative, and we would rather say so than oversell it. What is not speculative: x402 launched in May 2025, went to the Linux Foundation, and its foundation was operational by July 2026 with 40 founding members including Google, Visa and Cloudflare. Client libraries ship today, and this endpoint is paid end to end by an unmodified one.
 
-**Who carries the regulatory liability?**
+</details>
+
+<details>
+<summary><strong>Who carries the regulatory liability?</strong></summary>
+
 Not Gantry, and we are not claiming otherwise. In production it sits behind a licensed payment institution under Singapore's Payment Services Act, the regime StraitsX already issues XSGD under. Gantry is the rail and the policy layer; the licensed entity holds the customer relationship and the obligations. A hackathon prototype is not a payments licence.
 
-**There are no chargebacks. What about consumer protection?**
+</details>
+
+<details>
+<summary><strong>There are no chargebacks. What about consumer protection?</strong></summary>
+
 Correct, and that is a real limitation of settlement finality rather than something to hand-wave. Two partial answers. On the agent side the policy layer is preventive: the money never leaves, which beats clawing it back. On the human side a production deployment would put a licensed PSP in the flow who can hold funds in escrow for a dispute window. We did not build that.
 
-**How does a hawker who has never held crypto actually get paid?**
+</details>
+
+<details>
+<summary><strong>How does a hawker who has never held crypto actually get paid?</strong></summary>
+
 Today the onboarding form asks for a payout address, which is the least realistic step in the whole flow. The production answer is a passkey smart account: the merchant creates a wallet with FaceID at signup, no seed phrase and no app to install, and Gantry never holds the key. What we deliberately did not do is generate and hold the merchant's key, which would make Gantry the custodian of hawker revenue and turn a non-custodial rail into an unlicensed money service.
 
-**Did you write the x402 client?**
+</details>
+
+<details>
+<summary><strong>Did you write the x402 client?</strong></summary>
+
 No, and that is the point. We wrote the server and the facilitator. The client is `@x402/fetch`, unmodified.
 
-**Is the LLM making the payment?**
+</details>
+
+<details>
+<summary><strong>Is the LLM making the payment?</strong></summary>
+
 No. The model chooses and narrates. The signing and the HTTP live in tools it cannot reach, and if the model times out, a scripted path sends identical wire traffic.
+
+</details>
 
 ---
 
