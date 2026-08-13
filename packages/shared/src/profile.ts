@@ -170,3 +170,50 @@ export function normalizeProfile(input: MerchantProfile): ProfileResult {
 export function profileFieldLength(value: string): number {
   return [...value.trim()].length;
 }
+
+/**
+ * Display fields as the CHAIN reports them — sanitised on the way OUT.
+ *
+ * This is the READ path, and it exists because merchant text moved on-chain
+ * behind a permissionless `registerMerchant`. While `POST /api/merchants` was
+ * the only writer, `normalizeProfile` was a chokepoint and every stored name had
+ * already been through it. Now anyone who pays gas can write a shop name
+ * containing an override, an invisible glyph or 240 characters of padding
+ * straight to the contract — which checks length only, because rendering rules
+ * do not belong in a settlement contract. The chokepoint had to move from the
+ * write to the read; it could not simply disappear.
+ *
+ * It lives in `shared` rather than in the backend because the rule is
+ * "validate on read, because you do not control who calls the contract", and a
+ * rule only one package can reach is a rule the next package will miss. The
+ * browser already reads the chain directly elsewhere, so the first screen to
+ * read `GantryCore.merchants()` for itself must have this within reach.
+ *
+ * Absence is the point: a merchant with nothing usable renders as its handle,
+ * which is true, where an invented name is not. Keys are omitted rather than set
+ * to undefined, so they never reach the JSON at all.
+ */
+export function resolveProfile(chain: MerchantProfile): Partial<MerchantProfile> {
+  return {
+    ...renderable("displayName", chain.displayName),
+    ...renderable("location", chain.location),
+    ...renderable("blurb", chain.blurb),
+  };
+}
+
+/**
+ * One field, or nothing at all. Deceptive text is DROPPED rather than escaped or
+ * repaired: the honest rendering of a name designed to lie about itself is the
+ * shop's own handle.
+ *
+ * The four checks are the four `normalizeProfile` applies on the write path, and
+ * all four have to be here, because nothing guarantees a stored value ever met
+ * them. Trimmed first, because `" "` is a legal on-chain value and is TRUTHY —
+ * forwarded raw it renders as a blank name and the handle fallback never fires.
+ */
+function renderable(field: ProfileField, value: string): Partial<MerchantProfile> {
+  const trimmed = value.trim();
+  if (!trimmed || isDeceptive(trimmed) || !hasVisibleContent(trimmed)) return {};
+  if (profileFieldLength(trimmed) > PROFILE_LIMITS[field]) return {};
+  return { [field]: trimmed };
+}
