@@ -1,6 +1,25 @@
 packages:
   - packages/*
 
+# Transitive advisories, lifted WITHIN their major so no consumer's API changes.
+# All of these are reachable only through `next` and the RainbowKit/wagmi chain;
+# none is a direct dependency of ours. Lives here rather than in package.json
+# because pnpm 11 no longer reads a `pnpm.overrides` field there.
+#
+# Two advisories are deliberately NOT overridden, because the fix is worse than
+# the finding this close to a submission:
+#   uuid  wants >=11.1.1 and 8.3.2 / 9.0.1 are installed — two majors, and v11
+#         changed its export shape.
+#   sharp wants >=0.35.0 against 0.34.5 — a 0.x minor may break, it is a native
+#         binary, and it sits on Next's image path, which packages/web has no
+#         test suite to cover.
+overrides:
+  postcss@<8.5.23: ^8.5.25
+  axios@<1.18.0: ^1.18.0
+  # Scoped to the 8.x line on purpose: ws@7.5.13 is also present, and forcing
+  # that consumer across a major is a bigger risk than the advisory.
+  ws@>=8 <8.21.0: ^8.21.0
+
 allowBuilds:
   better-sqlite3: true
   bufferutil: true
