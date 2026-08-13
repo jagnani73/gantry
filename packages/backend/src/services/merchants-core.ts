@@ -3,6 +3,8 @@ import {
   categoryName,
   hasVisibleContent,
   isDeceptive,
+  profileFieldLength,
+  PROFILE_LIMITS,
   type MerchantProfile,
   type MerchantSummary,
 } from "@gantry/shared";
@@ -66,15 +68,25 @@ export function resolveProfile(chain: MerchantProfile): Partial<MerchantProfile>
  * or repaired: the honest rendering of a name designed to lie about itself is
  * the shop's own handle.
  *
- * The three checks are the same three `normalizeProfile` applies on the write
- * path, and all three have to be here: `registerMerchant` is permissionless, so
+ * The four checks are the same four `normalizeProfile` applies on the write
+ * path, and all four have to be here: `registerMerchant` is permissionless, so
  * nothing guarantees a stored value ever met them. `hasVisibleContent` is the
  * one that is easy to leave out — a name of joiners is neither blank nor
  * deceptive, and trims to a non-empty string, so it passes the other two and
- * renders as an invisible shop name with the handle fallback never firing. */
+ * renders as an invisible shop name with the handle fallback never firing.
+ *
+ * LENGTH is the one that was left out. The contract bounds these fields in
+ * BYTES at 4× the client's codepoint limits — deliberately, so anything
+ * `normalizeProfile` accepts always fits — but that arithmetic only holds for
+ * text that came through a client. A shop registered straight on chain can
+ * store 240 codepoints of `displayName`, and the drawer, the sidebar and the
+ * laminated standee do not clamp. Dropped rather than truncated, because
+ * absence is this module's answer everywhere else and half a shop name is its
+ * own kind of lie. */
 function renderable(field: keyof MerchantProfile, value: string): Partial<MerchantProfile> {
   const trimmed = value.trim();
   if (!trimmed || isDeceptive(trimmed) || !hasVisibleContent(trimmed)) return {};
+  if (profileFieldLength(trimmed) > PROFILE_LIMITS[field]) return {};
   return { [field]: trimmed };
 }
 

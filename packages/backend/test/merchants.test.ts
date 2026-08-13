@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  PROFILE_FIELDS,
   PROFILE_LIMITS,
   normalizeProfile,
   resolveProfile,
@@ -167,6 +168,40 @@ test("a name made only of joiners is dropped on the READ path too", () => {
     resolveProfile({ displayName: "Ah Hock \u{1F468}‍\u{1F373}", location: "", blurb: "" })
       .displayName,
     "Ah Hock \u{1F468}‍\u{1F373}",
+  );
+});
+
+test("oversized on-chain text is dropped, not rendered or truncated", () => {
+  // The contract bounds these in BYTES at 4x the client's codepoint limits, so
+  // anything normalizeProfile accepts always fits. That arithmetic only holds
+  // for text that came through a client: registerMerchant is permissionless, so
+  // a shop registered straight on chain can store 240 codepoints of displayName
+  // and the drawer, the sidebar and the laminated standee do not clamp.
+  const overLong = "a".repeat(PROFILE_LIMITS.displayName + 1);
+  assert.deepEqual(resolveProfile({ displayName: overLong, location: "", blurb: "" }), {});
+
+  // Exactly at the ceiling still renders — an off-by-one here would silently
+  // blank a legitimately-registered shop.
+  const atLimit = "a".repeat(PROFILE_LIMITS.displayName);
+  assert.equal(
+    resolveProfile({ displayName: atLimit, location: "", blurb: "" }).displayName,
+    atLimit,
+  );
+
+  // Per-field ceilings, applied by key. A copy-paste that checked displayName's
+  // limit three times would pass a displayName-only test.
+  for (const field of PROFILE_FIELDS) {
+    const over = "b".repeat(PROFILE_LIMITS[field] + 1);
+    const resolved = resolveProfile({ displayName: "", location: "", blurb: "", [field]: over });
+    assert.equal(field in resolved, false, `${field} rendered over its ceiling`);
+  }
+
+  // Codepoints, not UTF-16 units: an astral emoji costs one, matching the write
+  // path, or a name of emoji would be refused at half the stated limit.
+  const emoji = "\u{1F35B}".repeat(PROFILE_LIMITS.displayName);
+  assert.equal(
+    resolveProfile({ displayName: emoji, location: "", blurb: "" }).displayName,
+    emoji,
   );
 });
 
