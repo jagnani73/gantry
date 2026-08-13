@@ -15,6 +15,21 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 export const env = {
   gantryApi: process.env.GANTRY_API ?? "http://localhost:4000",
   agentSessionKey: process.env.AGENT_SESSION_KEY as `0x${string}` | undefined,
+  /**
+   * OPTIONAL pin for the wallet this agent acts through. Discovery stays the
+   * default; this exists because discovery alone cannot be made safe.
+   *
+   * `createWallet` is permissionless and takes `agentSigner` unproven, so anyone
+   * can mint a wallet naming someone else's session key. Selection then picks
+   * the NEWEST such wallet, and an attacker can always create one newer — so a
+   * stranger can move which wallet an agent acts through, permanently, and the
+   * policy constraining that agent silently becomes the attacker's policy
+   * rather than the owner's. Nothing can delete a wallet, so it does not undo.
+   *
+   * Setting this makes the choice explicit and unspoofable. Left unset the CLI
+   * still discovers, and says loudly when the answer was ambiguous.
+   */
+  agentWallet: process.env.AGENT_WALLET as `0x${string}` | undefined,
   /** Google AI Studio key (free tier) — absent ⇒ scripted mode. */
   googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   llmTimeoutMs: Number(process.env.AGENT_LLM_TIMEOUT_MS ?? 8000),

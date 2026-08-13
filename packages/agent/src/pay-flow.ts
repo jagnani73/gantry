@@ -111,6 +111,26 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
   // has ever had, which is precisely the one nobody maintains: it would spend
   // from an unfunded wallet whose spentToday never resets, while the payer app
   // showed a healthy meter on a different wallet that never moves.
+  // A PIN beats every heuristic below, and only a pin is actually safe.
+  // `createWallet` is permissionless and takes `agentSigner` unproven, so anyone
+  // can mint a wallet naming this key — and since selection prefers the newest,
+  // an attacker can always mint a newer one and move which wallet this agent
+  // acts through. The EIP-712 domain binds each signature to its own wallet, so
+  // nothing is stolen, but the policy that is supposed to constrain this agent
+  // quietly becomes a stranger's policy instead of its owner's, and no wallet
+  // can ever be deleted to undo it.
+  if (env.agentWallet) {
+    const pinned = agents.find((a) => a.wallet.toLowerCase() === env.agentWallet!.toLowerCase());
+    if (!pinned) {
+      throw new Error(
+        `AGENT_WALLET is ${env.agentWallet} but that wallet does not list ${signer} as its agent ` +
+          `signer. Rotate the key on that wallet, or clear AGENT_WALLET to discover one.`,
+      );
+    }
+    cachedWallet = pinned.wallet;
+    return cachedWallet;
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const active = agents.filter((a) => agentStatus(a, now) === "active");
   const usable = active.at(-1) ?? agents.at(-1);
@@ -133,6 +153,14 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
         ? `agent: ${agents.length} wallets list this signer; spending from the newest ACTIVE one, ${usable.wallet}`
         : `agent: ${agents.length} wallets list this signer and NONE has a live policy; ` +
             `falling back to the newest, ${usable.wallet}. Expect PolicyExpired until it is re-armed.`,
+    );
+    // More than one wallet naming this signer is expected here — the factory is
+    // permissionless and this demo migrated between wallets — but it is also
+    // exactly what a hijack looks like, and the two are indistinguishable from
+    // this side. Name the remedy rather than leaving the operator to weigh it.
+    console.error(
+      `agent: any of those could have been created by anyone — createWallet takes agentSigner ` +
+        `unproven. Set AGENT_WALLET to pin the one you own if this is not a machine you control.`,
     );
   }
   cachedWallet = usable.wallet;
