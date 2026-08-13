@@ -2,9 +2,16 @@
 node_modules/
 
 # Env
-.env
-.env.local
-.env.*.local
+# Match every .env variant rather than listing the ones we happen to use today.
+# The relayer key is the whole system — it owns all four contracts, is the sole
+# onlyRelayer address and pays all gas — and the deploy story involves a
+# production env file, so `.env.production` or a stray `.env.bak` while editing
+# is the one realistic way it reaches a commit. Committing it once is permanent:
+# the repo is about to be public and deleting a file does not remove it from
+# history. The example files are the deliberate exception; they hold only
+# placeholders and are what tells a fresh clone which vars exist.
+.env*
+!.env.example
 
 # Build outputs
 .next/
