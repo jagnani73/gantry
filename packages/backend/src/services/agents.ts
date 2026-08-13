@@ -60,6 +60,39 @@ async function walletsOwnedBy(owner: Address): Promise<Address[]> {
 }
 
 /**
+ * Did the CURRENT factory mint this address?
+ *
+ * `pbmWallet` arrives in a client payload, and reading `CORE()` off it is not an
+ * answer: that is a getter, and a contract an attacker wrote returns whatever it
+ * likes from a getter. Without provenance the relayer calls `authorizeSpend` on
+ * attacker code, and the revert it chooses is then decoded and carried into
+ * `cancelIntentWithReason` — so an attacker authors an attributed `IntentDenied`
+ * that every host's indexer replicates as a real refusal.
+ *
+ * `_walletsOf` is the factory's own record, written inside `createWallet`, so it
+ * cannot be forged and it is current the instant a wallet exists — no sweep to
+ * wait for. Reading `owner()` off the wallet first is safe for the same reason
+ * the check works at all: a hostile contract may claim any owner, but the
+ * factory's list for that owner will not contain an address the factory never
+ * deployed.
+ *
+ * Fails CLOSED. An unreadable `owner()` is exactly what a non-wallet looks like,
+ * and an RPC failure is not permission to attribute a refusal to someone.
+ */
+export async function isFactoryWallet(wallet: Address): Promise<boolean> {
+  try {
+    const owner = (await publicClient.readContract({
+      address: wallet,
+      abi: agentPbmWalletAbi,
+      functionName: "owner",
+    })) as Address;
+    return (await walletsOwnedBy(owner)).some((minted) => sameAddress(minted, wallet));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Candidate wallets for a filter, before any of them are read.
  *
  * A signer filter can be answered only from the swept table, which lags the chain

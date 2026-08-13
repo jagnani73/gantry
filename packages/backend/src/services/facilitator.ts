@@ -14,6 +14,7 @@ import {
 import { publicClient, relayerAccount, tokenDomain } from "../chain";
 import { config } from "../config";
 import { getIntentRow } from "../db";
+import { isFactoryWallet } from "./agents";
 import { validateExactPayment, type VerifyFailure } from "./facilitator-core";
 import {
   GantryPbmPayloadSchema,
@@ -168,6 +169,29 @@ export async function verifyPbm(
   }
   if (walletCore.toLowerCase() !== config.addresses.gantryCore.toLowerCase()) {
     return invalid("invalid_payload", `wallet is bound to a different GantryCore (${walletCore})`, pbmWallet);
+  }
+
+  // PROVENANCE, which the CORE() check above only looks like. CORE() is a
+  // getter, and a contract an attacker wrote returns whatever it likes from a
+  // getter — including our own core's address. Without this, the relayer calls
+  // authorizeSpend on attacker code, and whatever that code chooses to revert
+  // with is decoded and carried into cancelIntentWithReason, so an attacker
+  // authors an attributed IntentDenied that every host's indexer replicates as
+  // a genuine refusal against a wallet of their choosing.
+  //
+  // Placed after the reads above rather than beside them on purpose: those
+  // succeeding means the RPC is healthy and the address is contract-like, so a
+  // negative here is an answer rather than a transport flake — which is what
+  // lets this fail closed without misreporting an outage as a forgery.
+  //
+  // runPbmSettle calls verifyPbm before settling, so this one check also guards
+  // POST /facilitator/settle, which is reachable without calling verify first.
+  if (!(await isFactoryWallet(pbmWallet))) {
+    return invalid(
+      "invalid_payload",
+      `${pbmWallet} was not created by the current AgentPBMWalletFactory`,
+      pbmWallet,
+    );
   }
 
   const validation = await validatePbmPayment({
