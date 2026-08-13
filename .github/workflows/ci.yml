@@ -44,6 +44,6 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       # Fork tests self-skip without BASE_SEPOLIA_RPC_URL, so this stays green
-      # without a secret; the other 157 run.
+      # without a secret; the rest run.
       - run: pnpm test:contracts
 
