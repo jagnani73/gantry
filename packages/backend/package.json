@@ -8,7 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/db.test.ts test/queue.test.ts test/errors.test.ts test/faucet-budget.test.ts test/facilitator-core.test.ts test/pbm-core.test.ts test/settlements.test.ts test/merchants.test.ts test/denials.test.ts test/agents-core.test.ts test/faucet-core.test.ts",
+    "test": "tsx --test test/db.test.ts test/queue.test.ts test/errors.test.ts test/redact.test.ts test/faucet-budget.test.ts test/facilitator-core.test.ts test/pbm-core.test.ts test/settlements.test.ts test/merchants.test.ts test/denials.test.ts test/agents-core.test.ts test/faucet-core.test.ts",
     "e2e:pay": "tsx scripts/e2e-pay.ts",
     "x402:buy": "tsx scripts/x402-buy.ts"
   },

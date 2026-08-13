@@ -18,6 +18,7 @@ import { publicClient, relayerAccount, tokenDomain } from "../chain";
 import { config } from "../config";
 import { getIntentRow, setIntentStatus } from "../db";
 import { ApiError } from "../errors";
+import { safeMessage } from "../redact";
 import { sendRelayerTx } from "../relayer";
 import { ExactEvmPayloadSchema, parseOrderPins, reasonForGantryError, splitSignature65 } from "./facilitator-core";
 import { verifyExact } from "./facilitator";
@@ -50,7 +51,7 @@ export async function settleBridge(
     // from err.message — returning our own shape keeps the decoded-reason
     // vocabulary and the payer field intact instead.
     console.error("bridge: unexpected failure", err);
-    return failure("settlement_failed", err instanceof Error ? err.message : String(err));
+    return failure("settlement_failed", safeMessage(err));
   }
 }
 

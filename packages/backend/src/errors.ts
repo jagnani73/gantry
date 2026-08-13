@@ -7,6 +7,7 @@ import {
   serializeArgs,
   type ApiErrorBody,
 } from "@gantry/shared";
+import { redactSecrets, safeMessage } from "./redact";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -90,10 +91,17 @@ export function errorMiddleware(
       res.status(status).json(body);
       return;
     }
+    // kind === "unknown": a transport failure rather than a revert, and the one
+    // shape that used to fall through to `err.message` below. `message` here is
+    // `describeGantryError` over `err.shortMessage`; `err.message` would append
+    // viem's metaMessages, which carry `URL: <rpc url>` — and the RPC key lives
+    // in that URL's path. Same status and shape as before, minus the credential.
+    trace("InternalError");
+    console.error("unhandled error:", err);
+    res.status(500).json({ error: { name: "InternalError", message: redactSecrets(message) } });
+    return;
   }
   console.error("unhandled error:", err);
-  const body: ApiErrorBody = {
-    error: { name: "InternalError", message: err instanceof Error ? err.message : String(err) },
-  };
+  const body: ApiErrorBody = { error: { name: "InternalError", message: safeMessage(err) } };
   res.status(500).json(body);
 }

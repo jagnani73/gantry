@@ -9,6 +9,7 @@ import {
 } from "@gantry/shared";
 import { publicClient } from "../chain";
 import { config } from "../config";
+import { safeMessage } from "../redact";
 import { getIntentRow, insertDenial, setIntentStatus } from "../db";
 import {
   failure,
@@ -46,7 +47,7 @@ export async function settlePbmScheme(
     // from err.message — returning our own shape keeps the decoded-reason
     // vocabulary and the payer field intact instead.
     console.error("pbm: unexpected failure", err);
-    return failure("settlement_failed", err instanceof Error ? err.message : String(err));
+    return failure("settlement_failed", safeMessage(err));
   }
 }
 

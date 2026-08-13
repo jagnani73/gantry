@@ -3,6 +3,7 @@ import type { FaucetResponse } from "@gantry/shared";
 import { publicClient, relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
+import { safeMessage } from "../redact";
 import { sendRelayerEth, sendRelayerTx } from "../relayer";
 import { isDefiniteFailure } from "./bridge";
 import {
@@ -311,7 +312,9 @@ function resolveFailedGasTopUp(
     ...nothingSent(),
     error: {
       name: err instanceof ApiError ? err.errorName : "GasTopUpFailed",
-      message: err instanceof Error ? err.message : String(err),
+      // This rides out on a 200 from POST /api/faucet, so it never passes
+      // through errorMiddleware — its own sanitising is the only one it gets.
+      message: safeMessage(err),
     },
   };
 }

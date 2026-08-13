@@ -17,6 +17,14 @@ import { facilitatorRouter } from "./routes/facilitator";
 import { pbmRouter } from "./routes/pbm";
 import { ordersRouter } from "./routes/order";
 import { x402Middleware } from "./x402";
+import { installLogRedaction, registerSecrets } from "./redact";
+
+// Before anything can log. The RPC key is in the URL PATH, and viem prints the
+// URL in a transport error's metaMessages and in every `[cause]` chain that
+// reaches console — see redact.ts. config.ts itself never logs a URL, so its
+// import-time output above is already safe.
+registerSecrets([...config.rpcUrls, config.wsUrl]);
+installLogRedaction();
 
 const app = express();
 

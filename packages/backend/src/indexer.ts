@@ -10,6 +10,7 @@ import {
 } from "@gantry/shared";
 import { publicClient, relayerAccount, wsClient } from "./chain";
 import { config } from "./config";
+import { safeMessage } from "./redact";
 import {
   getCursor,
   setCursor,
@@ -524,7 +525,7 @@ async function sweep(): Promise<void> {
     }
     lastSweepError = null;
   } catch (err) {
-    lastSweepError = err instanceof Error ? err.message : String(err);
+    lastSweepError = safeMessage(err);
     console.error("indexer sweep failed:", lastSweepError);
   }
 }
