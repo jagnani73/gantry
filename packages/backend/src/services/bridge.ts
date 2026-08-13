@@ -237,11 +237,34 @@ async function resolveFailedCollect(
       return failure(reason, message, from);
     }
     if (landed === true) {
-      console.error(
-        `bridge CRITICAL: ambiguous collect DID land for intent ${intent.intentId} — refunding ${from}`,
+      // The nonce is spent, which is NOT the same as the money having moved:
+      // `cancelAuthorization` sets that same flag and transfers nothing, and on
+      // this path the authorizer is the PAYER, who holds the key. Refunding on
+      // the flag alone pays out the relayer's own USDC for a collect that never
+      // happened — so prove the transfer with the event before sending anything.
+      const transferred = await authorizationTransferred(
+        requirements.asset,
+        from,
+        authorization.nonce,
       );
-      await refundQuietly(requirements.asset, from, BigInt(authorization.value));
-      return failure(reason, `collect landed but settlement was aborted; funds refunded (${message})`, from);
+      if (transferred === true) {
+        console.error(
+          `bridge CRITICAL: ambiguous collect DID land for intent ${intent.intentId} — refunding ${from}`,
+        );
+        await refundQuietly(requirements.asset, from, BigInt(authorization.value));
+        return failure(reason, `collect landed but settlement was aborted; funds refunded (${message})`, from);
+      }
+      if (transferred === false) {
+        // The payer cancelled their own authorization. Nothing was collected,
+        // so there is nothing to refund and this is an ordinary failure.
+        return failure(reason, `${message} (authorization was cancelled; nothing was collected)`, from);
+      }
+      console.error(
+        `bridge CRITICAL: collect for intent ${intent.intentId} consumed nonce ${authorization.nonce} ` +
+          `but neither AuthorizationUsed nor AuthorizationCanceled was found for ${from}. NO refund sent. ` +
+          `Check whether the relayer received ${authorization.value} of ${requirements.asset} before refunding.`,
+      );
+      return failure(reason, `${message} (collect outcome unresolved; manual review logged)`, from);
     }
   }
   console.error(
@@ -276,6 +299,12 @@ async function resolveFailedSettle(
     return failure(reason, message, from);
   }
 
+  // The bare flag IS sufficient here, unlike on the collect path, and the
+  // difference is who the AUTHORIZER is. This authorization is the relayer's
+  // own self-signed one, and `cancelAuthorization` can only be called by the
+  // authorizer — so the only party who could set this flag without moving money
+  // is us, and we never call it. On the collect path the authorizer is the
+  // payer, which is exactly why that one needs the event instead.
   const settledOnChain = await readAuthorizationState(
     requirements.asset,
     relayerAccount.address,
@@ -427,6 +456,63 @@ function readAuthorizationState(asset: Address, authorizer: Address, nonce: Hex)
     functionName: "authorizationState",
     args: [authorizer, nonce],
   });
+}
+
+/**
+ * How far back to look for the proof. The collect was attempted moments ago —
+ * the relayer caps its receipt wait at 20s — so this only has to span one failed
+ * attempt, and ~2s blocks make 60 generous. Deliberately not the whole chain: a
+ * nonce is unique per authorizer, but an unbounded scan on a compensation path
+ * is a way to turn one stuck payment into a rate-limited backend.
+ */
+const AUTHORIZATION_PROOF_WINDOW = 60n;
+
+/**
+ * Did this authorization actually MOVE money?
+ *
+ * `authorizationState` cannot answer that. EIP-3009 sets the same flag from
+ * `transferWithAuthorization` and from `cancelAuthorization`, so it means "spent",
+ * not "transferred" — and `cancelAuthorization` is callable by the AUTHORIZER,
+ * who on the collect path is the payer. A payer whose collect failed ambiguously
+ * can therefore set the flag themselves and, on the old check, be refunded funds
+ * the relayer never received.
+ *
+ * The events do tell them apart, and both index authorizer and nonce, so this is
+ * one filtered `getLogs` over a short window.
+ *
+ * `true` = proven transferred · `false` = proven cancelled, no money moved ·
+ * `null` = could not tell, which callers must treat as "do not refund".
+ */
+async function authorizationTransferred(
+  asset: Address,
+  authorizer: Address,
+  nonce: Hex,
+): Promise<boolean | null> {
+  try {
+    const head = await publicClient.getBlockNumber();
+    const fromBlock = head > AUTHORIZATION_PROOF_WINDOW ? head - AUTHORIZATION_PROOF_WINDOW : 0n;
+    const [used, canceled] = await Promise.all([
+      publicClient.getLogs({
+        address: asset,
+        event: eip3009TokenAbi[0],
+        args: { authorizer, nonce },
+        fromBlock,
+        toBlock: head,
+      }),
+      publicClient.getLogs({
+        address: asset,
+        event: eip3009TokenAbi[1],
+        args: { authorizer, nonce },
+        fromBlock,
+        toBlock: head,
+      }),
+    ]);
+    if (used.length > 0) return true;
+    if (canceled.length > 0) return false;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function refundQuietly(asset: Address, to: Address, value: bigint): Promise<void> {

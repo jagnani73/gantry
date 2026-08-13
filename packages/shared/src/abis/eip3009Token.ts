@@ -2,8 +2,31 @@
 // facilitator bridge needs — the (v, r, s) transferWithAuthorization overload
 // (present on our EIP3009 mocks and Circle FiatTokenV2+; only this overload is
 // listed so viem never has to resolve between the two), plus the read/refund
-// helpers. Function-only on purpose: error decoding stays with gantryErrorsAbi.
+// helpers. No errors: error decoding stays with gantryErrorsAbi.
+//
+// The two authorization EVENTS are here because `authorizationState` cannot
+// answer the question the bridge's compensation path actually asks. That
+// mapping is set to true by `transferWithAuthorization` AND by
+// `cancelAuthorization`, so the boolean means "this nonce is spent", never
+// "the money moved" — and only the events tell the two apart. Both are standard
+// EIP-3009 and Circle's FiatTokenV2 emits them with these exact signatures.
 export const eip3009TokenAbi = [
+  {
+    type: "event",
+    name: "AuthorizationUsed",
+    inputs: [
+      { name: "authorizer", type: "address", indexed: true },
+      { name: "nonce", type: "bytes32", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "AuthorizationCanceled",
+    inputs: [
+      { name: "authorizer", type: "address", indexed: true },
+      { name: "nonce", type: "bytes32", indexed: true },
+    ],
+  },
   {
     type: "function",
     name: "transferWithAuthorization",
