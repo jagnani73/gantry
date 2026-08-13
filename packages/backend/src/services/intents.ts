@@ -18,7 +18,7 @@ import {
 } from "@gantry/shared";
 import { publicClient, tokenDomain } from "../chain";
 import { config, INTENT_TTL_SECONDS } from "../config";
-import { getIntentRow, insertIntentRow, setIntentStatus, type IntentRow } from "../db";
+import { getIntentRow, insertIntentRow, type IntentRow } from "../db";
 import { ApiError } from "../errors";
 import { sendRelayerTx } from "../relayer";
 import { getMerchant } from "./merchants";
@@ -129,7 +129,30 @@ export async function createIntent(
   };
 }
 
-/** Requote = cancel + recreate, never mutation (contract invariant). */
+/**
+ * Requote = recreate, never mutation (contract invariant).
+ *
+ * This deliberately does NOT cancel the superseded intent, and that is a
+ * security property rather than an omission. `GantryCore.cancelIntent` is
+ * `onlyRelayer` — cancellation is not permissionless on-chain — but this route
+ * is unauthenticated and takes only an intentId, which `IntentCreated` publishes
+ * to the world the moment the intent mines. Cancelling here lent that
+ * `onlyRelayer` capability to anyone watching the chain: subscribe to
+ * `IntentCreated`, POST the requote, and the payer's already-signed
+ * authorization dies on `assertNotReplayed` before it can settle. The payer page
+ * has no silent auto-requote — just a manual "Try again" — so the attacker
+ * cancels the replacement too, and no human-door payment on this host completes.
+ *
+ * Doing nothing is correct because the superseded intent expires by itself
+ * inside its 600s TTL, and stored statuses are only pending/settled/cancelled
+ * with expiry computed, so a lingering `pending` row needs no cleanup.
+ *
+ * A local-only `setIntentStatus(intentId, "cancelled")` is NOT an acceptable
+ * substitute: `assertNotReplayed` reads that status, so an anonymous caller
+ * could still 409 the payer's settle — the same denial, merely invisible on
+ * chain. If prompt cancellation is ever wanted back, it needs proof the caller
+ * owns the intent, not a cheaper way to reach the same relayer key.
+ */
 export async function requoteIntent(intentId: Hex): Promise<IntentResponse> {
   const row = getIntentRow(intentId);
   if (!row) {
@@ -144,15 +167,6 @@ export async function requoteIntent(intentId: Hex): Promise<IntentResponse> {
     throw new ApiError(409, "IntentAlreadySettled", "intent already settled", {
       txHash: row.settle_tx,
     });
-  }
-  if (row.status === "pending") {
-    await sendRelayerTx({
-      address: config.addresses.gantryCore,
-      abi: gantryCoreAbi,
-      functionName: "cancelIntent",
-      args: [intentId],
-    });
-    setIntentStatus(intentId, "cancelled");
   }
   // A requote must reuse the ORIGINAL token. Falling back to a default here
   // would silently requote in a different asset than the payer first saw.
