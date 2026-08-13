@@ -81,6 +81,56 @@ test("a name made only of joiners is refused — it renders as nothing", () => {
   assert.equal(normalizeProfile({ ...ok, displayName: `${ZWJ} ${ZWNJ}` }).ok, false);
 });
 
+test("invisible format characters beyond the old blocklist are refused", () => {
+  // The list these replaced named six codepoints and two ranges. Each of these
+  // is invisible and none of them was on it, so each rendered as a blank shop
+  // name on every payer surface with the displayName-??-handle fallback never
+  // firing, because the key was present.
+  const invisible = {
+    "U+2060 word joiner": 0x2060,
+    "U+00AD soft hyphen": 0x00ad,
+    "U+2061 function application": 0x2061,
+    "U+180E mongolian vowel separator": 0x180e,
+    "U+E0041 tag latin a": 0xe0041,
+  };
+  for (const [name, codePoint] of Object.entries(invisible)) {
+    const char = String.fromCodePoint(codePoint);
+    assert.ok(isDeceptive(char), `${name} passed isDeceptive`);
+    assert.equal(normalizeProfile({ ...ok, displayName: char.repeat(8) }).ok, false, name);
+  }
+});
+
+test("invisible characters Unicode calls LETTERS are refused too", () => {
+  // The category-based rule cannot reach these: the Hangul fillers are Lo
+  // (Letter, other) and the braille blank is So, so \p{C} does not match them
+  // and they are not deceptive by category — they are simply blank. This is the
+  // standard blank-username trick and it has to be named explicitly.
+  for (const codePoint of [0x115f, 0x1160, 0x3164, 0xffa0, 0x2800]) {
+    const char = String.fromCodePoint(codePoint);
+    const result = normalizeProfile({ ...ok, displayName: char.repeat(8) });
+    assert.equal(result.ok, false, `U+${codePoint.toString(16)} accepted as a shop name`);
+    assert.equal(result.ok === false && result.field, "displayName");
+  }
+});
+
+test("combining marks alone are not a name, but accented text still is", () => {
+  const CGJ = String.fromCodePoint(0x034f); // combining grapheme joiner: Mn, no width
+  const ACUTE = String.fromCodePoint(0x0301);
+  assert.equal(normalizeProfile({ ...ok, displayName: CGJ.repeat(10) }).ok, false);
+  // The base letters supply the ink and the mark rides along — decomposed
+  // "José" must keep working, or the rule has eaten real names to catch a trick.
+  assert.equal(normalizeProfile({ ...ok, displayName: `Jose${ACUTE} Cafe` }).ok, true);
+});
+
+test("emoji sequences survive the visibility rule", () => {
+  // ZWJ is \p{Cf} and is skipped as ink, so a sequence only passes because the
+  // emoji themselves are visible. If this breaks, the rule has become a
+  // blocklist on joiners rather than a requirement for ink.
+  const FAMILY = `${String.fromCodePoint(0x1f468)}${ZWJ}${String.fromCodePoint(0x1f469)}`;
+  assert.equal(normalizeProfile({ ...ok, displayName: FAMILY }).ok, true);
+  assert.equal(normalizeProfile({ ...ok, displayName: `${BOWL} Kopi` }).ok, true);
+});
+
 test("every field's ceiling is enforced, not just the first", () => {
   // The limits differ per field and the loop applies them by key; a copy-paste
   // that checked displayName's ceiling three times would pass a displayName-only
