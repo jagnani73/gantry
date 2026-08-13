@@ -5,19 +5,30 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only. Without this the token inherits the repository default, which is
+# write on older repos -- enough to push commits or move tags. Nothing here
+# needs to write anything back, and the repo is about to be public, where
+# anyone can open the pull requests that run this file.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to commit SHAs, not tags. A tag is mutable: whoever
+      # controls a third-party action's repo can retarget v4 at new code, which
+      # then runs here with our token. The trailing comment is the version the
+      # SHA was resolved from -- update both together.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # forge-std only. `--recursive` is a no-op today (forge-std has no
           # submodules of its own and OpenZeppelin left .gitmodules when it moved
           # to npm), but plain `true` states the actual requirement.
           submodules: true
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -31,7 +42,7 @@ jobs:
       - run: pnpm --filter @gantry/shared test
       - run: pnpm --filter @gantry/backend test
 
-      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       # Fork tests self-skip without BASE_SEPOLIA_RPC_URL, so this stays green
       # without a secret; the other 157 run.
       - run: pnpm test:contracts
