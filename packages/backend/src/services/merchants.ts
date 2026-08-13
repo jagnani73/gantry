@@ -252,6 +252,17 @@ const profileThrottle = throttle(
 const registerInFlight = new Set<string>();
 
 /**
+ * The same bound for profile edits, for the same reason.
+ *
+ * `armThrottle` runs only after the write confirms, so the cooldown alone
+ * rate-limits strictly serial requests: N parallel PATCHes from one caller all
+ * clear it and all enqueue a `setMerchantProfile` against the relayer. The
+ * argument written above `registerInFlight` applies here word for word — this
+ * route simply never inherited it.
+ */
+const profileInFlight = new Set<string>();
+
+/**
  * Onboarding. `registerMerchant` is permissionless on-chain — anyone can call
  * it with their own gas — so relaying it here is faucet trust level: an
  * unauthenticated request that spends relayer ETH. Guarded the same way as the
@@ -464,56 +475,67 @@ export async function updateMerchantProfile(
 
   const key = ip ?? "unknown";
   if (!operator) assertNotThrottled(profileThrottle, key);
+  if (profileInFlight.has(key)) {
+    throw new ApiError(429, "ProfileEditInProgress", "a profile edit from this address is already in flight");
+  }
 
-  // 404s for a handle nobody registered, before any gas is spent. The contract
-  // rejects it too (MerchantNotFound), but paying for that revert to learn what a
-  // read already knows is the wrong order.
-  const merchant = await getMerchant(handle);
-
-  // Unlike the register path this write IS the request, so a failure must fail
-  // it — there is nothing else that happened to report.
+  profileInFlight.add(key);
+  // Wraps the read as well as the write: `getMerchant` throws a 404 for an
+  // unregistered handle, and releasing only in the write's own `finally` would
+  // leak the key on that path and wedge the caller out of every later edit.
   try {
-    await sendRelayerTx({
-      address: config.addresses.gantryCore,
-      abi: gantryCoreAbi,
-      functionName: "setMerchantProfile",
-      args: [merchant.merchantId, profile.value.displayName, profile.value.location, profile.value.blurb],
-    });
-  } catch (err) {
+    // 404s for a handle nobody registered, before any gas is spent. The contract
+    // rejects it too (MerchantNotFound), but paying for that revert to learn what a
+    // read already knows is the wrong order.
+    const merchant = await getMerchant(handle);
+
+    // Unlike the register path this write IS the request, so a failure must fail
+    // it — there is nothing else that happened to report.
+    try {
+      await sendRelayerTx({
+        address: config.addresses.gantryCore,
+        abi: gantryCoreAbi,
+        functionName: "setMerchantProfile",
+        args: [merchant.merchantId, profile.value.displayName, profile.value.location, profile.value.blurb],
+      });
+    } catch (err) {
     // `sendRelayerTx` SIMULATES before it broadcasts, so a decodable revert is a
     // definite "this did not happen" — rethrow it and let the middleware map the
     // contract's own error name. Everything else (a 20s receipt cap, a dropped
     // connection, a throttled node during the poll) is UNKNOWN, and the chain is
     // the only thing that can settle it. Same rule registerMerchant applies with
     // `ownsHandle`; this path simply never had it.
-    if (decodeGantryError(err).kind !== "unknown") throw err;
-    const landed = await readMerchantFresh(merchant.merchantId).catch(() => null);
-    if (landed && sameProfile(landed, profile.value)) {
-      console.warn(`profile write for ${handle} reported a failure but the chain already holds it`);
-    } else {
-      // 502 with a name the CLIENT can branch on. It used to fall through to
-      // `InternalError`, which is exactly the name the screen's "may still have
-      // been saved" hedge does not match — so the likeliest unknown outcome was
-      // the one case presented as a definite failure.
-      throw new ApiError(
-        502,
-        "ProfileWriteUnresolved",
-        "the profile transaction was broadcast and could not be confirmed in time. It may still " +
-          "land. Reload this screen to see what is stored before saving again.",
-      );
+      if (decodeGantryError(err).kind !== "unknown") throw err;
+      const landed = await readMerchantFresh(merchant.merchantId).catch(() => null);
+      if (landed && sameProfile(landed, profile.value)) {
+        console.warn(`profile write for ${handle} reported a failure but the chain already holds it`);
+      } else {
+        // 502 with a name the CLIENT can branch on. It used to fall through to
+        // `InternalError`, which is exactly the name the screen's "may still have
+        // been saved" hedge does not match — so the likeliest unknown outcome was
+        // the one case presented as a definite failure.
+        throw new ApiError(
+          502,
+          "ProfileWriteUnresolved",
+          "the profile transaction was broadcast and could not be confirmed in time. It may still " +
+            "land. Reload this screen to see what is stored before saving again.",
+        );
+      }
+    } finally {
+      // UNCONDITIONAL, and that is the point. `getMerchant` above just populated
+      // this entry with the PRE-write text, and the relayer caps its receipt wait
+      // at 20s — so a write that timed out and then mined would leave the screen
+      // being told "failed" while every read for the next minute served the old
+      // name from cache and appeared to confirm it. Two independent-looking
+      // signals agreeing on something false is worse than either alone.
+      cache.delete(handle);
     }
+    if (!operator) armThrottle(profileThrottle, key);
+    console.log(`profile updated for ${handle}: ${profile.value.displayName}`);
+    return { ...merchant, ...profile.value };
   } finally {
-    // UNCONDITIONAL, and that is the point. `getMerchant` above just populated
-    // this entry with the PRE-write text, and the relayer caps its receipt wait
-    // at 20s — so a write that timed out and then mined would leave the screen
-    // being told "failed" while every read for the next minute served the old
-    // name from cache and appeared to confirm it. Two independent-looking
-    // signals agreeing on something false is worse than either alone.
-    cache.delete(handle);
+    profileInFlight.delete(key);
   }
-  if (!operator) armThrottle(profileThrottle, key);
-  console.log(`profile updated for ${handle}: ${profile.value.displayName}`);
-  return { ...merchant, ...profile.value };
 }
 
 /**
