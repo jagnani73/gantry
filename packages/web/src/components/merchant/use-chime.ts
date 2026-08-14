@@ -11,6 +11,12 @@ import { chime, enableSound, soundEnabled } from "@/lib/chime";
  * than an audio one. So the preference lives here, persists per browser, and
  * gates the call.
  *
+ * It defaults to ON, so only an explicit "0" is off and an ABSENT key is on. A
+ * counter-top back-office that says nothing when money lands is not the useful
+ * default — the merchant is looking at the wok, not the screen — and a setting
+ * nobody knows exists is one nobody turns on. Silence stays one tap away and is
+ * remembered; the noise is what has to be discoverable.
+ *
  * The second half is the browser's autoplay rule: an AudioContext cannot start
  * without a user gesture, and it is suspended again by every reload. A merchant
  * who turned the chime on yesterday would otherwise reopen the dashboard to
@@ -31,14 +37,19 @@ export interface ChimeControl {
 }
 
 export function useChime(): ChimeControl {
-  // Starts false on both sides of hydration; localStorage is read in an effect
-  // because the server cannot know it and a mismatch would blank the toggle.
-  const [on, setOn] = useState(false);
+  // Starts at the DEFAULT on both sides of hydration, so the common case — no
+  // stored preference — paints the toggle right the first time. localStorage is
+  // read in an effect because the server cannot know it; only a merchant who
+  // explicitly turned the chime off sees it correct itself, and `chime()` is a
+  // no-op until a gesture arms the AudioContext, so that frame cannot make noise.
+  const [on, setOn] = useState(true);
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
     try {
-      setOn(window.localStorage.getItem(STORAGE_KEY) === "1");
+      // `!== "0"`, not `=== "1"`: an absent key is the default, and the default
+      // is on. Inverting this is what makes the whole preference default-on.
+      setOn(window.localStorage.getItem(STORAGE_KEY) !== "0");
     } catch (err) {
       // ACCESSING `window.localStorage` throws SecurityError in a browser with
       // site data blocked — not just reading a key. Unguarded, that throw
