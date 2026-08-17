@@ -28,7 +28,7 @@ import { api } from "@/lib/api";
 import { describeWriteError } from "@/lib/write-error";
 import type { ActivityRow } from "./activity";
 import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
-import { categoryLabels, policyFingerprint, revokedFingerprint, sgdFromCapUnits } from "./agent-rules";
+import { categorySplit, policyFingerprint, revokedFingerprint, sgdFromCapUnits } from "./agent-rules";
 import { calendarDate, relativeWhen, sgdUnits } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
@@ -356,6 +356,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
       })()
     : BigInt(agent.balance);
   const status = agentStatus(agent, chainNow());
+  const categories = categorySplit(agent.categories);
 
   /**
    * Three outcomes, not two.
@@ -540,9 +541,37 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
             <KeyValue label="Per-payment cap">
               S${sgdFromCapUnits(agent.perTxCap, rate)}
             </KeyValue>
+            {/* Chips rather than "Food & Beverage · Retail", and both sides of
+                the bitmap rather than one. The wallet already knows what it
+                will turn away; printing only the allowed half meant an owner
+                found out at the till, from a revert. Accent for allowed
+                because the chain asserts it; neutral for the rest, which is a
+                statement about this build's four categories and not about all
+                256 bits — hence the line under it. */}
             <KeyValue label="Allowed at" mono={false}>
-              {categoryLabels(agent.categories)}
+              <span className="flex flex-wrap justify-end gap-1.5">
+                {categories.allowed.length === 0 ? (
+                  <Chip size="sm">None</Chip>
+                ) : (
+                  categories.allowed.map((label) => (
+                    <Chip key={label} size="sm" tone="accent">
+                      {label}
+                    </Chip>
+                  ))
+                )}
+              </span>
             </KeyValue>
+            {categories.denied.length > 0 && (
+              <KeyValue label="Turned away" mono={false}>
+                <span className="flex flex-wrap justify-end gap-1.5">
+                  {categories.denied.map((label) => (
+                    <Chip key={label} size="sm">
+                      {label}
+                    </Chip>
+                  ))}
+                </span>
+              </KeyValue>
+            )}
             {/* Through `agentStatus`, exactly like the chip above it. Read
                 straight off `expiry === 0` this line disagreed with the chip on
                 two branches — a failed read rendered "expired Invalid Date"
@@ -570,6 +599,16 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         <p className="px-1 text-fine text-faint">
           Caps are stored in {agent.token}. The S$ figures convert at the swap&apos;s owner-set
           rate of 1 {agent.token} = {formatUnits6(rate, 4)} XSGD.
+        </p>
+        {/* Two limits stated together, because each one alone misleads. The
+            turned-away list is the four kinds of shop this build knows, not a
+            complete account of a 256-bit map; and a category is what KIND of
+            shop, never WHICH one — the signed authorization carries no payee at
+            all, so nothing here is a merchant allowlist and it must not read as
+            one. */}
+        <p className="px-1 text-fine text-faint">
+          The wallet caps how much, when, and what kind of shop — not which shop. Turned away
+          lists the categories Gantry knows; a merchant sets its own at registration.
         </p>
 
         <Card radius="card-m" pad="md">

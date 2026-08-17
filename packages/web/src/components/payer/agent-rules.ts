@@ -1,6 +1,7 @@
 import type { Address } from "viem";
 import {
   CATEGORY_LABELS,
+  CATEGORY_OPTIONS,
   categoryName,
   formatUnits6,
   parseSgd,
@@ -138,6 +139,40 @@ export function categoryLabels(names: readonly string[]): string {
     Object.entries(CATEGORY_LABELS).map(([id, label]) => [categoryName(Number(id)), label]),
   );
   return names.map((name) => byName.get(name) ?? name).join(" · ");
+}
+
+/**
+ * What this policy admits, and what it turns away.
+ *
+ * Listing only the allowed set makes a refusal something the owner discovers
+ * when their agent is already at the till. The bitmap has always known the
+ * answer in advance, so the screen can say it in advance.
+ *
+ * The two sides are NOT symmetric, and the asymmetry is the honest part:
+ *
+ * - `allowed` is whatever the bitmap decoded to, including a name this build
+ *   has no label for. An owner can set any bit under 256 and the contract will
+ *   honour it, so dropping an unrecognised name would hide a real permission
+ *   behind a UI that only knows four.
+ * - `denied` can only ever cover the categories Gantry KNOWS. There are 256
+ *   possible bits and no way to enumerate the rest meaningfully, so this is a
+ *   statement about the four kinds of shop that exist here — which is what the
+ *   caller has to say out loud rather than implying a complete list.
+ */
+export function categorySplit(names: readonly string[]): {
+  allowed: string[];
+  denied: string[];
+} {
+  const byName = new Map(
+    Object.entries(CATEGORY_LABELS).map(([id, label]) => [categoryName(Number(id)), label]),
+  );
+  const allowedNames = new Set(names);
+  return {
+    allowed: names.map((name) => byName.get(name) ?? name),
+    denied: CATEGORY_OPTIONS.filter((option) => !allowedNames.has(option.name)).map(
+      (option) => option.label,
+    ),
+  };
 }
 
 export interface DenialReading {
