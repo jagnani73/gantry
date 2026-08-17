@@ -149,6 +149,33 @@ async function runLive(prompt: string, provider: Provider): Promise<"done" | "ti
   return outcome;
 }
 
+/**
+ * The stream ended cleanly and not one tool ran.
+ *
+ * This is the shape a gateway takes when it answers a tool call as prose in
+ * `message.content` while `tool_calls` stays empty: text streams, so the
+ * timeout never fires; nothing executes, so no error is raised; the run
+ * "succeeds" having checked nothing and paid nothing, while the narration says
+ * otherwise. Silent, and on a stage indistinguishable from a real payment.
+ *
+ * It deliberately does NOT fall back. The fallback's own precondition
+ * (`toolCallsStarted === 0`) is satisfied here, so it would be safe from
+ * double-spend and is the obvious move — but the scripted engine PAYS, and the
+ * one thing we know about this run is that the model chose not to. Turning "it
+ * only talked" into "we sent money" is a worse failure than the one being
+ * reported, so this stops and says so.
+ */
+function refuseSilentRun(): never {
+  console.error(
+    "\n[agent] the model finished without calling a single tool: nothing was " +
+      "checked and nothing was paid, whatever the narration above implied.\n" +
+      "[agent] not falling back, because the scripted engine would pay and " +
+      "this run gave no evidence that was wanted. Check the model supports " +
+      "native tool calling, then re-run.",
+  );
+  process.exit(1);
+}
+
 function refuseFallback(context: string): never {
   // Money may already have moved — never re-run the flow. The tool-status
   // lines above carry the structured results; just state the narration died.
@@ -185,6 +212,8 @@ async function main(): Promise<void> {
       announceFallback(`live model sent nothing in ${env.llmTimeoutMs}ms`);
       lockLiveTools();
       await runScripted(prompt);
+    } else if (toolCallsStarted === 0) {
+      refuseSilentRun();
     }
   } catch (err) {
     if (toolCallsStarted > 0) {
