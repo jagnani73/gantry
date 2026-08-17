@@ -20,6 +20,7 @@ import {
   type RegisterMerchantResponse,
 } from "@gantry/shared";
 import { Card, Chip, KeyValue, KeyValueList, Label, Mono } from "@/components/primitives";
+import { PasskeyPayout } from "@/components/onboard/passkey-payout";
 import { api, ApiClientError } from "@/lib/api";
 import { appUrl } from "@/lib/env";
 import { cn } from "@/lib/utils";
@@ -431,6 +432,17 @@ export function OnboardClient() {
                 error={payout === "" || payoutCheck.ok ? null : payoutCheck.message}
                 hint={`Every payment lands here as XSGD, minus the ${formatBps(GANTRY_FEE_BPS)} protocol fee. Only this address can ever change it. Check it against your wallet.`}
                 onChange={edited((value: string) => setPayout(value.trim()))}
+              />
+              {/* Under the field, not instead of it: pasting an address stays
+                  the path for anyone who already has a wallet, and this is the
+                  answer for the stall that does not. It writes into the same
+                  state, so everything downstream — the EIP-55 check, the
+                  blocker text, submit — is unchanged and none of it needs to
+                  know where the address came from. */}
+              <PasskeyPayout
+                className="mt-1"
+                disabled={busy}
+                onAddress={edited((address: string) => setPayout(address))}
               />
             </div>
 
