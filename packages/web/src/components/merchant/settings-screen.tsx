@@ -380,6 +380,13 @@ export function SettingsScreen() {
             ran. The handle and category cannot change at all: the handle is claimed permanently
             and the contract ships no setter for the category.
           </p>
+          {/* Saving here is host-gated, so on a production host it 403s — the
+              merchant is not stuck, they just cannot be the one to press it.
+              `setMerchantProfile` is onlyRelayer, which makes "ask us" the
+              literal mechanism rather than a support platitude. */}
+          <p className="mt-2.5 text-fine text-quiet">
+            If saving is closed on this host, get in touch and we&rsquo;ll update these for you.
+          </p>
           <p className="mt-2.5 text-fine text-quiet">
             Payers reach this from a receipt or from a shop they have paid before. It carries
             nothing about your balance or your payouts.

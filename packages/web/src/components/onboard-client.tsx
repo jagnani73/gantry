@@ -318,7 +318,7 @@ export function OnboardClient() {
               placeholder="Ah Hock Chicken Rice"
               autoComplete="organization"
               error={touched.displayName ? profileIssue("displayName", displayName) : null}
-              hint="What a payer sees on the receipt and on your shop page."
+              hint="What a payer sees on the receipt and on your shop page. Get in touch any time and we'll update it."
               onChange={edited((value: string) => {
                 setDisplayName(value);
                 // The handle follows the name until the merchant takes it over.
@@ -465,8 +465,9 @@ export function OnboardClient() {
               </p>
               <p className="text-fine text-faint">
                 A real transaction on Base Sepolia: the relayer pays its gas, so you need no ETH.
-                The handle is yours permanently and cannot be renamed; the payout address can only
-                ever be changed by itself.
+                Your name, location and description can be updated later — ask us. The handle is
+                the one thing that cannot change, and the payout address can only ever be changed
+                by itself.
               </p>
             </div>
           </Card>
@@ -637,10 +638,14 @@ function AvailabilityHint({
 }) {
   switch (availability.name) {
     case "idle":
+      // The permanence is stated once, on the tag beside the label. Saying it
+      // again here and a third time in the footer read as a warning about the
+      // whole form, when it is true of this one field: the handle is the
+      // merchantId (keccak of itself) and it gets printed onto a standee.
       return (
         <>
-          Lowercase letters, numbers and hyphens. It becomes your pay link. The first shop to take
-          it claims it on-chain, permanently.
+          Lowercase letters, numbers and hyphens. It becomes your pay link, and it goes on the code
+          you print for the counter.
         </>
       );
     case "invalid":
