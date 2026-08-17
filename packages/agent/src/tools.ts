@@ -26,6 +26,25 @@ export function lockLiveTools(): void {
   liveToolsLocked = true;
 }
 
+/**
+ * Clears the per-run state so a SECOND run in the same process is not judged on
+ * the first one's counters.
+ *
+ * The CLI never needed this: it runs once and exits. A long-lived caller does,
+ * and getting it wrong is not cosmetic — a stale `toolCallsStarted` makes the
+ * fallback unreachable for every later run, and a stale lock makes every live
+ * tool refuse. Both fail closed rather than double-spending, which is the right
+ * direction, but both silently break the agent.
+ *
+ * It does NOT make concurrent runs safe. This state is per-module, so two runs
+ * at once share one counter and one lock whatever this function does; the caller
+ * must serialise. `runAgent` calls it, so nothing else should.
+ */
+export function resetRunState(): void {
+  toolCallsStarted = 0;
+  liveToolsLocked = false;
+}
+
 function guardLive<Input>(fn: (input: Input) => Promise<string>): (input: Input) => Promise<string> {
   return async (input: Input) => {
     if (liveToolsLocked) {
