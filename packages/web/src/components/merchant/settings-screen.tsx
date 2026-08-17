@@ -92,7 +92,7 @@ type SaveState =
   | { kind: "saving" }
   | { kind: "error"; message: string; field?: ProfileField };
 
-export function SettingsScreen() {
+export function SettingsScreen({ editable }: { editable: boolean }) {
   const { handle, merchant, chime, replace } = useMerchantContext();
   const toast = useToast();
 
@@ -229,7 +229,16 @@ export function SettingsScreen() {
       </ScreenHeader>
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[1fr_392px]">
-        <Card as="form" radius="card" pad="lg" onSubmit={submit} className="flex flex-col gap-5.5">
+        {/* No `as="form"` and no onSubmit when editing is off: an inert form is
+            still a form, and Enter in a text field would post it. There are no
+            text fields in that branch, which is the point — the decision is
+            made on the server, so the editable version is never sent. */}
+        <Card
+          {...(editable ? ({ as: "form", onSubmit: submit } as const) : {})}
+          radius="card"
+          pad="lg"
+          className="flex flex-col gap-5.5"
+        >
           <div>
             <Label>Shop profile</Label>
             {/* Grid, not flex, from `sm` up: the tile is square and takes its
@@ -244,62 +253,65 @@ export function SettingsScreen() {
                 className="sm:size-auto sm:aspect-square"
               />
               <div className="min-w-56 flex-1">
-                <Field
-                  field="displayName"
-                  label="Display name"
-                  value={draft.displayName}
-                  onChange={set}
-                  invalid={save.kind === "error" && save.field === "displayName"}
-                />
+                {editable ? (
+                  <Field
+                    field="displayName"
+                    label="Display name"
+                    value={draft.displayName}
+                    onChange={set}
+                    invalid={save.kind === "error" && save.field === "displayName"}
+                  />
+                ) : (
+                  <LockedRow label="Display name" value={loaded.displayName || handle} />
+                )}
                 <div className="mt-3.5">
-                  <FieldLabel>Handle · permanent, claimed on-chain</FieldLabel>
-                  <div className="mt-1.5 flex items-center justify-between gap-3 rounded-control bg-fill-subtle px-3.5 py-2.75">
-                    <Mono size="md" tone="muted" truncate className="text-body">
-                      @{handle}
-                    </Mono>
-                    <Mono size="2xs" tone="faint">
-                      locked
-                    </Mono>
-                  </div>
+                  <LockedRow
+                    label="Handle · permanent, claimed on-chain"
+                    value={
+                      <Mono size="md" tone="muted" truncate className="text-body">
+                        @{handle}
+                      </Mono>
+                    }
+                  />
                 </div>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <FieldLabel>Category</FieldLabel>
-              <div className="mt-1.5 flex items-center justify-between gap-3 rounded-control bg-fill-subtle px-3.5 py-2.75">
-                <span className="text-body-lg text-muted">
-                  {merchant === null
-                    ? "…"
-                    : (CATEGORY_LABELS[merchant.categoryId] ?? merchant.categoryName)}
-                </span>
-                <Mono size="2xs" tone="faint">
-                  locked
-                </Mono>
-              </div>
-              <p className="mt-2 text-fine text-faint">
-                Written to GantryCore at registration and read by agent spend policies. The
-                contract has no setter for it, so it cannot be changed from here.
-              </p>
-            </div>
-            <Field
-              field="location"
-              label="Location"
-              value={draft.location}
-              onChange={set}
-              invalid={save.kind === "error" && save.field === "location"}
+            <LockedRow
+              label="Category"
+              value={
+                merchant === null
+                  ? "…"
+                  : (CATEGORY_LABELS[merchant.categoryId] ?? merchant.categoryName)
+              }
+              help="Written to GantryCore at registration and read by agent spend policies. The contract has no setter for it, so it cannot be changed from here."
             />
+            {editable ? (
+              <Field
+                field="location"
+                label="Location"
+                value={draft.location}
+                onChange={set}
+                invalid={save.kind === "error" && save.field === "location"}
+              />
+            ) : (
+              <LockedRow label="Location" value={loaded.location} />
+            )}
           </div>
 
-          <Field
-            field="blurb"
-            label="One line about the shop"
-            value={draft.blurb}
-            onChange={set}
-            invalid={save.kind === "error" && save.field === "blurb"}
-          />
+          {editable ? (
+            <Field
+              field="blurb"
+              label="One line about the shop"
+              value={draft.blurb}
+              onChange={set}
+              invalid={save.kind === "error" && save.field === "blurb"}
+            />
+          ) : (
+            <LockedRow label="One line about the shop" value={loaded.blurb} />
+          )}
 
           {save.kind === "error" ? (
             <p role="alert" className="text-meta text-danger">
@@ -307,22 +319,36 @@ export function SettingsScreen() {
             </p>
           ) : null}
 
-          <div className="flex items-center gap-2 pt-1">
-            <Button type="submit" disabled={!dirty || save.kind === "saving"}>
-              {save.kind === "saving" ? "Saving…" : "Save changes"}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!dirty || save.kind === "saving"}
-              onClick={() => {
-                setDraft(loaded);
-                setSave({ kind: "idle" });
-              }}
-            >
-              Discard
-            </Button>
-          </div>
+          {editable ? (
+            <div className="flex items-center gap-2 pt-1">
+              <Button type="submit" disabled={!dirty || save.kind === "saving"}>
+                {save.kind === "saving" ? "Saving…" : "Save changes"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!dirty || save.kind === "saving"}
+                onClick={() => {
+                  setDraft(loaded);
+                  setSave({ kind: "idle" });
+                }}
+              >
+                Discard
+              </Button>
+            </div>
+          ) : (
+            /* The alternative was a Save button that 403s, which is the failure
+               /onboard already refuses to ship: the worst version is someone
+               rewriting their shop name and losing it to a toast. Editing here
+               spends the relayer's gas key, which is what the gate protects —
+               it is emphatically NOT a review, because nothing in Gantry
+               reviews a merchant. */
+            <p className="border-t border-hairline pt-5.5 text-fine text-quiet">
+              Editing a shop from this page spends Gantry&apos;s own gas key, so it runs on the demo
+              host instead. Your name, location and one-liner are still yours to change — get in
+              touch and we&apos;ll write them for you. Nothing here reviews or approves a shop.
+            </p>
+          )}
         </Card>
 
         <Card tone="sunken" radius="card" pad="none" className="p-5.5">
@@ -379,13 +405,6 @@ export function SettingsScreen() {
             &ldquo;registered&rdquo; means a contract call anyone can make, not a check anyone
             ran. The handle and category cannot change at all: the handle is claimed permanently
             and the contract ships no setter for the category.
-          </p>
-          {/* Saving here is host-gated, so on a production host it 403s — the
-              merchant is not stuck, they just cannot be the one to press it.
-              `setMerchantProfile` is onlyRelayer, which makes "ask us" the
-              literal mechanism rather than a support platitude. */}
-          <p className="mt-2.5 text-fine text-quiet">
-            If saving is closed on this host, get in touch and we&rsquo;ll update these for you.
           </p>
           <p className="mt-2.5 text-fine text-quiet">
             Payers reach this from a receipt or from a shop they have paid before. It carries
@@ -454,6 +473,43 @@ export function SettingsScreen() {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <span className="block text-meta-sm text-faint">{children}</span>;
+}
+
+/**
+ * A field this screen shows but cannot write.
+ *
+ * Three reasons land here and they are not the same reason, which is why the
+ * caller supplies the explanation: the handle is claimed on-chain and IS the
+ * merchantId; the category is on-chain with no setter; and the profile fields
+ * are writable in principle but the route that writes them is closed on this
+ * host. Only the third one is anybody's to fix, so only the third one offers a
+ * way forward.
+ */
+function LockedRow({
+  label,
+  value,
+  help,
+}: {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  help?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="mt-1.5 flex items-center justify-between gap-3 rounded-control bg-fill-subtle px-3.5 py-2.75">
+        {typeof value === "string" ? (
+          <span className="truncate text-body-lg text-muted">{value}</span>
+        ) : (
+          value
+        )}
+        <Mono size="2xs" tone="faint">
+          locked
+        </Mono>
+      </div>
+      {help ? <p className="mt-2 text-fine text-faint">{help}</p> : null}
+    </div>
+  );
 }
 
 function Field({
