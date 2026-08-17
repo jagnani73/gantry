@@ -65,10 +65,16 @@ type Provider = { model: LanguageModel; label: string };
 function selectProvider(): Provider | null {
   if (env.aisaApiKey) {
     if (!env.aisaModel) {
-      throw new Error(
-        "AISA_API_KEY is set but AISA_MODEL is not. Name a model from AIsa's " +
-          "catalog that supports native tool calling — there is no safe default.",
+      // Exits rather than throws, to match refuseFallback/refuseSilentRun. A
+      // throw here escapes main()'s try (selectProvider runs before it) and
+      // reaches the top-level catch, which prints `agent failed:` over a
+      // six-line stack — the wrong shape for a configuration mistake whose
+      // whole content is one sentence.
+      console.error(
+        "\n[agent] AISA_API_KEY is set but AISA_MODEL is not. Name a model from " +
+          "AIsa's catalog that supports native tool calling; there is no safe default.",
       );
+      process.exit(2);
     }
     const aisa = createOpenAICompatible({
       name: "aisa",
