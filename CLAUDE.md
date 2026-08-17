@@ -19,7 +19,7 @@ Both settle through `GantryCore._settle()`: pull funds → swap to XSGD if neede
 
 All five milestones are done and review-hardened: contracts + Sepolia deploy, the QR spine (the demo spine — everything after is additive), the x402 door with vanilla `@x402/fetch` interop, PBM + LLM agent + on-chain denial, and self-service onboarding. Both surfaces ship on a token-based design system; every on-chain capability has a UI door.
 
-**Test counts (quote these):** 191 forge (186 in CI — the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs them and the deck must not imply otherwise), 130 shared, 139 backend. `packages/web` has no test suite.
+**Test counts (quote these):** 191 forge (186 in CI — the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs them and the deck must not imply otherwise), 130 shared, 139 backend, 4 agent — **464 total**. `packages/web` has no test suite. The Devpost writeup still says 446 (191/126/129) and is stale; re-count before quoting a number anywhere.
 
 **The sign-off gate is four chain-touching regressions, and no offline suite covers them.** Re-run against a live backend before declaring anything done:
 

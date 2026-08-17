@@ -41,6 +41,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm --filter @gantry/shared test
       - run: pnpm --filter @gantry/backend test
+      # Hermetic: a mock gateway on an ephemeral port, and GANTRY_API pinned at
+      # a closed one so the money path is unreachable rather than merely unused.
+      - run: pnpm --filter @gantry/agent test
 
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       # Fork tests self-skip without BASE_SEPOLIA_RPC_URL, so this stays green
