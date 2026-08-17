@@ -108,7 +108,7 @@ async function runLive(prompt: string, provider: Provider): Promise<"done" | "ti
       // authority on outcomes either way).
       temperature: 0,
     });
-    for await (const part of result.fullStream) {
+    for await (const part of result.stream) {
       // A model that opens with a silent tool call (no text preamble) must
       // still defuse the timeout, or the fallback could start while a tool is
       // executing — so every non-synthetic part counts, not just text.
