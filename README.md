@@ -254,7 +254,7 @@ A pnpm monorepo, five packages:
 | `packages/shared`    | The single source of truth both halves import: generated ABIs, contract addresses, ceil quote math, EIP-712 typed-data builders, structural error decoding, x402 wire types.     |
 | `packages/backend`   | Express and viem. Merchant API, the relayer (the only gas key), the SSE indexer, paged history, and a self-hosted x402 facilitator serving both schemes.                         |
 | `packages/web`       | Next.js 15. Landing page, merchant directory, onboarding, the merchant back-office, the payer app, the payer page and the printable standee.                                     |
-| `packages/agent`     | The LLM agent CLI, running Gemini through the Vercel AI SDK with a visually identical scripted fallback. Tools do the HTTP and the signing; the model only decides and narrates. |
+| `packages/agent`     | The LLM agent CLI, running Gemini or the AIsa gateway through the Vercel AI SDK with a visually identical scripted fallback. Tools do the HTTP and the signing; the model only decides and narrates. |
 
 Two surfaces, one rail. The merchant back-office at `/merchant/[handle]/…` is what a hawker leaves open on the counter, and the payer app at `/app/…` is where a payer's wallet, history and agents live.
 
@@ -285,7 +285,7 @@ For the phone demo, put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL` a
 
 ## Tech
 
-Solidity ^0.8.24 (Foundry) · Base Sepolia · x402 v2 · EIP-3009 gasless authorizations · viem and wagmi · Next.js 15 · Node 22 and Express · SQLite · Vercel AI SDK with Gemini
+Solidity ^0.8.24 (Foundry) · Base Sepolia · x402 v2 · EIP-3009 gasless authorizations · viem and wagmi · Next.js 15 · Node 22 and Express · SQLite · Vercel AI SDK (Gemini or the AIsa gateway)
 
 ---
 
