@@ -14,10 +14,22 @@ test = "test"
 script = "script"
 libs = ["lib"]
 fuzz = { runs = 256 }
+# Deliberately far below Foundry's default (256 runs x 500 depth). At the default this
+# suite took 2056s: the handler signs a real EIP-712 authorization and moves tokens on
+# every admitted spend, so a call costs ~4ms rather than the microseconds a cheap
+# invariant costs. CI runs on every push, and a 34-minute step would simply be turned
+# off. 48 x 96 keeps it under ~90s while still driving ~4,600 sequences per property.
+# For a real campaign before a milestone: FOUNDRY_PROFILE=deep forge test --match-path "test/*.invariants.t.sol"
+invariant = { runs = 48, depth = 96 }
 
 # Fork tests self-skip when BASE_SEPOLIA_RPC_URL is unset; this profile just
 # lowers fuzz patience for remote runs:
 # FOUNDRY_PROFILE=fork forge test --match-path "test/fork/*" -vvv
+[profile.deep]
+# The campaign the CI numbers are a sample of. Slow on purpose; run it by hand when the
+# policy contract changes, not on every push.
+invariant = { runs = 256, depth = 500 }
+
 [profile.fork]
 fuzz = { runs = 16 }
 

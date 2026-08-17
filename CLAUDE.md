@@ -19,7 +19,12 @@ Both settle through `GantryCore._settle()`: pull funds → swap to XSGD if neede
 
 All five milestones are done and review-hardened: contracts + Sepolia deploy, the QR spine (the demo spine — everything after is additive), the x402 door with vanilla `@x402/fetch` interop, PBM + LLM agent + on-chain denial, and self-service onboarding. Both surfaces ship on a token-based design system; every on-chain capability has a UI door.
 
-**Test counts (quote these):** 191 forge (186 in CI — the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs them and the deck must not imply otherwise), 130 shared, 139 backend, 4 agent — **464 total**. `packages/web` has no test suite. The Devpost writeup still says 446 (191/126/129) and is stale; re-count before quoting a number anywhere.
+**Test counts (quote these):** 195 forge (190 in CI — the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs them and the deck must not imply otherwise), 130 shared, 139 backend. `packages/web` has no test suite. The Devpost writeup still says 446 (191/126/129) and is stale; re-count before quoting a number anywhere.
+
+**Four of the forge tests are INVARIANTS, not unit tests** (`AgentPBMWallet.invariants.t.sol`): the daily counter never exceeds its cap, `revoke()` is terminal until an owner re-arms, no spend lands outside the category bitmap, and none exceeds the per-tx cap. The second is the one the payer app promises out loud. Two rules govern them:
+
+- **`invariant = { runs = 48, depth = 96 }` in `foundry.toml` is a CI budget, not a coverage opinion.** At Foundry's default (256×500) this suite took **2056s**, because the handler signs a real EIP-712 authorization and moves tokens on every admitted spend. Before a milestone run the real campaign: `FOUNDRY_PROFILE=deep forge test --match-path "test/*.invariants.t.sol"`.
+- **`afterInvariant()` asserts a spend actually succeeded, and it is load-bearing.** Every one of these properties is satisfiable by a wallet that refuses everything, and the first version of the handler was exactly that — warps of up to 3 days marched time past every expiry, so all four passed over an empty set and looked like proof. A handler that stops admitting anything is the default failure mode here, not an exotic one.
 
 **The sign-off gate is four chain-touching regressions, and no offline suite covers them.** Re-run against a live backend before declaring anything done:
 
