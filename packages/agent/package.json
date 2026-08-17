@@ -2,7 +2,7 @@
   "name": "@gantry/agent",
   "private": true,
   "version": "0.1.0",
-  "description": "LLM agent CLI (Vercel AI SDK + Gemini) paying merchants over x402 gantry-pbm.",
+  "description": "LLM agent CLI (Vercel AI SDK; Gemini or the AIsa gateway) paying merchants over x402 gantry-pbm.",
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",

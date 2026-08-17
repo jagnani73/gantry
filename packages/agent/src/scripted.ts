@@ -7,7 +7,11 @@ import type { MerchantListEntry, PayResult } from "./pay-flow";
  * The scripted fallback: identical tool functions (real HTTP, real chain, real
  * money movement), pre-written narration streamed through the same typewriter.
  * Fires when the live model produces nothing within the timeout (hotspot flake,
- * missing key) — the demo's money path never depends on the LLM.
+ * no provider key configured) — the demo's money path never depends on the LLM.
+ *
+ * NOT reached when a live run finishes having called no tools: this engine pays,
+ * and a model that only talked gave no evidence a payment was wanted. See
+ * `refuseSilentRun` in index.ts.
  */
 
 const DRINKS = { handle: "ah-hock-chicken-rice", sgd: "4.50" };
