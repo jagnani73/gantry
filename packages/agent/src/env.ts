@@ -30,8 +30,28 @@ export const env = {
    * still discovers, and says loudly when the answer was ambiguous.
    */
   agentWallet: process.env.AGENT_WALLET as `0x${string}` | undefined,
-  /** Google AI Studio key (free tier) — absent ⇒ scripted mode. */
+  /** Google AI Studio key (free tier). */
   googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  /**
+   * AIsa's OpenAI-compatible gateway. Takes precedence over Google when both
+   * are set; with neither, the agent runs scripted.
+   */
+  aisaApiKey: process.env.AISA_API_KEY,
+  aisaBaseUrl: process.env.AISA_BASE_URL ?? "https://api.aisa.one/v1",
+  /**
+   * Required alongside AISA_API_KEY, and deliberately NOT defaulted.
+   *
+   * The Google model is pinned in code because swapping it is a change with
+   * prompt implications. This one cannot be: the catalog belongs to a third
+   * party, the ids are not knowable without a key, and inventing a plausible
+   * default buys nothing — a wrong id fails at the gateway mid-demo, whereas an
+   * absent one fails at startup with a sentence saying so.
+   *
+   * Whatever is chosen MUST be a model with native tool calling. See the note
+   * on `selectProvider` in index.ts: a gateway that answers tool calls as prose
+   * does not error, it just never pays.
+   */
+  aisaModel: process.env.AISA_MODEL,
   llmTimeoutMs: Number(process.env.AGENT_LLM_TIMEOUT_MS ?? 8000),
 } as const;
 

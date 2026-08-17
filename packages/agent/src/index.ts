@@ -1,13 +1,14 @@
-import { stepCountIs, streamText } from "ai";
+import { stepCountIs, streamText, type LanguageModel } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { env } from "./env";
 import * as narrator from "./narrator";
 import { runScripted } from "./scripted";
 import { agentTools, lockLiveTools, toolCallsStarted } from "./tools";
 
 /**
- * The Gantry demo agent CLI. Live mode streams Gemini (free tier) through the
- * Vercel AI SDK's multi-step tool loop; if NOTHING has streamed within
+ * The Gantry demo agent CLI. Live mode streams a model through the Vercel AI
+ * SDK's multi-step tool loop (see `selectProvider`); if NOTHING has streamed within
  * AGENT_LLM_TIMEOUT_MS (or the key is missing / the API dies before any tool
  * started), the scripted engine takes over — same tools, same typewriter,
  * visually identical.
@@ -39,17 +40,58 @@ const SYNTHETIC_PARTS = new Set(["start", "start-step"]);
 
 /** Google AI Studio free tier. Fixed: swapping models is a code change with
  * prompt implications, not a deployment knob. */
-const LLM_MODEL = "gemini-flash-latest";
+const GOOGLE_MODEL = "gemini-flash-latest";
 
-async function runLive(prompt: string): Promise<"done" | "timeout"> {
-  const google = createGoogleGenerativeAI({ apiKey: env.googleApiKey });
+/** The model plus a name for the operator, who otherwise cannot tell which
+ * provider answered — the audience-facing output is identical by design. */
+type Provider = { model: LanguageModel; label: string };
+
+/**
+ * Which model narrates. AIsa first when configured, then Google, else scripted.
+ *
+ * Both are the same `streamText` surface — `tools`, `stopWhen`, `toolChoice`
+ * and the stream parts are provider-independent, so this is a
+ * model-construction swap and nothing else.
+ *
+ * The risk it introduces is NOT in the SDK. "OpenAI-compatible" is a claim
+ * about the HTTP shape, not about function-calling fidelity: gateways are
+ * documented to proxy models that answer a tool call as prose in
+ * `message.content` while `tool_calls` stays empty. That failure is silent
+ * HERE in the worst way — text streams, so the timeout never fires; no tool
+ * runs, so `toolCallsStarted` stays 0; the stream ends clean. The agent would
+ * narrate a purchase it never made. Pick a model with native tool calling, and
+ * see the zero-tool guard in `main`.
+ */
+function selectProvider(): Provider | null {
+  if (env.aisaApiKey) {
+    if (!env.aisaModel) {
+      throw new Error(
+        "AISA_API_KEY is set but AISA_MODEL is not. Name a model from AIsa's " +
+          "catalog that supports native tool calling — there is no safe default.",
+      );
+    }
+    const aisa = createOpenAICompatible({
+      name: "aisa",
+      apiKey: env.aisaApiKey,
+      baseURL: env.aisaBaseUrl,
+    });
+    return { model: aisa.chatModel(env.aisaModel), label: `aisa/${env.aisaModel}` };
+  }
+  if (env.googleApiKey) {
+    const google = createGoogleGenerativeAI({ apiKey: env.googleApiKey });
+    return { model: google(GOOGLE_MODEL), label: `google/${GOOGLE_MODEL}` };
+  }
+  return null;
+}
+
+async function runLive(prompt: string, provider: Provider): Promise<"done" | "timeout"> {
   const controller = new AbortController();
   let sawStream = false;
   let abandoned = false;
 
   const consume = (async (): Promise<"done"> => {
     const result = streamText({
-      model: google(LLM_MODEL),
+      model: provider.model,
       system: SYSTEM_PROMPT,
       prompt,
       tools: agentTools,
@@ -127,13 +169,17 @@ async function main(): Promise<void> {
   narrator.headline("gantry agent");
   narrator.newline();
 
-  if (!env.googleApiKey) {
+  const provider = selectProvider();
+  if (!provider) {
     await runScripted(prompt);
     return;
   }
+  // Operator-only, like announceFallback: the two providers must be
+  // indistinguishable to the room, and distinguishable to us.
+  console.error(`[agent] narrating with ${provider.label}`);
 
   try {
-    const outcome = await runLive(prompt);
+    const outcome = await runLive(prompt, provider);
     if (outcome === "timeout") {
       if (toolCallsStarted > 0) refuseFallback("live stream stalled");
       announceFallback(`live model sent nothing in ${env.llmTimeoutMs}ms`);
