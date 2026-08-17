@@ -1,0 +1,5 @@
+{
+  "filter_paths": "lib/|node_modules/|test/|script/",
+  "exclude_dependencies": true,
+  "detectors_to_exclude": "reentrancy-balance,incorrect-equality,unused-return,timestamp,assembly,naming-convention,unindexed-event-address"
+}

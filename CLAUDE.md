@@ -333,11 +333,13 @@ Recorded so they are neither re-discovered as bugs nor re-opened as ideas:
 pnpm lint                      # ESLint across the workspace
 pnpm --filter @gantry/web exec tsc --noEmit    # type errors ESLint misses
 forge test                     # from packages/contracts
+slither .                      # from packages/contracts; reads slither.config.json, runs in CI
 pnpm abis                      # regenerate committed ABIs into packages/shared — after ANY contract change
 pnpm demo:reset                # provision rehearsal state (money, merchants, policy). <30s. Never redeploys.
 pnpm contracts:fresh           # redeploy all four contracts + rewrite addresses.ts. By hand, never before a demo.
 ```
 
+- **Slither runs in CI and is GREEN because seven detectors are excluded**, each answered in `docs/security/slither.md` — including two High (`reentrancy-balance`) and three Medium. Read that file before trusting the green: it gates everything *else*, so it is a regression check over the detectors nobody has triaged, never a claim the contracts are correct. The two High findings are the balance-delta min-out guard, and they are false positives **only because both settle entry points are `nonReentrant`** — a hand-rolled `_lock` modifier, since `GantryCore` does not inherit OZ's `ReentrancyGuard` and an inheritance-list reader would conclude there is no guard at all. **If a contract changes, re-open the excluded detectors (`slither . --detect reentrancy-balance`) and re-triage.**
 - **Verify with `pnpm lint` + `tsc --noEmit`** (and `forge test` for contracts), not full builds. Never run `next build` while the dev server is running — it clobbers `.next` and the next request 500s on a stale chunk.
 - pnpm workspaces monorepo. TypeScript everywhere outside `packages/contracts`.
 - Everything on `main`, incremental focused commits, Conventional Commits (`feat(contracts): …`). No AI co-author trailers.

@@ -50,3 +50,21 @@ jobs:
       # without a secret; the rest run.
       - run: pnpm test:contracts
 
+      # Static analysis. pipx rather than `pip install`, because the runner's
+      # Python is externally managed (PEP 668) and a bare pip install fails
+      # there; pipx ships on the image, so this adds no third-party action to
+      # pin. Pinned exactly: a new Slither minor can add detectors, and a green
+      # gate that starts failing on someone else's release is a gate people
+      # switch off.
+      #
+      # It must run AFTER foundry-toolchain and `pnpm install`: Slither drives
+      # `forge build`, and OpenZeppelin comes from npm.
+      #
+      # Seven detectors are excluded in packages/contracts/slither.config.json,
+      # each answered in docs/security/slither.md. This step therefore gates
+      # everything ELSE — it is a regression check over the detectors we have
+      # not already triaged, not a claim the contracts are bug-free.
+      - run: pipx install slither-analyzer==0.11.6
+      - run: slither .
+        working-directory: packages/contracts
+
