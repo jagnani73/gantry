@@ -105,7 +105,7 @@ function OverlayHost({ overlay }: { overlay: Overlay | null }) {
     // Keyed on the subject so opening a second shop or agent starts that
     // screen's own state fresh rather than inheriting the last one's.
     case "pay":
-      return <PayFlow key={overlay.handle} handle={overlay.handle} />;
+      return <PayFlow key={overlay.handle} handle={overlay.handle} askingPrice={overlay.amount} />;
     case "receipt":
       return <Receipt key={overlay.row.key} row={overlay.row} />;
     case "merchant":

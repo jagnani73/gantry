@@ -20,6 +20,19 @@ export function isValidAmount(value: string, max: number): boolean {
   return /^\d+(\.\d{1,2})?$/.test(value) && Number(value) > 0 && Number(value) <= max;
 }
 
+/**
+ * The same shape rule with no ceiling, for an amount that arrived from OUTSIDE
+ * — a merchant's charge link, where the amount is the shop's and the ceiling is
+ * the payer's. A link asking for more than this payer may spend still prefills:
+ * the existing over-cap notice is the right place to say so, and silently
+ * blanking the field would leave someone staring at an empty pad wondering
+ * where the price went. Derived from `isValidAmount` rather than restated, so a
+ * second regex cannot drift from the one the button trusts.
+ */
+export function isAmountShape(value: string): boolean {
+  return isValidAmount(value, Infinity);
+}
+
 /** Pure: current text + a key press → the next text. */
 export function pressAmountKey(value: string, key: string): string {
   if (key === "⌫") return value.slice(0, -1);

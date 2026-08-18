@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, Mono } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
+import { ChargeCard } from "./charge-card";
 import { useMerchantContext, shopName } from "./merchant-context";
 import type { QrMatrix } from "./qr-matrix";
 import { ScreenHeader } from "./screen-header";
@@ -10,7 +11,15 @@ import { Standee } from "./standee";
 
 type CopyState = "idle" | "copied" | "failed";
 
-export function QrScreen({ payUrl, qr }: { payUrl: string; qr: QrMatrix }) {
+export function QrScreen({
+  payUrl,
+  qr,
+  backendOrigin,
+}: {
+  payUrl: string;
+  qr: QrMatrix;
+  backendOrigin: string;
+}) {
   const { handle, merchant } = useMerchantContext();
   const [copied, setCopied] = useState<CopyState>("idle");
   const [downloading, setDownloading] = useState(false);
@@ -95,10 +104,18 @@ export function QrScreen({ payUrl, qr }: { payUrl: string; qr: QrMatrix }) {
                 {copied === "copied" ? "Copied" : copied === "failed" ? "Select it" : "Copy"}
               </button>
             </div>
+            {/* This used to claim "the same link an AI agent hits over x402".
+                It is not: this link names a shop and no amount, and an x402
+                challenge has to carry a price, so an amount-less link can never
+                be the machine door. The dual-door link is the charge link
+                below, which is why that card exists. */}
             <p className="mt-3.5 text-meta text-faint">
-              The same link an AI agent hits over x402. One address, both doors.
+              Names your shop, never a price — so it never needs reprinting. For a machine to
+              pay, an amount has to be in the link: use Charge an amount.
             </p>
           </Card>
+
+          <ChargeCard handle={handle} backendOrigin={backendOrigin} />
         </div>
       </div>
     </>

@@ -6,9 +6,11 @@ import { QR_QUIET_ZONE, type QrMatrix } from "./qr-matrix";
  * The thing that goes on the counter.
  *
  * The code encodes the shop's HANDLE, never an amount, which is why one printed
- * sheet lasts forever and why the same URL is what an agent hits over x402. The
- * matrix arrives already computed so this component can render on either side of
- * the client boundary without pulling the QR library into a browser bundle.
+ * sheet lasts forever. It is therefore NOT the machine door: an x402 challenge
+ * has to carry a price, so the dual-door URL is the charge link (see
+ * charge-card.tsx), and this comment used to claim otherwise. The matrix arrives
+ * already computed so this component can render on either side of the client
+ * boundary without pulling the QR library into a browser bundle.
  */
 export function Standee({
   name,

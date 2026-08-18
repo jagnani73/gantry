@@ -40,7 +40,9 @@ import { usePayerIdentity, type PayerIdentity } from "./identity";
 
 export type Overlay =
   | { kind: "scan" }
-  | { kind: "pay"; handle: string }
+  /** `amount` is a merchant's asking price arriving from a charge link. Absent
+   * on the printed standee, which names a shop and never a price. */
+  | { kind: "pay"; handle: string; amount?: string }
   | { kind: "receipt"; row: ActivityRow }
   | { kind: "merchant"; handle: string }
   | { kind: "agent"; wallet: Address }

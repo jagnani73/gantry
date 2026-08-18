@@ -20,7 +20,7 @@ import { api, ApiClientError } from "@/lib/api";
 import { describeWriteError } from "@/lib/write-error";
 import { getDemoAccount } from "@/lib/demo-account";
 import { settlementKey, type ActivityRow } from "./activity";
-import { AmountKeypad, isValidAmount } from "./amount-keypad";
+import { AmountKeypad, isAmountShape, isValidAmount } from "./amount-keypad";
 import { formatRate } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
@@ -140,7 +140,13 @@ function pendingTxHash(message: string): Hex | null {
   return match ? (match[1] as Hex) : null;
 }
 
-export function PayFlow({ handle }: { handle: string }) {
+/**
+ * @param askingPrice What the shop is charging, when the payer arrived through
+ *   a merchant's charge link rather than the printed standee. Prefills the pad;
+ *   it is not a lock, because the person holding the phone is the one paying
+ *   and a price they cannot edit is a price they cannot dispute.
+ */
+export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?: string }) {
   const {
     identity,
     merchant,
@@ -156,7 +162,11 @@ export function PayFlow({ handle }: { handle: string }) {
   } = usePayer();
 
   const [step, setStep] = useState<Step>({ name: "entry" });
-  const [amount, setAmount] = useState("");
+  // Shape-checked, never trusted: this value came off a URL anyone can edit, so
+  // junk starts the pad empty rather than rendering `?sgd=<script>` as a price.
+  const [amount, setAmount] = useState(
+    askingPrice && isAmountShape(askingPrice) ? askingPrice : "",
+  );
 
   const { address: walletAddress, chainId } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
