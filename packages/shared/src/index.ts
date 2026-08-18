@@ -6,6 +6,7 @@ export * from "./abis/eip3009Errors";
 export * from "./abis/eip3009Token";
 export * from "./addresses";
 export * from "./tokens";
+export * from "./currency";
 export * from "./door";
 export * from "./categories";
 export * from "./constants";
