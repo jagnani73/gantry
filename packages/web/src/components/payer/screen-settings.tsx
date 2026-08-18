@@ -3,9 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { BASE_SEPOLIA_ADDRESSES, basescanAddress, shortAddress } from "@gantry/shared";
+import {
+  BASE_SEPOLIA_ADDRESSES,
+  DISPLAY_CURRENCIES,
+  DISPLAY_CURRENCY_CODES,
+  basescanAddress,
+  shortAddress,
+} from "@gantry/shared";
 import { Card, KeyValue, KeyValueList, Mono } from "@/components/primitives";
 import { switchSigner, type SignerPreference } from "@/lib/payer-signer";
+import { cn } from "@/lib/utils";
 import { formatRate } from "./format";
 import { usePayer } from "./payer-context";
 
@@ -17,7 +24,7 @@ import { usePayer } from "./payer-context";
  * on no testnet at all. Both facts belong on the screen that explains the wallet.
  */
 export function SettingsScreen() {
-  const { identity, rate } = usePayer();
+  const { identity, rate, displayCurrency, setDisplayCurrency } = usePayer();
   /** `switchSigner` throws only when storage is blocked, in which case the
    * reload never happens and this is the only thing that would say so. */
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -104,11 +111,57 @@ export function SettingsScreen() {
         ) : null}
       </Card>
 
+      <Card radius="card-m" pad="m" className="mt-3">
+        <div className="text-card-title-xs">Show prices in</div>
+        <p className="mt-2 text-fine text-faint">
+          Changes what you read, never what anyone is paid. The shop is always paid in Singapore
+          dollars and you always sign for the same USDC.
+        </p>
+        <div className="mt-3.5 flex flex-wrap gap-2">
+          {DISPLAY_CURRENCY_CODES.map((code) => {
+            const option = DISPLAY_CURRENCIES[code];
+            const active = option.code === displayCurrency.code;
+            return (
+              <button
+                key={code}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setDisplayCurrency(code)}
+                className={cn(
+                  "focus-ring h-10 min-w-16 rounded-control px-3.5 text-btn-sm font-medium transition-colors",
+                  active
+                    ? "bg-ink text-paper"
+                    : "bg-fill-subtle text-muted hover:bg-fill-hover hover:text-ink",
+                )}
+              >
+                {option.symbol} {code}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-fine text-faint">
+          {/* The provenance split, stated on the screen that offers the choice.
+              Two of these are the rate the contract will enforce; two are not,
+              and a payer cannot tell from the digits alone. */}
+          Singapore dollars and US dollars are exact — SGD is what the shop receives, and the US
+          figure is the on-chain swap rate you sign against. Euro and rupee are{" "}
+          <strong className="font-medium text-muted">indicative only</strong>: no euro or rupee
+          stablecoin exists on this testnet, so those are a reference we set, not a quote.
+        </p>
+      </Card>
+
       <Card radius="card-m" pad="none" className="mt-3 px-5 py-2">
         <KeyValueList>
           <KeyValue label="Network">Base Sepolia</KeyValue>
-          <KeyValue label="Display currency">SGD</KeyValue>
-          <KeyValue label="Pay token">USDC</KeyValue>
+          <KeyValue label="You pay in">USDC</KeyValue>
+          <KeyValue label="Shop is paid in">
+            <span className="inline-flex items-center gap-2">
+              XSGD
+              <Mono size="2xs" tone="faint">
+                fixed
+              </Mono>
+            </span>
+          </KeyValue>
           <KeyValue label="Rate">{rate ? `1 USDC = ${formatRate(rate)}` : "unavailable"}</KeyValue>
           <KeyValue label="Receipts">On-chain</KeyValue>
           <KeyValue label="Settlement" divider={false}>
@@ -128,7 +181,8 @@ export function SettingsScreen() {
         Payments settle in real Circle USDC on Base Sepolia: you sign an EIP-3009 authorization
         against Circle&apos;s own contract. The payout is in XSGD, which here is a testnet mock
         because XSGD exists on no testnet. The FX rate is set by the swap&apos;s owner, not sourced
-        from a market.
+        from a market. The shop&apos;s currency is marked fixed rather than unbuilt: the settlement
+        token is immutable on the contract, so it cannot differ by shop, by payer or by screen.
       </p>
       <Link href="/" className="focus-ring mt-3.5 block rounded-badge px-1 text-fine text-faint">
         ← Overview

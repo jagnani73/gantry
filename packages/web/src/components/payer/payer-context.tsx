@@ -14,9 +14,13 @@ import { erc20Abi, type Address } from "viem";
 import { usePublicClient } from "wagmi";
 import {
   BASE_SEPOLIA_ADDRESSES,
+  DISPLAY_CURRENCIES,
   fixedRateSwapAbi,
+  isDisplayCurrencyCode,
   type AgentSummary,
   type DenialEvent,
+  type DisplayCurrency,
+  type DisplayCurrencyCode,
   type MerchantResponse,
   type SettlementEvent,
 } from "@gantry/shared";
@@ -85,6 +89,16 @@ export interface PayerStore {
   /** Non-null when the rate READ failed. Every S$ figure in the app is this
    * conversion, so a silent failure quietly restates the whole product in USDC. */
   rateError: string | null;
+  /**
+   * The currency the payer READS prices in — never what the merchant receives.
+   *
+   * A shop is always paid XSGD: `GantryCore`'s XSGD is `immutable`, so the
+   * settlement asset cannot differ by screen or by payer. This selects a
+   * reference figure rendered BESIDE the price, and `isExact` says whether that
+   * figure is the rate the contract will enforce or a constant we chose.
+   */
+  displayCurrency: DisplayCurrency;
+  setDisplayCurrency(code: DisplayCurrencyCode): void;
   /**
    * Whether a balance change this app just caused has actually shown up.
    *
@@ -194,6 +208,9 @@ const HISTORY_LIMIT = 100;
 const BALANCE_POLL_ATTEMPTS = 8;
 const BALANCE_POLL_MS = 1_500;
 
+/** Namespaced like the other payer preferences so one origin can hold several. */
+const DISPLAY_CURRENCY_KEY = "gantry.displayCurrency";
+
 export type BalanceWatch = "idle" | "watching" | "unconfirmed";
 
 function messageOf(err: unknown): string {
@@ -222,6 +239,19 @@ export function PayerProvider({
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [rate, setRate] = useState<bigint | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
+  /**
+   * Which currency the payer READS prices in. Lives here rather than in each
+   * screen because the settings sheet and the pay overlay are mounted at the
+   * same time — two useState copies would let a payer change it in one and
+   * watch the other keep the old symbol, which is the same divergence the
+   * signer preference reloads the page to avoid.
+   *
+   * Starts at SGD on both sides of hydration; the stored value is read in an
+   * effect because the server cannot know it. A payer who chose rupees sees one
+   * frame of Singapore dollars, which is a settlement figure and never wrong —
+   * only less useful to them.
+   */
+  const [displayCurrencyCode, setDisplayCurrencyCode] = useState<DisplayCurrencyCode>("SGD");
   const [balanceWatch, setBalanceWatch] = useState<BalanceWatch>("idle");
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
@@ -230,6 +260,34 @@ export function PayerProvider({
   const [nonce, setNonce] = useState(0);
   const [historyNonce, setHistoryNonce] = useState(0);
   const [balanceNonce, setBalanceNonce] = useState(0);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(DISPLAY_CURRENCY_KEY);
+      // Validated rather than cast: the key is user-writable and a stale or
+      // hand-edited value must fall back to the settlement currency, not index
+      // the table with undefined and blank every price in the app.
+      if (stored !== null && isDisplayCurrencyCode(stored)) setDisplayCurrencyCode(stored);
+    } catch (err) {
+      // Touching `window.localStorage` at all throws SecurityError when site
+      // data is blocked. Unguarded that propagates out of the provider and takes
+      // down the whole payer app over a currency symbol.
+      console.warn("gantry: display currency preference could not be read", err);
+    }
+  }, []);
+
+  const setDisplayCurrency = useCallback((code: DisplayCurrencyCode) => {
+    setDisplayCurrencyCode(code);
+    try {
+      window.localStorage.setItem(DISPLAY_CURRENCY_KEY, code);
+    } catch (err) {
+      // The selection has already applied, so this only means it will not
+      // survive a reload. Better a preference that forgets than a crash.
+      console.warn("gantry: display currency preference could not be saved", err);
+    }
+  }, []);
+
+  const displayCurrency = DISPLAY_CURRENCIES[displayCurrencyCode];
 
   // Overlays are a stack so "receipt → about this shop → back" lands on the
   // receipt rather than dumping the payer onto a tab they never chose.
@@ -663,6 +721,8 @@ export function PayerProvider({
       balanceError,
       rate,
       rateError,
+      displayCurrency,
+      setDisplayCurrency,
       balanceWatch,
       chainNow,
       merchant,
@@ -696,6 +756,8 @@ export function PayerProvider({
       balanceError,
       rate,
       rateError,
+      displayCurrency,
+      setDisplayCurrency,
       balanceWatch,
       chainNow,
       merchant,
