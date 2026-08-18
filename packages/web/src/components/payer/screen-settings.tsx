@@ -8,6 +8,7 @@ import {
   DISPLAY_CURRENCIES,
   DISPLAY_CURRENCY_CODES,
   basescanAddress,
+  settlementSendToken,
   shortAddress,
 } from "@gantry/shared";
 import { Card, KeyValue, KeyValueList, Mono } from "@/components/primitives";
@@ -112,15 +113,23 @@ export function SettingsScreen() {
       </Card>
 
       <Card radius="card-m" pad="m" className="mt-3">
-        <div className="text-card-title-xs">Show prices in</div>
+        <div className="text-card-title-xs">Currency you pay in</div>
         <p className="mt-2 text-fine text-faint">
-          Changes what you read, never what anyone is paid. The shop is always paid in Singapore
-          dollars and you always sign for the same USDC.
+          Every price in the app switches to this.
         </p>
         <div className="mt-3.5 flex flex-wrap gap-2">
           {DISPLAY_CURRENCY_CODES.map((code) => {
             const option = DISPLAY_CURRENCIES[code];
             const active = option.code === displayCurrency.code;
+            /* Each option carries its own state, because they are genuinely
+               different things and a row of identical buttons would imply they
+               are not. USD is the one you can actually send; SGD is the shop's
+               own price; the rest restate a price you still pay in USDC. */
+            const status = option.settleable
+              ? "live"
+              : option.source.kind === "settlement"
+                ? "shop price"
+                : "preview";
             return (
               <button
                 key={code}
@@ -128,25 +137,37 @@ export function SettingsScreen() {
                 aria-pressed={active}
                 onClick={() => setDisplayCurrency(code)}
                 className={cn(
-                  "focus-ring h-10 min-w-16 rounded-control px-3.5 text-btn-sm font-medium transition-colors",
+                  "focus-ring flex h-13 min-w-22 flex-col items-start justify-center rounded-control px-3.5 transition-colors",
                   active
                     ? "bg-ink text-paper"
                     : "bg-fill-subtle text-muted hover:bg-fill-hover hover:text-ink",
                 )}
               >
-                {option.symbol} {code}
+                <span className="text-btn-sm font-medium">
+                  {option.symbol} {code}
+                </span>
+                <span className={cn("text-fine", active ? "text-paper/70" : "text-faint")}>
+                  {status}
+                </span>
               </button>
             );
           })}
         </div>
-        <p className="mt-3 text-fine text-faint">
-          {/* The provenance split, stated on the screen that offers the choice.
-              Two of these are the rate the contract will enforce; two are not,
-              and a payer cannot tell from the digits alone. */}
-          Singapore dollars and US dollars are exact — SGD is what the shop receives, and the US
-          figure is the on-chain swap rate you sign against. Euro and rupee are{" "}
-          <strong className="font-medium text-muted">indicative only</strong>: no euro or rupee
-          stablecoin exists on this testnet, so those are a reference we set, not a quote.
+        <p className="mt-3.5 text-fine text-faint">
+          {/* The one sentence that has to survive any rewrite of this card: a
+              preview currency changes the reading and not the payment. */}
+          {displayCurrency.settleable ? (
+            <>You send {settlementSendToken(displayCurrency)} — the rate is the on-chain swap rate.</>
+          ) : displayCurrency.source.kind === "settlement" ? (
+            <>Singapore dollars is what the shop charges and receives.</>
+          ) : (
+            <>
+              Paying in {displayCurrency.label.toLowerCase()} is{" "}
+              <strong className="font-medium text-muted">coming soon</strong>. Prices show in{" "}
+              {displayCurrency.code} at an indicative rate; you still send{" "}
+              {settlementSendToken(displayCurrency)} today.
+            </>
+          )}
         </p>
       </Card>
 

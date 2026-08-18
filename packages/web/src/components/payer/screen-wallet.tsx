@@ -10,6 +10,7 @@ import { placesPaid } from "./activity";
 import { formatRate, sgdUnits } from "./format";
 import { MerchantTile } from "./merchant-tile";
 import { usePayer } from "./payer-context";
+import { PriceReference } from "./price-reference";
 
 /**
  * The payer's home: what they can spend, the way in, and where their money has
@@ -120,6 +121,13 @@ export function WalletScreen() {
             className="mt-3"
           />
         )}
+        {/* The balance in the payer's chosen currency. Gated on a resolved rate
+            because the S$ figure above is itself a conversion — without a rate
+            it falls back to raw USDC, and restating that in rupees would be a
+            conversion of a conversion nobody could check. */}
+        {balance !== null && rate ? (
+          <PriceReference xsgdUnits={sgdUnits(balance, rate)} tone="on-accent" />
+        ) : null}
         <div className="mt-3 flex items-center justify-between gap-3">
           {/* Four answers: read, no payer to read for, the read FAILED, and not
               yet. Collapsing the last two left "reading balance…" on screen for

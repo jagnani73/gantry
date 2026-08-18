@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BASE_SEPOLIA_ADDRESSES,
   CATEGORY_LABELS,
+  DISPLAY_CURRENCIES,
+  DISPLAY_CURRENCY_CODES,
   PROFILE_LIMITS,
   basescanAddress,
   normalizeProfile,
@@ -352,23 +354,41 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
         </Card>
 
         <Card radius="card" pad="none" className="p-5.5">
-          <Label>What you get paid in</Label>
-          <div className="mt-3.5 flex items-center justify-between gap-3 rounded-control bg-fill-subtle px-3.5 py-2.75">
-            <span className="text-body-lg text-muted">Singapore dollars · XSGD</span>
-            <Mono size="2xs" tone="faint">
-              fixed
-            </Mono>
+          <Label>Receive in</Label>
+          {/* Every option is shown and only one is selectable, because a single
+              locked row reads as a limitation while a disabled set reads as a
+              roadmap. `disabled` on the buttons, not just a style — the others
+              genuinely cannot be chosen. */}
+          <div className="mt-3.5 flex flex-wrap gap-2">
+            {DISPLAY_CURRENCY_CODES.map((code) => {
+              const option = DISPLAY_CURRENCIES[code];
+              const settles = option.source.kind === "settlement";
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  disabled={!settles}
+                  aria-pressed={settles}
+                  className={cn(
+                    "flex h-13 min-w-24 flex-col items-start justify-center rounded-control px-3.5",
+                    settles
+                      ? "bg-ink text-paper"
+                      : "cursor-not-allowed bg-fill-subtle text-faint opacity-70",
+                  )}
+                >
+                  <span className="text-btn-sm font-medium">
+                    {option.symbol} {code}
+                  </span>
+                  <span className={cn("text-fine", settles ? "text-paper/70" : "text-faint")}>
+                    {settles ? "active" : "soon"}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          {/* "fixed", not "coming soon". GantryCore's XSGD is an immutable set in
-              the constructor, so the settlement asset genuinely cannot vary by
-              shop or by payer — it is a property of the deployment rather than a
-              setting nobody has built yet, and saying otherwise would promise a
-              switch that cannot exist without redeploying every contract. */}
-          <p className="mt-2 text-fine text-faint">
-            Every payment reaches you in XSGD whatever the payer sent, converted inside the same
-            transaction that pays you. The settlement token is immutable on GantryCore, so this is
-            not a setting that exists elsewhere — a payer choosing to read prices in rupees or euro
-            changes what they see and never what you receive.
+          <p className="mt-3.5 text-fine text-faint">
+            Receiving in multiple currencies is coming soon. Today every payment reaches you in
+            XSGD whatever the payer sent.
           </p>
         </Card>
 

@@ -43,6 +43,26 @@ export interface DisplayCurrency {
   symbol: string;
   label: string;
   source: RateSource;
+  /**
+   * Can a payer actually SEND this currency today?
+   *
+   * Separate from `source` because the two answer different questions and only
+   * one of them is about money moving. `source` says where a displayed number
+   * comes from; this says whether choosing the currency changes the token on
+   * the authorization the payer signs.
+   *
+   * Exactly one is true today — **USD**, via Circle's real USDC. Not SGD: the
+   * settlement token is `MockXSGD`, whose `mint()` is public, so it is
+   * deliberately non-payable and quoting it would let anyone settle a
+   * fabricated payment for free. Not EUR or INR: no token for them is listed
+   * on `FixedRateSwap`, and listing is `onlyOwner`.
+   *
+   * The UI must not offer a currency as a way to pay while this is false. It
+   * may offer it as a PREVIEW that restates prices, provided it says the payer
+   * still sends USDC — which is the whole reason this flag exists rather than
+   * being inferred from `source`.
+   */
+  settleable: boolean;
 }
 
 /**
@@ -57,8 +77,26 @@ export interface DisplayCurrency {
 export const INDICATIVE_RATES_AS_OF = "August 2026";
 
 export const DISPLAY_CURRENCIES: Record<DisplayCurrencyCode, DisplayCurrency> = {
-  SGD: { code: "SGD", symbol: "S$", label: "Singapore Dollar", source: { kind: "settlement" } },
-  USD: { code: "USD", symbol: "US$", label: "US Dollar", source: { kind: "onchain", token: "USDC" } },
+  /**
+   * The shop's own currency, and NOT a way to pay: the settlement token is the
+   * open-mint `MockXSGD`, which `TOKENS` marks non-payable for that reason.
+   * Selecting SGD means "quote me in what the shop charges", which is default.
+   */
+  SGD: {
+    code: "SGD",
+    symbol: "S$",
+    label: "Singapore Dollar",
+    source: { kind: "settlement" },
+    settleable: false,
+  },
+  /** The only currency a payer can actually send today. Real Circle USDC. */
+  USD: {
+    code: "USD",
+    symbol: "US$",
+    label: "US Dollar",
+    source: { kind: "onchain", token: "USDC" },
+    settleable: true,
+  },
   /**
    * Indicative TODAY, and structurally ready to stop being so. Listing a EURC
    * rate on `FixedRateSwap` and adding the token to `TOKENS` is all that stands
@@ -66,13 +104,25 @@ export const DISPLAY_CURRENCIES: Record<DisplayCurrencyCode, DisplayCurrency> = 
    * is an open mapping and `GantryCore` holds no token allowlist, so that is an
    * owner transaction rather than a redeploy.
    */
-  EUR: { code: "EUR", symbol: "€", label: "Euro", source: { kind: "indicative", perSgd: 700_000n } },
+  EUR: {
+    code: "EUR",
+    symbol: "€",
+    label: "Euro",
+    source: { kind: "indicative", perSgd: 700_000n },
+    settleable: false,
+  },
   /**
    * Indicative and likely to stay so: there is no INR stablecoin on Base
    * Sepolia to settle against, so this can never become an `onchain` source
    * however long the demo runs. An Indian visitor holds USDC and reads rupees.
    */
-  INR: { code: "INR", symbol: "₹", label: "Indian Rupee", source: { kind: "indicative", perSgd: 65_000_000n } },
+  INR: {
+    code: "INR",
+    symbol: "₹",
+    label: "Indian Rupee",
+    source: { kind: "indicative", perSgd: 65_000_000n },
+    settleable: false,
+  },
 };
 
 export const DISPLAY_CURRENCY_CODES = Object.keys(DISPLAY_CURRENCIES) as [
@@ -128,4 +178,17 @@ export function referenceAmount(
  */
 export function isExact(currency: DisplayCurrency): boolean {
   return currency.source.kind !== "indicative";
+}
+
+/**
+ * Which token a payer's authorization will actually name, whatever currency
+ * they are reading in.
+ *
+ * Always USDC today. Exposed as a function rather than a constant so the day a
+ * second token is listed, the screens that promise "you will send X" change
+ * with the token table instead of being found by grep.
+ */
+export function settlementSendToken(currency: DisplayCurrency): TokenId {
+  const token = currencyToken(currency);
+  return currency.settleable && token !== null ? token : "USDC";
 }

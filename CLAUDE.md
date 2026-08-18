@@ -315,6 +315,30 @@ Relayer/owner = deployer `0x82513007C7eB93b54dC555Bdb74341b3084FC47B`; fee 50 bp
 - Label the FX rate as owner-set everywhere; label MockXSGD as mocked; label the bridge's custodial hop.
 - A contract error name is the fact — explain alongside it, never instead of it.
 
+## Payer display currency — what is real and every loose end
+
+The payer picks a currency on `/app/settings` and four surfaces restate the price in it: the pay keypad, the confirm card, the wallet balance and the receipt. **`packages/shared/src/currency.ts` is the whole model** (144 shared tests cover it) and it carries two independent flags, because they answer different questions:
+
+- **`source`** — where a displayed number comes from. `settlement` (SGD *is* the unit) · `onchain` (converted at `FixedRateSwap.rateOf`, exactly what `_settle` enforces) · `indicative` (a constant we chose).
+- **`settleable`** — whether choosing it changes the token on the authorization. **Exactly one is true: USD.**
+
+**Every loose end, so none is rediscovered as a bug:**
+
+1. **Only USD is actually payable. Selecting EUR or INR changes the reading and nothing else** — the payer still signs for USDC. The UI says so per option (`live` / `preview` / `shop price`) and in the sentence under the selector. Never let copy imply otherwise while `settleable` is false.
+2. **SGD is deliberately NOT settleable.** `MockXSGD` has an open `mint()` and is `payable: false` in `TOKENS`; offering SGD as a way to pay would route around that guard. Pinned by a test.
+3. **`MockStablecoin.sol` is written, tested (6 tests) and NOT deployed** — branch `feat/mock-payer-tokens`. It is in no deploy script, no `addresses.ts`, no `TOKENS` entry, and no `setRate` has been sent. Adding it to `TOKENS` without deploying it **crashes the backend at boot**: `assertTokenDomains()` live-reads `name()`/`version()` for every token.
+4. **EURC is real, and preferred over any EUR mock.** Circle's token is live on Base Sepolia at `0x808456652fdb597867f38412077A9182bf77359F` — 6dp, `version() "2"`, `TRANSFER_WITH_AUTHORIZATION_TYPEHASH` byte-identical to USDC's (verified on-chain 18 Aug). Mocking EUR would be a downgrade.
+5. **Real USDT can never pay through the human or `exact` door.** It is not a FiatToken and implements no `transferWithAuthorization`. A `MockStablecoin("Mock USDT", …)` would prove multi-token settlement and prove nothing about real USDT — that sentence must travel with any such mock.
+6. **Indicative rates are hardcoded round constants** — ₹65.00 and €0.70 per S$1, `INDICATIVE_RATES_AS_OF = "August 2026"`. Round *on purpose*: 64.8317 reads as a live quote. There is no FX feed and adding one would put a network dependency in front of the demo's most important screen.
+7. **The merchant side says "coming soon" and that means a FUTURE DEPLOYMENT, not an unbuilt setting.** `GantryCore`'s `XSGD` is `immutable`, so this deployment can never settle in anything else. The merchant card shows all four codes with only SGD `active`.
+8. **Four payer surfaces convert; nothing else does, deliberately.** NOT converted: activity rows, "Places you've paid" totals, agent caps and `spentToday`, the entire merchant back-office, the CSV export, the landing fee chart. The merchant is paid SGD, so converting their figures would be wrong; the payer lists stay SGD to keep a column of amounts comparable.
+9. **The agent door is untouched.** The agent always pays USDC and `accepts[]` offers USDC only — a display currency is a human-payer concept.
+10. **`packages/web` has no test suite**, so the four render sites are verified by hand only. The logic beneath them is covered in shared.
+11. **`AgentPBMWallet` caps are single-token by design** (`dailyCap`/`perTxCap` pool across tokens), so a second spend token on the PBM door would conflate units — not fixable without a wallet **and** factory redeploy, i.e. all four contracts.
+12. **`demo:reset` mints no non-USDC payer token**, so a real INR payer flow needs that script extended before it can be rehearsed.
+
+**To make a currency genuinely payable:** deploy the token → add its address to `GantryAddresses` and `TokenAddressKey` → add the `TOKENS` entry (`payable: true`, correct `eip712`) → `FixedRateSwap.setRate(token, rate)` (owner tx, **no redeploy**) → flip the currency's `source` to `onchain` and `settleable` to true → extend `demo:reset`. A test already asserts every `onchain`/`settleable` currency names a token that exists and is payable, so a half-done version fails in CI rather than on the screen a payer signs from.
+
 ## Known gaps & deliberate absences
 
 Recorded so they are neither re-discovered as bugs nor re-opened as ideas:

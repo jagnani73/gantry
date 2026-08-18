@@ -7,6 +7,7 @@ import {
   isDisplayCurrencyCode,
   isExact,
   referenceAmount,
+  settlementSendToken,
 } from "./currency";
 import { DEMO_RATE } from "./constants";
 import { TOKENS } from "./tokens";
@@ -98,6 +99,41 @@ test("the code table is self-consistent", () => {
   }
   assert.equal(isDisplayCurrencyCode("GBP"), false);
   assert.equal(isDisplayCurrencyCode(""), false);
+});
+
+test("exactly one currency is settleable today, and it is USD", () => {
+  // The fact every "you will send X" line on the payer app depends on. If a
+  // second token is ever listed this test fails, which is the point: the copy
+  // promising USDC has to be revisited in the same change.
+  const settleable = DISPLAY_CURRENCY_CODES.filter((c) => DISPLAY_CURRENCIES[c].settleable);
+  assert.deepEqual(settleable, ["USD"]);
+});
+
+test("a settleable currency must name a payable token", () => {
+  for (const code of DISPLAY_CURRENCY_CODES) {
+    const currency = DISPLAY_CURRENCIES[code];
+    if (!currency.settleable) continue;
+    const token = currencyToken(currency);
+    assert.ok(token, `${code} is settleable but names no token`);
+    assert.equal(TOKENS[token].payable, true, `${code} settles in a non-payable token`);
+  }
+});
+
+test("SGD is never settleable — the settlement token has an open mint", () => {
+  // MockXSGD is `payable: false` in TOKENS for that reason, and offering SGD as
+  // a way to PAY would route straight around that guard.
+  assert.equal(DISPLAY_CURRENCIES.SGD.settleable, false);
+  assert.equal(TOKENS.MockXSGD.payable, false);
+});
+
+test("the send token is USDC for every currency until another is listed", () => {
+  for (const code of DISPLAY_CURRENCY_CODES) {
+    assert.equal(
+      settlementSendToken(DISPLAY_CURRENCIES[code]),
+      "USDC",
+      `${code} promised a send token other than USDC`,
+    );
+  }
 });
 
 test("SGD is the only settlement currency", () => {

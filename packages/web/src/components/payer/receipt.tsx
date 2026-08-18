@@ -18,6 +18,7 @@ import { clockTime, effectiveRate, formatRate, relativeWhen } from "./format";
 import { MerchantTile } from "./merchant-tile";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
+import { PriceReference } from "./price-reference";
 
 /**
  * A receipt, in two shapes: a payment that settled, and one the payer's own
@@ -54,6 +55,13 @@ export function Receipt({ row }: { row: ActivityRow }) {
             units={declined ? row.denial.xsgdAmount : row.settlement.xsgdOut}
             size="detail"
             className="mt-4.5 justify-center"
+          />
+          {/* Centred to sit under the figure. The receipt's own breakdown below
+              still names the exact token and amount that moved — this restates
+              the price and never replaces the record of what was actually sent. */}
+          <PriceReference
+            xsgdUnits={BigInt(declined ? row.denial.xsgdAmount : row.settlement.xsgdOut)}
+            className="text-center"
           />
           <div className="mt-3 flex justify-center">
             <DoorChip
