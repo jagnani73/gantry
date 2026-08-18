@@ -351,6 +351,27 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
           )}
         </Card>
 
+        <Card radius="card" pad="none" className="p-5.5">
+          <Label>What you get paid in</Label>
+          <div className="mt-3.5 flex items-center justify-between gap-3 rounded-control bg-fill-subtle px-3.5 py-2.75">
+            <span className="text-body-lg text-muted">Singapore dollars · XSGD</span>
+            <Mono size="2xs" tone="faint">
+              fixed
+            </Mono>
+          </div>
+          {/* "fixed", not "coming soon". GantryCore's XSGD is an immutable set in
+              the constructor, so the settlement asset genuinely cannot vary by
+              shop or by payer — it is a property of the deployment rather than a
+              setting nobody has built yet, and saying otherwise would promise a
+              switch that cannot exist without redeploying every contract. */}
+          <p className="mt-2 text-fine text-faint">
+            Every payment reaches you in XSGD whatever the payer sent, converted inside the same
+            transaction that pays you. The settlement token is immutable on GantryCore, so this is
+            not a setting that exists elsewhere — a payer choosing to read prices in rupees or euro
+            changes what they see and never what you receive.
+          </p>
+        </Card>
+
         <Card tone="sunken" radius="card" pad="none" className="p-5.5">
           <Label>What a payer sees</Label>
           <Card radius="control-m" pad="none" className="mt-3.5 p-5.5">
