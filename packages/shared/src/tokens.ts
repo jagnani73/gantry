@@ -15,8 +15,27 @@ import type { GantryAddresses } from "./addresses";
  */
 export type TokenId = "USDC" | "MockXSGD";
 
+/**
+ * Fields of `GantryAddresses` that hold a TOKEN address.
+ *
+ * Constrained rather than `keyof GantryAddresses` so a token cannot be pointed
+ * at `gantryCore` or the factory, which are addresses of the same shape and
+ * would fail only at settle time.
+ */
+export type TokenAddressKey = "realUsdc" | "mockXsgd";
+
 export interface TokenInfo {
   id: TokenId;
+  /**
+   * Where this token's address lives on `GantryAddresses`.
+   *
+   * Here rather than in a `switch` inside `tokenAddress` because the resolver
+   * used to be a two-branch ternary with an implicit else — every id that was
+   * not `USDC` silently resolved to MockXSGD, so a third token would have
+   * quoted a payer in one asset and taken authorization against another. A
+   * table entry makes adding a token a data change that cannot have an else.
+   */
+  addressKey: TokenAddressKey;
   /**
    * Pinned EXPECTED EIP-712 domain (name/version) — the values the deployed
    * contracts return. The backend reads name()/version() live at boot and
@@ -33,7 +52,12 @@ export interface TokenInfo {
 }
 
 export const TOKENS: Record<TokenId, TokenInfo> = {
-  USDC: { id: "USDC", eip712: { name: "USDC", version: "2" }, payable: true },
+  USDC: {
+    id: "USDC",
+    addressKey: "realUsdc",
+    eip712: { name: "USDC", version: "2" },
+    payable: true,
+  },
   /**
    * NOT payable, and this is a security boundary rather than a product choice.
    *
@@ -49,7 +73,12 @@ export const TOKENS: Record<TokenId, TokenInfo> = {
    * onlyRelayer on-chain, so refusing to quote it here closes the path
    * completely without touching a deployed contract.
    */
-  MockXSGD: { id: "MockXSGD", eip712: { name: "Mock XSGD", version: "1" }, payable: false },
+  MockXSGD: {
+    id: "MockXSGD",
+    addressKey: "mockXsgd",
+    eip712: { name: "Mock XSGD", version: "1" },
+    payable: false,
+  },
 };
 
 /** The one enumeration of the token set. Derive from this — the ids used to be
@@ -72,12 +101,17 @@ export function isPayableToken(id: TokenId): boolean {
 }
 
 export function tokenAddress(addresses: GantryAddresses, id: TokenId): Address {
-  return id === "USDC" ? addresses.realUsdc : addresses.mockXsgd;
+  return addresses[TOKENS[id].addressKey];
 }
 
+/**
+ * Reverse lookup, over the whole table rather than a hand-written if-chain.
+ *
+ * Returns null for anything unknown, and every caller treats that as a refusal
+ * (`unknown_asset` on the facilitator, a null `tokenSymbol` on a swept row) —
+ * so a token this build does not know is declined rather than guessed at.
+ */
 export function tokenIdByAddress(addresses: GantryAddresses, address: Address): TokenId | null {
   const needle = address.toLowerCase();
-  if (needle === addresses.realUsdc.toLowerCase()) return "USDC";
-  if (needle === addresses.mockXsgd.toLowerCase()) return "MockXSGD";
-  return null;
+  return TOKEN_IDS.find((id) => addresses[TOKENS[id].addressKey].toLowerCase() === needle) ?? null;
 }
