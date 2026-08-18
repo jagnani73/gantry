@@ -49,24 +49,42 @@ contract PolicyHandler is CommonBase, StdUtils {
     function spend(uint256 amountSeed, uint256 categorySeed) external {
         // Read the policy BEFORE the call: the assertions below are about the rules that
         // were in force when it was admitted, and a later re-arm would rewrite them.
-        (, uint128 perTxCap,, uint256 bitmap) = WALLET.policy();
+        (uint128 dailyCap, uint128 perTxCap,, uint256 bitmap) = WALLET.policy();
         bool wasRevoked = revoked;
 
         // Steered, not blind. A uniformly random category and amount almost never clears
         // every check at once, so a short campaign admits nothing and the properties hold
         // over an empty set — which is precisely the failure `afterInvariant` caught.
-        // Half the draws aim at a category the bitmap actually allows and an amount the
-        // per-tx cap actually admits; the other half stay random, so the refusal paths
-        // and the out-of-policy ghosts are still exercised.
+        //
+        // Steering is FORCED until the run has landed its first spend, and optional after.
+        // `afterInvariant` fails a run that never admitted anything, so a run's first
+        // success cannot be left to chance: at half-steering it was not, and the suite
+        // failed 5 times in 20. Once the happy path is proven the draws go back to being
+        // half unguided, so the refusal paths and the out-of-policy ghosts are still
+        // exercised for the rest of the depth — which is the part that has to stay random.
+        bool mustSucceed = successes == 0;
         uint16 categoryId;
         (uint16 allowed, bool found) = _allowedCategory(bitmap, categorySeed);
-        if (found && categorySeed % 2 == 0) {
+        if (found && (mustSucceed || categorySeed % 2 == 0)) {
             categoryId = allowed;
         } else {
             categoryId = uint16(bound(categorySeed, 0, 6));
         }
+
+        // The per-tx cap is not the only ceiling a spend has to clear: `spentToday` is
+        // deducted from the daily cap, so an amount inside perTxCap still reverts once the
+        // day is nearly spent. A steered draw that ignores the headroom is therefore only
+        // *probably* admissible, and that residual is what kept the suite flaking after
+        // the caps were bounded. Aim at whichever ceiling actually binds.
+        uint256 headroom = dailyCap > WALLET.spentToday() ? dailyCap - WALLET.spentToday() : 0;
+        uint256 admissible = perTxCap < headroom ? perTxCap : headroom;
         uint256 ceiling = perTxCap == 0 ? 1 : uint256(perTxCap);
-        uint256 amount = categorySeed % 2 == 0 ? bound(amountSeed, 1, ceiling) : bound(amountSeed, 1, ceiling * 2 + 1);
+        uint256 amount;
+        if (mustSucceed && admissible > 0) {
+            amount = bound(amountSeed, 1, admissible);
+        } else {
+            amount = categorySeed % 2 == 0 ? bound(amountSeed, 1, ceiling) : bound(amountSeed, 1, ceiling * 2 + 1);
+        }
 
         bytes32 intentId = keccak256(abi.encode("invariant-spend", seq++));
         bytes32 digest = PbmDigest.spendDigest(address(WALLET), intentId, address(USDC), amount);
@@ -119,15 +137,32 @@ contract PolicyHandler is CommonBase, StdUtils {
         revoked = true;
     }
 
+    /// @dev Every re-armed policy must admit SOMETHING, and the bounds below are what
+    ///      enforce that. Unbounded, this could draw a dud — a zero per-tx cap, a zero
+    ///      daily cap, an empty bitmap — and a run that drew one early admitted no spend
+    ///      for the rest of its depth, which `afterInvariant` then failed. Measured at
+    ///      **5 failures in 20 suite runs** before this bound: a red CI one run in four,
+    ///      on a repo judges clone, for a contract that was never wrong.
+    ///
+    ///      It costs no coverage. A policy that admits nothing is exactly what `revoke()`
+    ///      produces, and `revokeNow()` is already a fuzz target — so the degenerate state
+    ///      is still reached, by the path that means it. The refusal paths stay exercised
+    ///      through `spend`'s unsteered half, which still draws categories outside the
+    ///      bitmap and amounts above the cap.
     function rearm(uint256 dailyCapSeed, uint256 perTxCapSeed, uint256 ttlSeed, uint256 bitmapSeed) external {
+        uint128 perTxCap = uint128(bound(perTxCapSeed, 1e6, 1_000e6));
         AgentPBMWallet.Policy memory next = AgentPBMWallet.Policy({
-            dailyCap: uint128(bound(dailyCapSeed, 0, 1_000e6)),
-            perTxCap: uint128(bound(perTxCapSeed, 0, 1_000e6)),
+            // Never below the per-tx cap, so the daily ceiling cannot be the thing that
+            // silently admits nothing — the per-tx cap alone decides what a single spend
+            // may be, and that is the property the bound above protects.
+            dailyCap: uint128(bound(dailyCapSeed, perTxCap, 2_000e6)),
+            perTxCap: perTxCap,
             // Spans both sides of the interesting line: short enough to expire mid-run
             // (so PolicyExpired is exercised) and long enough that many re-arms outlive
             // the warps that follow (so spends are actually admitted).
             expiry: uint40(block.timestamp + bound(ttlSeed, 1 hours, 400 days)),
-            categoryBitmap: bound(bitmapSeed, 0, type(uint32).max)
+            // Non-empty, for the reason above: an empty bitmap refuses every category.
+            categoryBitmap: bound(bitmapSeed, 1, type(uint32).max)
         });
         vm.prank(OWNER);
         WALLET.setPolicy(next);
