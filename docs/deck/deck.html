@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Gantry — NTU InnovateX 2026, Track 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* Tokens lifted verbatim from packages/web/src/app/globals.css. */
+  :root {
+    --paper:#f4f2ed; --surface:#ffffff; --surface-sunken:#efede7;
+    --fill-subtle:#f0eee8; --hairline:#edeae3; --hairline-strong:#e7e4dc;
+    --ink:#14150f; --quiet:#54534a; --muted:#7c7a6e; --faint:#95938a; --faintest:#a5a398;
+    --accent:#1b4d3e; --accent-tint:#e2ece6; --accent-soft:#8fc4a9;
+    --on-accent:#f1f4f0; --on-accent-body:rgb(241 244 240 / .72); --on-accent-muted:rgb(241 244 240 / .62);
+    --danger:#9a4632; --danger-tint:#f5e7e2; --danger-deep:#7e3626;
+    --sans:"Instrument Sans", ui-sans-serif, Helvetica, Arial, sans-serif;
+    --mono:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+
+  @page { size: 1280px 720px; margin: 0; }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin:0; padding:0; background:#3a3b32;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .slide {
+    position: relative; width:1280px; height:720px; overflow:hidden;
+    background: var(--paper); color: var(--ink);
+    font-family: var(--sans); padding:60px 64px;
+    display:flex; flex-direction:column;
+    page-break-after: always; break-after: page;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .slide:last-child { page-break-after: auto; break-after: auto; }
+  @media screen { .slide { margin: 24px auto; box-shadow: 0 8px 40px rgb(0 0 0 / .35); } }
+
+  .slide.dark { background: var(--accent); color: var(--on-accent); }
+
+  /* ---------- shared type ---------- */
+  .num {
+    position:absolute; top:26px; right:30px; font-family:var(--mono);
+    font-size:13px; color:var(--faintest); letter-spacing:.04em;
+  }
+  .dark .num { color: var(--on-accent-muted); }
+
+  .eyebrow {
+    font-size:13px; font-weight:600; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:12px;
+  }
+  .dark .eyebrow { color: var(--on-accent-muted); }
+
+  h1 { margin:0; font-size:44px; font-weight:600; letter-spacing:-.03em; line-height:1.08; }
+  .lede { margin:14px 0 0; font-size:21px; line-height:1.45; color:var(--quiet); max-width:60ch; }
+  .dark .lede { color: var(--on-accent-body); }
+
+  ul { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:13px; }
+  li { position:relative; padding-left:20px; font-size:19px; line-height:1.42; color:var(--quiet); }
+  li::before {
+    content:""; position:absolute; left:0; top:.62em;
+    width:7px; height:7px; border-radius:2px; background:var(--accent-soft);
+  }
+  .dark li { color: var(--on-accent-body); }
+  .dark li::before { background: var(--accent-soft); }
+  li b, li strong { color:var(--ink); font-weight:600; }
+  .dark li b { color:var(--on-accent); }
+  code, .mono { font-family:var(--mono); font-size:.92em; }
+  .body { flex:1; display:flex; gap:44px; margin-top:26px; min-height:0; }
+  .col { flex:1; min-width:0; display:flex; flex-direction:column; gap:18px; }
+
+  /* ---------- tables ---------- */
+  table { border-collapse:collapse; width:100%; font-size:18px; }
+  th, td { text-align:left; padding:13px 14px; border-bottom:1px solid var(--hairline-strong); }
+  th { font-size:13px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--faint); }
+  td.yes { color:var(--accent); font-weight:600; }
+  td.no  { color:var(--danger); font-weight:600; }
+  td.num-cell { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .col-hi { background:var(--accent-tint); }
+
+  /* ---------- cards ---------- */
+  .card { background:var(--surface); border:1px solid var(--hairline); border-radius:14px; padding:22px 24px; }
+  .card h3 { margin:0 0 8px; font-size:17px; font-weight:600; letter-spacing:-.01em; }
+  .card p { margin:0; font-size:16px; line-height:1.45; color:var(--quiet); }
+
+  .chip {
+    display:inline-block; padding:5px 11px; border-radius:999px; font-size:13px; font-weight:600;
+    background:var(--accent-tint); color:var(--accent);
+  }
+  .chip.warn { background:var(--danger-tint); color:var(--danger-deep); }
+
+  .shot { border:1px solid var(--hairline-strong); border-radius:12px; overflow:hidden; background:var(--surface); }
+  .shot img { display:block; width:100%; }
+  .crop { position:relative; overflow:hidden; border:1px solid var(--hairline-strong); border-radius:12px; background:#1e1f1a; }
+  .crop img { position:absolute; left:0; width:100%; display:block; }
+
+  .footnote { margin-top:auto; padding-top:14px; font-size:14px; color:var(--faint); }
+  .dark .footnote { color:var(--on-accent-muted); }
+
+  /* ---------- slide 1 / 10 ---------- */
+  .title-wrap { flex:1; display:flex; align-items:center; gap:56px; }
+  .title-left { flex:1; display:flex; flex-direction:column; gap:26px; }
+  .lockup { display:flex; align-items:center; gap:20px; }
+  .lockup svg { height:76px; width:auto; display:block; }
+  .wordmark { font-size:52px; font-weight:600; letter-spacing:-.045em; line-height:1; }
+  .hero { font-size:50px; font-weight:600; line-height:1.06; letter-spacing:-.038em; }
+  .hero .soft { color:var(--accent-soft); }
+  .qr-card {
+    background:#fff; border-radius:16px; padding:18px; width:250px; flex:none;
+    display:flex; flex-direction:column; gap:10px; align-items:center;
+  }
+  .qr-card img { width:100%; display:block; border-radius:4px; }
+  .qr-card span { font-size:13px; color:var(--quiet); text-align:center; line-height:1.35; }
+  .meta-row { display:flex; gap:26px; font-size:15px; color:var(--on-accent-body); }
+
+  /* ---------- architecture ---------- */
+  .arch { flex:1; display:flex; align-items:center; gap:0; margin-top:20px; }
+  .doors { display:flex; flex-direction:column; gap:14px; width:270px; flex:none; }
+  .door {
+    background:var(--surface); border:1px solid var(--hairline-strong); border-radius:11px;
+    padding:12px 14px;
+  }
+  .door .t { font-size:15px; font-weight:600; }
+  .door .s { font-size:13px; color:var(--muted); font-family:var(--mono); margin-top:3px; }
+  .brace { width:44px; flex:none; align-self:stretch; position:relative; }
+  .brace::before {
+    content:""; position:absolute; left:21px; top:22%; bottom:22%;
+    border-left:2px solid var(--accent-soft);
+  }
+  .brace i {
+    position:absolute; left:0; width:22px; border-top:2px solid var(--accent-soft);
+  }
+  .brace i:nth-child(1){ top:22%; } .brace i:nth-child(2){ top:50%; } .brace i:nth-child(3){ bottom:22%; }
+  .brace u { position:absolute; left:21px; top:50%; width:22px; border-top:2px solid var(--accent-soft); }
+  .pipe { flex:1; display:flex; align-items:center; gap:10px; padding-left:10px; }
+  .stage {
+    flex:1; background:var(--accent); color:var(--on-accent); border-radius:11px; padding:14px 13px;
+    min-height:104px; display:flex; flex-direction:column; justify-content:center; gap:5px;
+  }
+  .stage.out { background:var(--surface); color:var(--ink); border:1px solid var(--hairline-strong); }
+  .stage .t { font-size:15px; font-weight:600; line-height:1.2; }
+  .stage .s { font-size:12.5px; color:var(--on-accent-muted); font-family:var(--mono); line-height:1.35; }
+  .stage.out .s { color:var(--muted); }
+  .arrow { color:var(--accent-soft); font-size:20px; flex:none; }
+
+  /* ---------- misc ---------- */
+  .kpi { display:flex; gap:16px; }
+  .kpi .box { flex:1; background:var(--surface); border:1px solid var(--hairline); border-radius:13px; padding:17px 18px; }
+  .kpi .k { font-size:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
+  .kpi .v { font-size:30px; font-weight:600; letter-spacing:-.02em; margin-top:5px; font-variant-numeric:tabular-nums; }
+  .kpi .v small { font-size:15px; font-weight:500; color:var(--muted); letter-spacing:0; }
+
+  .addr { display:flex; flex-direction:column; gap:9px; font-family:var(--mono); font-size:14.5px; }
+  .addr div { display:flex; justify-content:space-between; gap:16px; padding:9px 12px; background:var(--surface); border:1px solid var(--hairline); border-radius:8px; }
+  .addr span:first-child { color:var(--ink); font-weight:500; }
+  .addr span:last-child { color:var(--quiet); }
+
+  .revert {
+    background:var(--danger-tint); border:1px solid #e8cfc6; border-radius:12px; padding:18px 20px;
+  }
+  .revert .code { font-family:var(--mono); font-size:26px; font-weight:600; color:var(--danger-deep); letter-spacing:-.01em; }
+  .revert p { margin:9px 0 0; font-size:15.5px; line-height:1.42; color:var(--danger-deep); }
+
+  .two-col-list { display:flex; gap:36px; flex:1; }
+  .two-col-list section { flex:1; display:flex; flex-direction:column; gap:12px; }
+  .two-col-list h3 { margin:0; font-size:14px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; }
+  .two-col-list.rv section:first-child h3 { color:var(--accent); }
+  .two-col-list.rv section:last-child h3 { color:var(--danger); }
+  .two-col-list li { font-size:16.5px; line-height:1.36; }
+  .two-col-list section:last-child li::before { background:var(--danger); opacity:.55; }
+</style>
+</head>
+<body>
+
+<!-- ============================ 1. TITLE ============================ -->
+<section class="slide dark">
+  <div class="num">01</div>
+  <div class="title-wrap">
+    <div class="title-left">
+      <div class="lockup">
+        <svg viewBox="0 0 262 275" role="img" aria-label="Gantry">
+          <path fill="#f1f4f0" d="M260 2L260 4L261 4L261 38L260 38L259 40L257 40L257 41L245 41L245 42L243 42L243 225L241 225L241 224L237 223L236 221L234 221L234 220L230 219L229 217L227 217L226 215L224 215L224 214L222 214L221 212L217 211L217 210L216 210L216 209L214 209L213 207L210 207L210 206L209 206L209 205L207 205L206 203L202 202L201 200L197 199L197 198L196 198L196 197L194 197L193 195L189 194L189 43L188 43L187 41L75 41L75 42L73 43L73 195L71 195L71 196L70 196L70 197L68 197L67 199L63 200L62 202L58 203L58 204L57 204L57 205L55 205L54 207L52 207L52 208L48 209L48 210L47 210L47 211L45 211L44 213L40 214L40 215L39 215L39 216L37 216L36 218L34 218L34 219L30 220L29 222L27 222L26 224L24 224L24 225L22 225L22 226L20 227L20 226L19 226L19 42L17 42L17 41L5 41L5 40L3 40L3 39L1 38L1 3L2 3L2 2L4 2L4 1L258 1L258 2Z" />
+          <path fill="#8fc4a9" d="M128 83L128 205L127 205L127 209L126 209L126 214L125 214L125 216L124 216L124 220L123 220L123 222L122 222L121 226L119 227L119 231L117 232L117 235L115 236L115 238L114 238L114 240L113 240L113 242L112 242L112 244L111 244L111 246L110 246L109 250L107 251L107 253L106 253L106 255L105 255L105 257L104 257L103 261L101 262L101 264L100 264L100 266L99 266L99 268L98 268L97 272L96 272L95 274L3 274L3 273L1 272L1 252L2 252L3 250L5 250L6 248L8 248L8 247L9 247L9 246L11 246L12 244L16 243L17 241L19 241L19 240L20 240L20 239L22 239L23 237L27 236L28 234L30 234L30 233L31 233L31 232L33 232L34 230L38 229L39 227L41 227L42 225L44 225L45 223L47 223L47 222L48 222L48 221L50 221L51 219L55 218L56 216L58 216L59 214L61 214L61 213L62 213L62 212L64 212L65 210L69 209L70 207L72 207L73 205L75 205L76 203L78 203L79 201L81 201L82 199L84 199L86 196L88 196L90 193L92 193L92 192L93 192L93 191L94 191L97 187L99 187L99 186L100 186L100 185L104 182L104 180L108 177L108 175L110 174L110 172L112 171L112 169L113 169L113 167L114 167L114 164L115 164L115 162L116 162L117 152L118 152L118 83Z" />
+          <path fill="#e2ece6" d="M135 83L143 83L143 84L144 84L144 157L145 157L145 161L146 161L146 164L147 164L147 166L148 166L148 168L149 168L150 172L151 172L151 173L152 173L152 175L155 177L155 179L156 179L156 180L157 180L157 181L158 181L158 182L159 182L159 183L160 183L160 184L161 184L161 185L162 185L162 186L163 186L166 190L168 190L168 191L169 191L172 195L174 195L176 198L178 198L179 200L181 200L182 202L184 202L184 203L185 203L185 204L187 204L188 206L192 207L193 209L195 209L196 211L198 211L199 213L201 213L201 214L202 214L202 215L204 215L205 217L209 218L210 220L212 220L213 222L215 222L215 223L216 223L216 224L218 224L219 226L223 227L224 229L226 229L226 230L227 230L227 231L229 231L230 233L234 234L236 237L238 237L238 238L240 238L241 240L245 241L247 244L249 244L249 245L253 246L255 249L259 250L259 251L261 252L261 272L260 272L259 274L166 274L166 272L165 272L165 270L164 270L163 266L161 265L161 263L160 263L160 261L159 261L159 259L158 259L158 257L157 257L156 253L154 252L154 250L153 250L153 248L152 248L152 246L151 246L150 242L148 241L148 239L147 239L147 237L146 237L146 235L145 235L145 233L144 233L144 231L143 231L143 229L142 229L142 227L141 227L141 225L140 225L140 223L139 223L139 221L138 221L138 218L137 218L137 215L136 215L136 211L135 211L135 207L134 207L134 201L133 201L133 84L135 84Z" />
+        </svg>
+        <div class="wordmark">Gantry</div>
+      </div>
+      <div class="hero">One rail, every payer.<br /><span class="soft">QR for humans, x402 for AI agents.</span></div>
+      <div class="meta-row">
+        <span>Live on Base Sepolia</span>
+        <span>Track 1 &middot; Payments &amp; Financial Infrastructure</span>
+      </div>
+    </div>
+    <div class="qr-card">
+      <img src="qr-pay.png" alt="QR code to the live Gantry payer page" />
+      <span>Scan to pay a hawker.<br />This is the live page.</span>
+    </div>
+  </div>
+  <div class="footnote">Yashvardhan Jagnani &middot; Nanyang Technological University &middot; NTU InnovateX 2026</div>
+</section>
+
+<!-- ============================ 2. THE GAP ============================ -->
+<section class="slide">
+  <div class="num">02</div>
+  <div class="eyebrow">The problem</div>
+  <h1>Two payers nobody can serve</h1>
+  <div class="body" style="flex-direction:column; gap:22px;">
+    <table>
+      <thead>
+        <tr><th style="width:42%">Who is paying</th><th>PayNow</th><th>Cards</th><th class="col-hi">Gantry</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Singaporean with a bank account</td><td class="yes">Yes</td><td class="yes">Yes</td><td class="yes col-hi">Yes</td></tr>
+        <tr><td>Tourist</td><td class="no">No</td><td class="yes">Yes, at 2&ndash;3%</td><td class="yes col-hi">Yes</td></tr>
+        <tr><td>AI agent</td><td class="no">No</td><td class="no">No</td><td class="yes col-hi">Yes</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>PayNow is free and excellent, <b>for the first row</b></li>
+      <li><b>16 million people</b> visit Singapore each year without a local bank account</li>
+      <li>An agent cannot open one at all. There is no application form for software.</li>
+    </ul>
+  </div>
+  <div class="footnote">This is not a cheaper QR code. PayNow is already free domestically. It is the payers PayNow structurally cannot reach.</div>
+</section>
+
+<!-- ============================ 3. THESIS + ARCHITECTURE ============================ -->
+<section class="slide">
+  <div class="num">03</div>
+  <div class="eyebrow">The idea</div>
+  <h1>One intent, two encodings</h1>
+  <p class="lede">A payment is an intent: <b>merchant M requests S$X</b>. A printed QR and an HTTP <code>402 Payment Required</code> are two encodings of the same one.</p>
+
+  <div class="arch">
+    <div class="doors">
+      <div class="door"><div class="t">Tourist</div><div class="s">printed QR &middot; EIP-3009</div></div>
+      <div class="door"><div class="t">Agent &middot; x402 <b>exact</b></div><div class="s">any vanilla client</div></div>
+      <div class="door"><div class="t">Agent &middot; <b>gantry-pbm</b></div><div class="s">on-chain spend policy</div></div>
+    </div>
+    <div class="brace"><i></i><i></i><i></i><u></u></div>
+    <div class="pipe">
+      <div class="stage"><div class="t">PaymentIntent</div><div class="s">nonce = intentId</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="stage"><div class="t">GantryCore</div><div class="s">_settle()<br />0.5% fee</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="stage"><div class="t">IGantrySwap</div><div class="s">to XSGD<br />min-out guard</div></div>
+      <span class="arrow">&rarr;</span>
+      <div class="stage out"><div class="t">Merchant</div><div class="s">paid in XSGD<br />one live feed</div></div>
+    </div>
+  </div>
+  <div class="footnote">Two payer paths, one settlement function. The agent door has two sub-paths with different trust: <code>exact</code> is custodial, <code>gantry-pbm</code> is not.</div>
+</section>
+
+<!-- ============================ 4. HUMAN DOOR ============================ -->
+<section class="slide">
+  <div class="num">04</div>
+  <div class="eyebrow">The human door</div>
+  <h1>They sign. They never transact.</h1>
+  <div class="body">
+    <div class="col">
+      <p class="lede" style="margin-top:0">A tourist lands at Changi with no local bank account, and pays a hawker anyway.</p>
+      <ul>
+        <li>Scans a printed sticker, sees <b>S$1.50</b></li>
+        <li>Signs one <b>EIP-3009</b> authorization</li>
+        <li>Holds <b>zero ETH</b> and never sends a transaction. The relayer pays the gas.</li>
+        <li><span class="mono">1.117652 USDC</span> in, <span class="mono">1.50 XSGD</span> out</li>
+        <li>Rate <span class="mono">1.3421</span>, <b>owner-set</b>, not a market</li>
+      </ul>
+      <div class="footnote" style="margin-top:auto">The EIP-3009 nonce <i>is</i> the intentId. That binding is what stops a signature being replayed against a different price or a different merchant.</div>
+    </div>
+    <div class="col" style="flex:0 0 348px; justify-content:center">
+      <div class="shot"><img src="crop-payer.png" alt="The Gantry payer confirmation screen showing S$1.50" /></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 5. AGENT DOOR ============================ -->
+<section class="slide">
+  <div class="num">05</div>
+  <div class="eyebrow">The agent door</div>
+  <h1>An unmodified client pays us</h1>
+  <p class="lede">The same endpoint answers a machine with <code>402</code> and an x402 v2 challenge offering two schemes.</p>
+  <div class="body" style="flex-direction:column; gap:20px; margin-top:20px;">
+    <table>
+      <thead><tr><th style="width:20%">Scheme</th><th style="width:31%">Who it is for</th><th style="width:25%">On-chain payer</th><th>Custody</th></tr></thead>
+      <tbody>
+        <tr><td class="mono" style="font-weight:600">exact</td><td>Any vanilla x402 client</td><td>The relayer</td><td>One hop, PSP-style</td></tr>
+        <tr><td class="mono" style="font-weight:600">gantry-pbm</td><td>Agents with an on-chain policy</td><td>The agent's own wallet</td><td><b>None</b></td></tr>
+      </tbody>
+    </table>
+    <div class="crop" style="height:150px">
+      <img src="terminal.png" style="top:0" alt="Terminal showing the agent paying S$4.50 over x402" />
+    </div>
+  </div>
+  <div class="footnote">I did not write the client. I wrote the server and the facilitator, and somebody else's unmodified <code>@x402/fetch</code> pays me end to end.</div>
+</section>
+
+<!-- ============================ 6. PBM + REFUSAL ============================ -->
+<section class="slide">
+  <div class="num">06</div>
+  <div class="eyebrow">Purpose-bound money, pointed at software</div>
+  <h1>Money with rules, and proof they hold</h1>
+  <div class="body">
+    <div class="col" style="flex:0 0 296px; justify-content:center">
+      <div class="shot"><img src="crop-policy.png" alt="An agent wallet policy: S$4.50 spent of a S$50 daily cap" /></div>
+    </div>
+    <div class="col">
+      <ul style="gap:11px">
+        <li>Set by the wallet's owner, the human, <b>from their own key</b></li>
+        <li><code>setPolicy</code> and <code>revoke</code> are <code>onlyOwner</code>. Gantry holds no key that can raise a cap or lift a category.</li>
+        <li>The agent asks for a <b>S$4 phone cable</b> from an electronics shop</li>
+      </ul>
+      <div class="revert">
+        <div class="code">CategoryNotAllowed(2)</div>
+        <p>Well inside every cap it has. The amount was fine, the category was not. This is a <b>contract revert</b>, not a backend if-statement, and it travels verbatim into the x402 <span class="mono">errorReason</span> and onto the payer's receipt.</p>
+      </div>
+      <div class="footnote" style="margin-top:auto">MAS explored Purpose-Bound Money in Project Orchid. This is that idea aimed at agents. The policy is the perimeter, not the key.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 7. REAL VS MOCKED ============================ -->
+<section class="slide">
+  <div class="num">07</div>
+  <div class="eyebrow">Honest scope</div>
+  <h1>What is real, and what is mocked</h1>
+  <div class="body two-col-list rv" style="margin-top:24px">
+    <section>
+      <h3>Real</h3>
+      <ul>
+        <li>Four contracts deployed and <b>verified</b> on Base Sepolia</li>
+        <li>Payments settle in <b>real Circle testnet USDC</b></li>
+        <li>x402 v2 wire format, paid by an unmodified client</li>
+        <li>On-chain policy denials, as contract reverts</li>
+        <li>Live LLM tool-use decisions (Gemini)</li>
+        <li>Real phone, real printed QR</li>
+      </ul>
+    </section>
+    <section>
+      <h3>Mocked</h3>
+      <ul>
+        <li><b>MockXSGD</b>, the only mocked token. XSGD exists on no testnet.</li>
+        <li>Owner-set FX rate, not a market</li>
+        <li>One trusted relayer key, briefly custodial on the <span class="mono">exact</span> path</li>
+        <li>Self-attested categories, no KYC. <b>Registered, never verified.</b></li>
+        <li>No merchant login. The deployed demo payer is one shared account.</li>
+        <li>No fiat off-ramp</li>
+      </ul>
+    </section>
+  </div>
+  <div class="footnote">Volunteering the mocks is what makes everything else on these slides believable.</div>
+</section>
+
+<!-- ============================ 8. BUILT AND RUNNING ============================ -->
+<section class="slide">
+  <div class="num">08</div>
+  <div class="eyebrow">Feasibility</div>
+  <h1>Built, deployed, and running today</h1>
+  <div class="body">
+    <div class="col">
+      <div class="addr">
+        <div><span>GantryCore</span><span>0xE6289ceA9232af61d7e4F30A67a848c0C322cc93</span></div>
+        <div><span>FixedRateSwap</span><span>0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d</span></div>
+        <div><span>MockXSGD</span><span>0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503</span></div>
+        <div><span>AgentPBMWalletFactory</span><span>0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1</span></div>
+      </div>
+      <div class="kpi" style="margin-top:4px">
+        <div class="box"><div class="k">Tests</div><div class="v">446</div></div>
+        <div class="box"><div class="k">Foundry</div><div class="v">191 <small>186 in CI</small></div></div>
+        <div class="box"><div class="k">TypeScript</div><div class="v">255 <small>126 + 129</small></div></div>
+      </div>
+      <div class="footnote" style="margin-top:auto">Solo student build. Every address on this slide is verified and clickable. Five Foundry tests are fork tests and skip themselves without an RPC URL.</div>
+    </div>
+    <div class="col" style="flex:0 0 470px; justify-content:center">
+      <div class="shot"><img src="crop-overview.png" alt="The Gantry merchant dashboard with agent and human payments in one feed" /></div>
+      <div style="font-size:15px; color:var(--muted); line-height:1.45">
+        <b style="color:var(--ink)">gantry-innovatex.vercel.app</b><br />
+        Agent and human payments landing in one merchant feed, tagged by door.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 9. COST + REGULATION ============================ -->
+<section class="slide">
+  <div class="num">09</div>
+  <div class="eyebrow">The business</div>
+  <h1>What it costs, and who carries the liability</h1>
+  <div class="body" style="flex-direction:column; gap:24px">
+    <table>
+      <thead><tr><th style="width:40%"></th><th>Rate</th><th class="col-hi">On S$2,000 a month</th></tr></thead>
+      <tbody>
+        <tr><td>Cards</td><td class="num-cell">~2.8%</td><td class="num-cell col-hi" style="font-weight:600">S$56</td></tr>
+        <tr><td><b>Gantry</b></td><td class="num-cell">0.5%</td><td class="num-cell col-hi" style="font-weight:600; color:var(--accent)">S$10</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>The fee is skimmed <b>inside the settlement transaction</b>. There is no payout schedule; each payment settles to the merchant's address in the same transaction.</li>
+      <li>MAS has the framework already: the <b>Payment Services Act</b>, and <b>Project Orchid</b> for purpose-bound money</li>
+      <li>A production Gantry runs <b>behind</b> a licensed payment institution, not as one. StraitsX already issues XSGD under that regime.</li>
+    </ul>
+  </div>
+  <div class="footnote">A hackathon prototype is not a payments licence. Gantry is the rail and the policy layer, not the regulated entity.</div>
+</section>
+
+<!-- ============================ 10. NEXT + ASK ============================ -->
+<section class="slide dark">
+  <div class="num">10</div>
+  <div class="eyebrow">What is next</div>
+  <div style="display:flex; gap:44px; flex:1; margin-top:6px">
+    <div style="flex:1; display:flex; flex-direction:column; gap:16px">
+      <ul>
+        <li><b>Passkey merchant wallets.</b> FaceID at signup, no seed phrase, and Gantry never holds the key.</li>
+        <li><b>Real XSGD liquidity</b> behind the same <code>IGantrySwap</code> interface, through an aggregator or an RFQ quote.</li>
+        <li><b>The institutions door:</b> payroll and disbursements.</li>
+        <li><b>SGQR+ interoperability</b>, and mainnet XSGD.</li>
+      </ul>
+      <div style="font-size:15px; color:var(--on-accent-body); line-height:1.45">
+        Asking a hawker for a payout address is the least realistic step in the whole flow, and it is the first thing I would fix.
+      </div>
+    </div>
+    <div style="flex:0 0 400px; display:flex; flex-direction:column; justify-content:center; gap:22px">
+      <div class="hero" style="font-size:31px; line-height:1.22">x402 standardized how machines pay. <span class="soft">Gantry is the rail that lets one merchant accept payments from machines and humans alike.</span></div>
+      <div style="display:flex; flex-direction:column; gap:7px; font-size:15px; color:var(--on-accent-body)">
+        <div><span class="chip" style="background:var(--accent-soft); color:var(--accent)">The ask &middot; Best Student Team</span></div>
+        <div class="mono" style="margin-top:4px">github.com/jagnani73/gantry</div>
+        <div class="mono">gantry-innovatex.vercel.app</div>
+      </div>
+    </div>
+  </div>
+  <div class="footnote">Every contract is verified on Base Sepolia. Yashvardhan Jagnani &middot; Nanyang Technological University</div>
+</section>
+
+</body>
+</html>
