@@ -5,6 +5,7 @@ import { relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
 import { orderPin, parseOrderResource } from "../services/facilitator-core";
+import { payerAppOrigin, payerAppUrl, prefersHtml } from "../services/pay-link";
 import { readRate } from "../services/intents";
 import { getMerchant } from "../services/merchants";
 
@@ -12,6 +13,21 @@ import { getMerchant } from "../services/merchants";
  * by the `sgd` query param so the price survives into `resource.url` — the
  * bridge re-derives the same quote from that URL at settle time. */
 export const ORDER_ROUTE = "POST /api/order/:handle";
+
+/**
+ * The pay link — the same order, at a URL a person can also open.
+ *
+ * `GET /pay/:handle?sgd=4.50` is x402-protected exactly like the route above,
+ * and `payLinkRouter` (mounted BEFORE the middleware) peels off browsers first
+ * and sends them to the payer app. So one string of characters is a payment
+ * page for a human and a 402 for a machine, priced by the same function, paid
+ * to the same shop, settled by the same contract call.
+ *
+ * It shares `orderAccepts` by reference rather than by copy: the boot assertion
+ * that `exact` stays first then covers both doors, and a future edit cannot
+ * make one door offer schemes the other does not.
+ */
+export const PAY_LINK_ROUTE = "GET /pay/:handle";
 
 /** DynamicPrice for the 402 challenge AND its paid retry — it must resolve
  * identically both times (the middleware deep-equal-matches the rebuilt
@@ -26,10 +42,13 @@ export const ORDER_ROUTE = "POST /api/order/:handle";
 async function buildOrderPrice(context: HTTPRequestContext) {
   const order = parseOrderResource(context.adapter.getUrl());
   if (!order) {
+    // Names both doors: this fires on /pay/:handle too, and an error quoting a
+    // path the caller did not use reads as the server being confused rather
+    // than as the amount being missing.
     throw new ApiError(
       400,
       "ValidationError",
-      "expected /api/order/:handle?sgd=<positive amount>, e.g. ?sgd=1.50",
+      "expected /pay/:handle?sgd=<positive amount> or /api/order/:handle?sgd=…, e.g. ?sgd=1.50",
     );
   }
   await getMerchant(order.handle); // unknown merchant → 404 before any quote
@@ -108,16 +127,57 @@ export const orderRoutes: RoutesConfig = {
     // No `resource` override: the middleware then uses the full request URL
     // (query included), which is what carries the price to the bridge.
   },
+  [PAY_LINK_ROUTE]: {
+    accepts: orderAccepts,
+    description: "Gantry pay link: one URL a person opens and a machine pays",
+    mimeType: "application/json",
+  },
 };
+
+/**
+ * The browser half of the pay link, and the reason it can exist at all.
+ *
+ * Mounted BEFORE the x402 middleware so a person never sees a 402: a client
+ * that names html is redirected into the payer app, and everything else falls
+ * through to be challenged. `prefersHtml` is deliberately stricter than
+ * `req.accepts` — see its docstring; the naive version hands agents an HTML
+ * redirect and silently closes the machine door.
+ *
+ * The amount is NOT validated here. An amount-less `/pay/:handle` is the
+ * ordinary human link and must open the shop's amount screen, and a malformed
+ * one belongs in front of the payer, who can see and fix it — failing it here
+ * would answer a mistyped price with a bare API error on a phone. Machines get
+ * the strict path instead: `buildOrderPrice` rejects anything `parseOrderResource`
+ * will not accept, before a challenge is ever issued.
+ */
+export const payLinkRouter = Router();
+
+payLinkRouter.get("/pay/:handle", (req, res, next) => {
+  // One URL, two answers, so the answer depends on a request header — say so
+  // before branching. Express sets this on the redirect by itself; declaring it
+  // up front covers the 402 too, where an intermediary handing a browser a
+  // cached payment challenge would look exactly like the feature being broken.
+  res.vary("Accept");
+  if (!prefersHtml(req.headers.accept)) {
+    next();
+    return;
+  }
+  const origin = payerAppOrigin(config.appUrl, req.protocol, req.hostname, config.appPort);
+  const sgd = typeof req.query.sgd === "string" && req.query.sgd !== "" ? req.query.sgd : null;
+  // 302 rather than 301: which host serves the payer app is deployment state,
+  // and a permanent redirect would be cached against the next network the
+  // laptop joins.
+  res.redirect(302, payerAppUrl(origin, String(req.params.handle).toLowerCase(), sgd));
+});
 
 /** Runs only after the middleware verified payment; settlement happens after
  * this handler returns (the client's receipt is the PAYMENT-RESPONSE header,
  * this body is just the order confirmation). */
 export const ordersRouter = Router();
 
-ordersRouter.post("/api/order/:handle", async (req, res) => {
-  const handle = String(req.params.handle);
-  const sgd = typeof req.query.sgd === "string" ? req.query.sgd : "";
+/** One body for both doors. Two handlers that formatted their own confirmation
+ * would be free to drift, and "the two doors agree" is the entire claim. */
+async function orderConfirmation(handle: string, sgd: string) {
   const merchant = await getMerchant(handle);
   let xsgdAmount: bigint;
   try {
@@ -125,7 +185,7 @@ ordersRouter.post("/api/order/:handle", async (req, res) => {
   } catch {
     throw new ApiError(400, "ValidationError", `sgd must be a decimal SGD amount, got "${sgd}"`);
   }
-  res.json({
+  return {
     order: {
       handle: merchant.handle,
       ...(merchant.displayName ? { displayName: merchant.displayName } : {}),
@@ -135,5 +195,17 @@ ordersRouter.post("/api/order/:handle", async (req, res) => {
       token: "USDC" as const,
     },
     message: "order confirmed: the settlement receipt travels in the PAYMENT-RESPONSE header",
-  });
+  };
+}
+
+function requestedSgd(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+ordersRouter.post("/api/order/:handle", async (req, res) => {
+  res.json(await orderConfirmation(String(req.params.handle), requestedSgd(req.query.sgd)));
+});
+
+ordersRouter.get("/pay/:handle", async (req, res) => {
+  res.json(await orderConfirmation(String(req.params.handle), requestedSgd(req.query.sgd)));
 });

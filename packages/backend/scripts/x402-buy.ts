@@ -6,6 +6,11 @@
  * display/explorer helpers.
  *
  * Usage: pnpm --filter @gantry/backend x402:buy [-- --sgd 4.50 --handle ah-hock-chicken-rice]
+ *        add `--link` to pay the DUAL-DOOR pay link (GET /pay/:handle) instead
+ *        of the agent-only endpoint (POST /api/order/:handle). Same client, same
+ *        quote, same settlement — the flag exists so "a person and a machine can
+ *        pay the same URL" is something this script proves rather than something
+ *        the README asserts.
  * Env: X402_PAYER_KEY (optional; a fresh random key is funded from the demo
  *      funder when unset), GANTRY_API (default http://localhost:4000)
  */
@@ -29,19 +34,26 @@ const { values: args } = parseArgs({
   options: {
     sgd: { type: "string", default: "4.50" },
     handle: { type: "string", default: "ah-hock-chicken-rice" },
+    link: { type: "boolean", default: false },
   },
 });
 
 const api = process.env.GANTRY_API ?? "http://localhost:4000";
 const payerKey = (process.env.X402_PAYER_KEY as `0x${string}` | undefined) ?? generatePrivateKey();
 const payer = privateKeyToAccount(payerKey);
-const orderUrl = `${api}/api/order/${args.handle}?sgd=${args.sgd}`;
+// The pay link is a GET because a person opens it in a browser; the agent-only
+// endpoint stays a POST. Everything after this line is identical, which is the
+// point — the client does not know or care which door it walked through.
+const orderUrl = args.link
+  ? `${api}/pay/${args.handle}?sgd=${args.sgd}`
+  : `${api}/api/order/${args.handle}?sgd=${args.sgd}`;
+const method = args.link ? "GET" : "POST";
 
 async function main() {
   console.log(`agent payer: ${payer.address}${process.env.X402_PAYER_KEY ? "" : " (fresh burner)"}`);
 
   // 1. Bare request — expect the 402 challenge and decode it with OUR codec.
-  const challenge = await fetch(orderUrl, { method: "POST" });
+  const challenge = await fetch(orderUrl, { method });
   const header = challenge.headers.get(PAYMENT_REQUIRED_HEADER);
   if (challenge.status !== 402 || !header) {
     throw new Error(`expected 402 + ${PAYMENT_REQUIRED_HEADER}, got ${challenge.status}`);
@@ -77,7 +89,7 @@ async function main() {
   const client = new x402Client().register(offer.network, new ExactEvmScheme(toClientEvmSigner(payer)));
   const payFetch = wrapFetchWithPayment(fetch, client);
   console.log(`paying via unmodified @x402/fetch…`);
-  const paid = await payFetch(orderUrl, { method: "POST" });
+  const paid = await payFetch(orderUrl, { method });
   console.log(`response: ${paid.status}`);
   if (!paid.ok) {
     // Surface the decoded failure: a rejected retry carries the reason in the

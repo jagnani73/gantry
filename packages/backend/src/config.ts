@@ -20,6 +20,14 @@ const EnvSchema = z.object({
   BASE_SEPOLIA_WS_URL: z.string().optional(),
   RELAYER_PRIVATE_KEY: z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected 0x-prefixed 32-byte key"),
   PORT: z.coerce.number().default(4000),
+  /** Origin of the payer app, for the pay link's human half. OPTIONAL on
+   * purpose: unset, the redirect follows the host the request arrived on, which
+   * is what makes a scanned LAN link work without anyone updating an env var
+   * when the laptop's IP moves. Set it on a deployed host, where the two halves
+   * are different domains and no request can reveal the other one. */
+  APP_URL: z.string().url().optional(),
+  /** Port of the payer app, used only when APP_URL is unset. */
+  APP_PORT: z.coerce.number().default(3000),
   CORS_ORIGIN: z.string().default("*"),
   ADMIN_TOKEN: z.string().min(8),
   /** Not a Gantry setting — the standard Node signal, read here so the demo
@@ -131,6 +139,9 @@ export const config = {
   addresses: BASE_SEPOLIA_ADDRESSES,
   deployBlock: BASE_SEPOLIA_DEPLOY_BLOCK,
   port: env.PORT,
+  /** Null means "derive the payer-app origin from each request" — see APP_URL. */
+  appUrl: env.APP_URL ?? null,
+  appPort: env.APP_PORT,
   corsOrigin: env.CORS_ORIGIN,
   adminToken: env.ADMIN_TOKEN,
   /** Ask this, never one affordance's value, to describe what the host will do. */

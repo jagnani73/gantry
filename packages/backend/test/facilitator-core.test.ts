@@ -109,6 +109,28 @@ test("parseOrderResource rejects non-order URLs, bad handles and missing sgd", (
   assert.equal(parseOrderResource("http://x/api/order/AH-HOCK?sgd=1"), null, "handle regex is lowercase");
 });
 
+test("the pay link parses to the SAME order as the agent endpoint", () => {
+  // Both doors must price one order identically — a divergence here would let
+  // the human link and the machine link disagree about what the shop charges,
+  // which is the single claim the link exists to make.
+  const viaAgentDoor = parseOrderResource("http://localhost:4000/api/order/ah-hock-chicken-rice?sgd=4.50");
+  const viaPayLink = parseOrderResource("http://localhost:4000/pay/ah-hock-chicken-rice?sgd=4.50");
+  assert.deepEqual(viaPayLink, { handle: "ah-hock-chicken-rice", sgd: "4.50" });
+  assert.deepEqual(viaPayLink, viaAgentDoor);
+});
+
+test("the pay link inherits every order-URL rejection", () => {
+  // Same validation, not a second lenient path: `/pay` is reachable by anyone.
+  assert.equal(parseOrderResource("http://x/pay/ah-hock/extra?sgd=1"), null);
+  assert.equal(parseOrderResource("http://x/payments/ah-hock?sgd=1"), null);
+  assert.equal(parseOrderResource("http://x/pay/AH-HOCK?sgd=1"), null);
+  assert.equal(parseOrderResource("http://x/pay/ah-hock?sgd=0"), null);
+  assert.equal(parseOrderResource("http://x/pay/ah-hock?sgd=-5"), null);
+  // No amount is NOT an order — it is the amount-less human link, which the
+  // route answers with the payer app rather than with a challenge.
+  assert.equal(parseOrderResource("http://x/pay/ah-hock"), null);
+});
+
 test("parseOrderResource rejects non-positive and malformed sgd amounts", () => {
   // reachable by any client; must die here, not inside the quote (div-by-zero 500)
   assert.equal(parseOrderResource("http://x/api/order/ah-hock?sgd=0"), null);

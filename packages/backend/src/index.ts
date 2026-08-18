@@ -15,7 +15,7 @@ import { agentsRouter } from "./routes/agents";
 import { adminRouter } from "./routes/admin";
 import { facilitatorRouter } from "./routes/facilitator";
 import { pbmRouter } from "./routes/pbm";
-import { ordersRouter } from "./routes/order";
+import { ordersRouter, payLinkRouter } from "./routes/order";
 import { x402Middleware } from "./x402";
 import { installLogRedaction, registerSecrets } from "./redact";
 
@@ -44,6 +44,10 @@ app.use(agentsRouter);
 app.use(adminRouter);
 app.use(facilitatorRouter);
 app.use(pbmRouter);
+// The pay link's human half, and it MUST sit above the middleware: a browser
+// has no way to pay a 402, so it is peeled off and redirected to the payer app
+// before the challenge is ever built. Everything else falls through.
+app.use(payLinkRouter);
 // The x402 middleware must wrap the order route: it 402-challenges unpaid
 // requests and only lets verified ones through to the handler below.
 app.use(x402Middleware);

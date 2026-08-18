@@ -28,7 +28,14 @@ export const VERIFY_MARGIN_SECONDS = 30;
  * DynamicPrice (server-observed URL) — the resulting facts are then PINNED
  * into requirements.extra (see parseOrderPins), which is what the bridge
  * trusts at settle time; the client-echoed resource.url is never load-bearing.
- * Rejects non-positive sgd so `?sgd=0` fails here, not inside the quote. */
+ * Rejects non-positive sgd so `?sgd=0` fails here, not inside the quote.
+ *
+ * TWO paths, one quote. `/api/order/:handle` is the agent-only endpoint;
+ * `/pay/:handle` is the dual-door pay link, which serves a browser a redirect
+ * and a machine this same challenge. They must parse identically or the two
+ * doors would price the same order differently — which is the one thing the
+ * link exists to disprove. Widening this is safe precisely because the URL is
+ * not load-bearing at settle: the pin is. */
 export function parseOrderResource(url: string): { handle: string; sgd: string } | null {
   let parsed: URL;
   try {
@@ -36,7 +43,7 @@ export function parseOrderResource(url: string): { handle: string; sgd: string }
   } catch {
     return null;
   }
-  const match = /^\/api\/order\/([^/]+)$/.exec(parsed.pathname);
+  const match = /^\/(?:api\/order|pay)\/([^/]+)$/.exec(parsed.pathname);
   if (!match) return null;
   const handle = decodeURIComponent(match[1]!);
   const sgd = parsed.searchParams.get("sgd");
