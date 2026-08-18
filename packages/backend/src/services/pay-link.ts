@@ -41,23 +41,61 @@ export function prefersHtml(accept: string | undefined): boolean {
 }
 
 /**
- * Where the human half lives.
+ * Is this a host on the machine or the local network?
  *
- * `configured` wins when set (the deployed pair is two different domains, and
- * nothing about the request could tell us the other one). Otherwise the origin
- * is derived from the host the request ARRIVED on, which is the case that
- * matters at a venue: a phone scans a code carrying a LAN address, and deriving
- * the redirect from that same address means the link works on whatever IP the
- * laptop happens to hold. An `APP_URL` pinned to a stale IP is precisely the
- * failure this project has already been bitten by once.
+ * The gate on host derivation below. Deliberately a strict allowlist of the
+ * shapes a demo laptop actually answers to, because it is standing in for a
+ * security boundary: anything not matched here is treated as attacker-supplied.
+ */
+export function isPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|]$/g, ""); // IPv6 arrives bracketed
+  if (host === "localhost" || host === "::1" || host.endsWith(".local")) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!v4) return false;
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  if ([a, Number(v4[3]), Number(v4[4])].some((n) => n > 255) || b > 255) return false;
+  return (
+    a === 127 || // loopback
+    a === 10 || // private
+    (a === 172 && b >= 16 && b <= 31) || // private
+    (a === 192 && b === 168) || // private
+    (a === 169 && b === 254) // link-local, which Windows hands out on a dead adapter
+  );
+}
+
+/**
+ * Where the human half lives, or null if we cannot say safely.
+ *
+ * `configured` wins when set: the deployed pair is two different domains and
+ * nothing about a request could reveal the other one.
+ *
+ * Unset, the origin is derived from the host the request ARRIVED on, which is
+ * the case that matters at a venue — a phone scans a code carrying a LAN
+ * address, and deriving from that same address means the link works on whatever
+ * IP the laptop holds today. An `APP_URL` pinned to a stale IP is a failure this
+ * project has already been bitten by once.
+ *
+ * But `hostname` is the `Host` header (or `X-Forwarded-Host`, since the app
+ * trusts one proxy hop), so it is CLIENT-CONTROLLED, and reflecting it into a
+ * `Location` unguarded is an open redirect — verified against this route before
+ * this guard existed: `X-Forwarded-Host: evil.example` moved the redirect to
+ * `evil.example`. On a payments surface that is not a generic web nit. This
+ * endpoint is what a QR code on a table points at, so the redirect lands
+ * someone one hop from signing an authorization, and an attacker-chosen origin
+ * can serve a convincing copy of the payer page.
+ *
+ * Hence: derive ONLY for a private or loopback host, which is exactly the case
+ * derivation was added for. A public host must set `APP_URL`, and if it has not
+ * we return null and the caller refuses to redirect rather than guessing.
  */
 export function payerAppOrigin(
   configured: string | null,
   protocol: string,
   hostname: string,
   appPort: number,
-): string {
+): string | null {
   if (configured) return configured.replace(/\/+$/, "");
+  if (!isPrivateHost(hostname)) return null;
   return `${protocol}://${hostname}:${appPort}`;
 }
 

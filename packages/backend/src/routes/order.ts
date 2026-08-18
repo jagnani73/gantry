@@ -162,7 +162,18 @@ payLinkRouter.get("/pay/:handle", (req, res, next) => {
     next();
     return;
   }
+  // Null means the host is not one we may safely reflect into a Location and no
+  // APP_URL was configured — see payerAppOrigin. Refuse rather than guess: an
+  // open redirect one hop before someone signs a payment is worth a broken
+  // human path on a misconfigured host.
   const origin = payerAppOrigin(config.appUrl, req.protocol, req.hostname, config.appPort);
+  if (origin === null) {
+    throw new ApiError(
+      500,
+      "PayLinkNotConfigured",
+      "this host cannot resolve the payer app; set APP_URL",
+    );
+  }
   const sgd = typeof req.query.sgd === "string" && req.query.sgd !== "" ? req.query.sgd : null;
   // 302 rather than 301: which host serves the payer app is deployment state,
   // and a permanent redirect would be cached against the next network the

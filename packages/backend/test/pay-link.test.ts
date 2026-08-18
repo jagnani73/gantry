@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payerAppOrigin, payerAppUrl, prefersHtml } from "../src/services/pay-link";
+import { isPrivateHost, payerAppOrigin, payerAppUrl, prefersHtml } from "../src/services/pay-link";
 
 const WILDCARD = ["*", "/", "*"].join("");
 
@@ -44,12 +44,62 @@ test("a configured app origin wins, trailing slashes and all", () => {
   assert.equal(payerAppOrigin("http://localhost:3000///", "http", "x", 3000), "http://localhost:3000");
 });
 
-test("an unconfigured origin follows the host the request arrived on", () => {
+test("an unconfigured origin follows the host, but only on the local network", () => {
   // The venue case: a phone scans a code carrying a LAN address, so the
   // redirect has to land on that same address rather than on whatever a stale
   // env var was pinned to when the laptop last had a different IP.
   assert.equal(payerAppOrigin(null, "http", "192.168.4.71", 3000), "http://192.168.4.71:3000");
-  assert.equal(payerAppOrigin(null, "https", "demo.example", 443), "https://demo.example:443");
+  assert.equal(payerAppOrigin(null, "http", "localhost", 3000), "http://localhost:3000");
+  assert.equal(payerAppOrigin(null, "http", "10.91.207.201", 3000), "http://10.91.207.201:3000");
+});
+
+test("a client-supplied host is never reflected into a redirect", () => {
+  // The Host header — and X-Forwarded-Host, which this app trusts one hop of —
+  // is attacker-controlled. Reflecting it was a live open redirect on this exact
+  // route: `X-Forwarded-Host: evil.example` moved the Location to evil.example,
+  // one hop before a payer signs an authorization. Null here is the route
+  // refusing to redirect at all.
+  assert.equal(payerAppOrigin(null, "http", "evil.example", 3000), null);
+  assert.equal(payerAppOrigin(null, "https", "gantry-backend.onrender.com", 3000), null);
+  assert.equal(payerAppOrigin(null, "http", "192.168.4.71.evil.example", 3000), null, "suffix trick");
+  assert.equal(payerAppOrigin(null, "http", "127.0.0.1.evil.example", 3000), null, "suffix trick");
+  // A configured origin is ours, so the host is irrelevant to it.
+  assert.equal(
+    payerAppOrigin("https://gantry-innovatex.vercel.app", "http", "evil.example", 3000),
+    "https://gantry-innovatex.vercel.app",
+  );
+});
+
+test("isPrivateHost accepts the local shapes and nothing else", () => {
+  for (const host of [
+    "localhost",
+    "LOCALHOST",
+    "127.0.0.1",
+    "10.0.0.5",
+    "172.16.0.1",
+    "172.31.255.255",
+    "192.168.1.1",
+    "169.254.83.107", // what Windows hands out on a dead adapter
+    "::1",
+    "[::1]",
+    "mac-mini.local",
+  ]) {
+    assert.equal(isPrivateHost(host), true, host);
+  }
+  for (const host of [
+    "evil.example",
+    "gantry-backend.onrender.com",
+    "8.8.8.8",
+    "172.15.0.1", // just below the private range
+    "172.32.0.1", // just above it
+    "192.169.1.1",
+    "11.0.0.1",
+    "999.999.999.999",
+    "127.0.0.1.evil.example",
+    "",
+  ]) {
+    assert.equal(isPrivateHost(host), false, host);
+  }
 });
 
 test("the amount survives into the payer app exactly as written", () => {

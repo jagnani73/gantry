@@ -79,6 +79,12 @@ async function main() {
             `${config.faucetEthDailyBudget} wei/24h across all addresses; self-service ` +
             "onboarding OFF — only merchants already on-chain are served",
     );
+    // A public host derives nothing from the request host — that is the open
+    // redirect guard — so without APP_URL the pay link's human half 500s. Said
+    // at boot because the alternative is discovering it from a payer.
+    if (!config.appUrl && config.hostClass === "public") {
+      console.warn("APP_URL unset: /pay/:handle cannot send a browser to the payer app on this host");
+    }
     for (const ip of lanAddresses()) console.log(`  LAN: http://${ip}:${config.port}`);
   });
   await startIndexer();
