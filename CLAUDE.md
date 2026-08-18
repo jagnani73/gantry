@@ -19,7 +19,9 @@ Both settle through `GantryCore._settle()`: pull funds → swap to XSGD if neede
 
 All five milestones are done and review-hardened: contracts + Sepolia deploy, the QR spine (the demo spine — everything after is additive), the x402 door with vanilla `@x402/fetch` interop, PBM + LLM agent + on-chain denial, and self-service onboarding. Both surfaces ship on a token-based design system; every on-chain capability has a UI door.
 
-**Test counts (quote these):** 195 forge (190 in CI — the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs them and the deck must not imply otherwise), 130 shared, 139 backend. `packages/web` has no test suite. The Devpost writeup still says 446 (191/126/129) and is stale; re-count before quoting a number anywhere.
+**Test counts (quote these):** **498 total — 201 forge · 144 shared · 149 backend · 4 agent.** Of the forge tests, 196 run in CI: the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs those 5 and the deck must not imply otherwise. `packages/web` has no test suite.
+
+**Counted once, on the merged tree, 18 Aug — and that is the only way to count them.** Every branch that adds tests writes an ABSOLUTE number here, so each is correct alone and wrong together; three separate branches each claimed a different forge total and no conflict resolution could have produced 201. Re-run the four suites and rewrite this line whenever tests land; never adjust it by arithmetic. The Devpost writeup still says 446 (191/126/129) and is stale.
 
 **Four of the forge tests are INVARIANTS, not unit tests** (`AgentPBMWallet.invariants.t.sol`): the daily counter never exceeds its cap, `revoke()` is terminal until an owner re-arms, no spend lands outside the category bitmap, and none exceeds the per-tx cap. The second is the one the payer app promises out loud. Two rules govern them:
 

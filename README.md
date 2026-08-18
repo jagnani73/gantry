@@ -250,7 +250,7 @@ A pnpm monorepo, five packages:
 
 | Package              | Role                                                                                                                                                                             |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/contracts` | Foundry. `GantryCore`, `AgentPBMWallet` and its factory, `FixedRateSwap` behind `IGantrySwap`, EIP-3009 mocks. 191 tests, including policy fuzzing and real-USDC fork tests.     |
+| `packages/contracts` | Foundry. `GantryCore`, `AgentPBMWallet` and its factory, `FixedRateSwap` behind `IGantrySwap`, EIP-3009 mocks. 201 tests, including policy fuzzing, four invariants and real-USDC fork tests. |
 | `packages/shared`    | The single source of truth both halves import: generated ABIs, contract addresses, ceil quote math, EIP-712 typed-data builders, structural error decoding, x402 wire types.     |
 | `packages/backend`   | Express and viem. Merchant API, the relayer (the only gas key), the SSE indexer, paged history, and a self-hosted x402 facilitator serving both schemes.                         |
 | `packages/web`       | Next.js 15. Landing page, merchant directory, onboarding, the merchant back-office, the payer app, the payer page and the printable standee.                                     |
