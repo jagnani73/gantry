@@ -35,7 +35,9 @@ import {AgentPBMWalletFactory} from "../src/AgentPBMWalletFactory.sol";
  */
 contract DeployAll is Script {
     address internal constant REAL_USDC = 0x036CbD53842c5426634e7929541eC2318f3dCF7e;
+    address internal constant REAL_EURC = 0x808456652fdb597867f38412077A9182bf77359F;
     uint256 internal constant DEMO_RATE = 1_342_100; // 1.3421 XSGD per USDC, 6dp
+    uint256 internal constant DEMO_RATE_EURC = 1_510_000; // 1.5100 XSGD per EURC, 6dp
     uint256 internal constant SWAP_LIQUIDITY = 1_000_000e6; // 1M XSGD
     uint16 internal constant FEE_BPS = 50; // 0.5% — the fee story shown in the demo
 
@@ -50,8 +52,15 @@ contract DeployAll is Script {
         vm.startBroadcast(pk);
         MockXSGD xsgd = new MockXSGD();
         FixedRateSwap swap = new FixedRateSwap(IERC20(address(xsgd)));
-        // Only the token the app actually settles in. The mock's rate went with the mock.
+        // EVERY payable token, not just the default one. An entry in `TOKENS` is
+        // necessary and not sufficient — the swap must also LIST the token or `readRate`
+        // throws `TokenUnsupported`, and since `accepts[]` fans out one priced offer per
+        // payable token, ONE unlisted token 400s every 402 challenge including the vanilla
+        // USDC one. EURC was originally listed by a one-off owner transaction, so the first
+        // redeploy after it landed would have taken the whole machine door down while the
+        // human door stayed green. Adding a payable token to `TOKENS` means adding it here.
         swap.setRate(REAL_USDC, DEMO_RATE);
+        swap.setRate(REAL_EURC, DEMO_RATE_EURC);
         GantryCore core = new GantryCore(IERC20(address(xsgd)), deployer);
         core.setSwap(IGantrySwap(address(swap)));
         core.setFee(FEE_BPS, deployer);
@@ -67,7 +76,8 @@ contract DeployAll is Script {
         console2.log("MockXSGD:              ", address(xsgd));
         console2.log("AgentPBMWalletFactory: ", address(factory));
         console2.log("Relayer/owner:         ", deployer);
-        console2.log("Real USDC:              0x036CbD53842c5426634e7929541eC2318f3dCF7e");
+        console2.log("Real USDC (listed):     0x036CbD53842c5426634e7929541eC2318f3dCF7e");
+        console2.log("Real EURC (listed):     0x808456652fdb597867f38412077A9182bf77359F");
         console2.log("deploy block (floor):  ", floorBlock);
         console2.log("");
         console2.log("NEXT: pin all four + the deploy block in packages/shared/src/addresses.ts,");
