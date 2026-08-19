@@ -2,12 +2,15 @@ import { Router } from "express";
 import type { HTTPRequestContext, RoutesConfig } from "@x402/core/server";
 import {
   PAYABLE_TOKEN_IDS,
+  PAYMENT_SIGNATURE_HEADER,
   TOKENS,
   caip2,
+  decodePaymentSignatureHeader,
   formatUnits6,
   parseSgd,
   quoteAmountIn,
   tokenAddress,
+  tokenIdByAddress,
   type TokenId,
 } from "@gantry/shared";
 import { relayerAccount } from "../chain";
@@ -98,33 +101,56 @@ function priceIn(token: TokenId) {
   };
 }
 
-/** The USDC price function, kept under its old name because `exact` uses it and
- * the boot assertion below names it. */
-const buildOrderPrice = priceIn("USDC");
+/**
+ * What a client that expresses no preference is quoted.
+ *
+ * An UNMODIFIED x402 client takes `accepts[0]` without choosing, so the first
+ * entry has to stay the currency the demo funds and every payer already holds.
+ * Named here rather than leaning on whatever order `PAYABLE_TOKEN_IDS` happens
+ * to have — that order comes from the key order of the TOKENS object, so tidying
+ * the registry could otherwise move every vanilla client onto euros without
+ * anyone touching this file.
+ */
+const VANILLA_DEFAULT_TOKEN: TokenId = "USDC";
+
+/** Every payable token, the vanilla default first. */
+const OFFER_TOKENS: readonly TokenId[] = [
+  VANILLA_DEFAULT_TOKEN,
+  ...PAYABLE_TOKEN_IDS.filter((id) => id !== VANILLA_DEFAULT_TOKEN),
+];
 
 const orderAccepts = [
   // `exact` MUST stay first: vanilla clients (and scripts/x402-buy.ts)
   // take the first matching entry. Funds route to the relayer — the
   // facilitator bridge's custodial hop.
-  {
+  //
+  // ONE ENTRY PER PAYABLE TOKEN, default first. The bridge was always
+  // token-agnostic — it reads `requirements.asset` from collect through refund —
+  // so the only thing making the STANDARDS door dollar-only was this list, while
+  // our own scheme below already offered both. That asymmetry made "any currency
+  // in" true of the doors we wrote and false of the door anyone else can use.
+  // A client that wants euros asks through the SDK's own
+  // `paymentRequirementsSelector`; one that asks for nothing is quoted dollars,
+  // exactly as before.
+  ...OFFER_TOKENS.map((token) => ({
     scheme: "exact",
     network: caip2(config.chainId),
     payTo: relayerAccount.address,
-    price: buildOrderPrice,
+    price: priceIn(token),
     maxTimeoutSeconds: 600,
-  },
+  })),
   // `gantry-pbm`: non-custodial — the wallet pushes straight into the core at
   // settle, so payTo is GantryCore itself. The static extra merges after the
   // price extra, adding the intent-endpoint hint the Gantry agent uses for the
   // pre-signing step.
   //
-  // ONE ENTRY PER PAYABLE TOKEN, which is what `accepts[]` is for: an agent
-  // wallet spends a single currency (its caps are one number in one token's
-  // units), so the server offers each and the agent takes the one matching what
-  // it holds. A single USDC entry would have made a euro agent's intent
-  // disagree with the offer it was answering, which surfaces as `quote_changed`
-  // — a confusing way to say "we never offered euros".
-  ...PAYABLE_TOKEN_IDS.map((token) => ({
+  // One entry per payable token here for a different reason: an agent wallet
+  // spends a single currency (its caps are one number in one token's units), so
+  // the server offers each and the agent takes the one matching what it holds. A
+  // single USDC entry made a euro agent's intent disagree with the offer it was
+  // answering, which surfaces as `quote_changed` — a confusing way to say "we
+  // never offered euros".
+  ...OFFER_TOKENS.map((token) => ({
     scheme: "gantry-pbm",
     network: caip2(config.chainId),
     payTo: config.addresses.gantryCore,
@@ -133,10 +159,18 @@ const orderAccepts = [
     extra: { intentEndpoint: "/api/pbm/intent" },
   })),
 ];
-// Boot-time guard: the vanilla-interop beat dies silently if a reorder ever
-// demotes `exact` from accepts[0].
+// Boot-time guards. The first: the vanilla-interop beat dies silently if a
+// reorder ever demotes `exact` from accepts[0]. The second: so does it if the
+// default currency stops being quotable, which would leave accepts[0] pointing
+// at a token `readRate` refuses — a 402 nobody can pay, produced by a server
+// that thinks it is fine.
 if (orderAccepts[0]?.scheme !== "exact") {
   throw new Error("orderRoutes invariant violated: `exact` must be the first accepts entry");
+}
+if (!PAYABLE_TOKEN_IDS.includes(VANILLA_DEFAULT_TOKEN)) {
+  throw new Error(
+    `orderRoutes invariant violated: the vanilla default ${VANILLA_DEFAULT_TOKEN} must be payable`,
+  );
 }
 
 export const orderRoutes: RoutesConfig = {
@@ -208,7 +242,32 @@ export const ordersRouter = Router();
 
 /** One body for both doors. Two handlers that formatted their own confirmation
  * would be free to drift, and "the two doors agree" is the entire claim. */
-async function orderConfirmation(handle: string, sgd: string) {
+/**
+ * Which currency this order was actually paid in.
+ *
+ * The confirmation used to state `USDC` unconditionally, which was true only
+ * while the `exact` door offered nothing else — the first euro payment through it
+ * came back describing itself as dollars. Read instead from the PAYMENT-SIGNATURE
+ * header the middleware has ALREADY verified: `accepted` is the client's echo of
+ * an accepts[] entry, and the SDK subset-matches it against the server-built one
+ * before this handler is reached, so by here the asset is the server's own and
+ * not the caller's claim.
+ *
+ * Null rather than a default when the header is missing or unreadable. This body
+ * is a courtesy — the receipt that matters travels in PAYMENT-RESPONSE — and a
+ * field naming the wrong currency is worse than a field that is not there.
+ */
+function paidToken(header: string | undefined): TokenId | null {
+  if (!header) return null;
+  try {
+    const asset = decodePaymentSignatureHeader(header).accepted?.asset;
+    return asset ? tokenIdByAddress(config.addresses, asset) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function orderConfirmation(handle: string, sgd: string, token: TokenId | null) {
   const merchant = await getMerchant(handle);
   let xsgdAmount: bigint;
   try {
@@ -223,7 +282,7 @@ async function orderConfirmation(handle: string, sgd: string) {
       ...(merchant.location ? { location: merchant.location } : {}),
       sgd: formatUnits6(xsgdAmount),
       xsgdAmount: xsgdAmount.toString(),
-      token: "USDC" as const,
+      ...(token ? { token } : {}),
     },
     message: "order confirmed: the settlement receipt travels in the PAYMENT-RESPONSE header",
   };
@@ -234,9 +293,21 @@ function requestedSgd(value: unknown): string {
 }
 
 ordersRouter.post("/api/order/:handle", async (req, res) => {
-  res.json(await orderConfirmation(String(req.params.handle), requestedSgd(req.query.sgd)));
+  res.json(
+    await orderConfirmation(
+      String(req.params.handle),
+      requestedSgd(req.query.sgd),
+      paidToken(req.get(PAYMENT_SIGNATURE_HEADER)),
+    ),
+  );
 });
 
 ordersRouter.get("/pay/:handle", async (req, res) => {
-  res.json(await orderConfirmation(String(req.params.handle), requestedSgd(req.query.sgd)));
+  res.json(
+    await orderConfirmation(
+      String(req.params.handle),
+      requestedSgd(req.query.sgd),
+      paidToken(req.get(PAYMENT_SIGNATURE_HEADER)),
+    ),
+  );
 });

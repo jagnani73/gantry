@@ -11,6 +11,14 @@
  *        quote, same settlement — the flag exists so "a person and a machine can
  *        pay the same URL" is something this script proves rather than something
  *        the README asserts.
+ *        add `--token EURC` to pay a different offered currency. WITHOUT it the
+ *        client is untouched and takes accepts[0], which is what makes the
+ *        default run a standards-interop proof; WITH it the same client is given
+ *        the SDK's own `paymentRequirementsSelector`, a documented constructor
+ *        parameter whose default is "first available option". So the flag picks
+ *        among what the server offered — it does not teach the client anything
+ *        Gantry-specific, and the selection reads only `extra.name`, which came
+ *        from the challenge.
  * Env: X402_PAYER_KEY (optional; a fresh random key is funded from the demo
  *      funder when unset), GANTRY_API (default http://localhost:4000)
  */
@@ -36,6 +44,8 @@ const { values: args } = parseArgs({
     handle: { type: "string", default: "ah-hock-chicken-rice" },
     link: { type: "boolean", default: false },
     discover: { type: "boolean", default: false },
+    /** Empty means "express no preference", which is the vanilla behaviour. */
+    token: { type: "string", default: "" },
   },
 });
 
@@ -72,6 +82,26 @@ async function discoverResource(): Promise<{ url: string; name: string }> {
   return { url: pick.resource, name: pick.serviceName };
 }
 
+/**
+ * Which offered entry this run intends to pay.
+ *
+ * Matches on `extra.name`, the EIP-712 token name the SERVER published in the
+ * challenge — so no address table and no Gantry import is needed, and the client
+ * is choosing among what it was told, which is the only thing a standards client
+ * could do. Constrained to `exact` because that is the only scheme registered
+ * below; the `gantry-pbm` entries beside it are unpayable by this client and
+ * selecting one would fail confusingly rather than loudly.
+ *
+ * No `--token` means no preference: take the first, exactly as the SDK's default
+ * selector does.
+ */
+function wantedOffer<T extends { scheme: string; extra?: Record<string, unknown> | null }>(
+  accepts: readonly T[],
+): T | undefined {
+  if (!args.token) return accepts[0];
+  return accepts.find((a) => a.scheme === "exact" && a.extra?.["name"] === args.token);
+}
+
 async function main() {
   console.log(`agent payer: ${payer.address}${process.env.X402_PAYER_KEY ? "" : " (fresh burner)"}`);
 
@@ -86,8 +116,20 @@ async function main() {
     throw new Error(`expected 402 + ${PAYMENT_REQUIRED_HEADER}, got ${challenge.status}`);
   }
   const required = decodePaymentRequiredHeader(header);
-  const offer = required.accepts[0];
-  if (!offer) throw new Error("402 carried an empty accepts[]");
+  const offer = wantedOffer(required.accepts);
+  if (!offer) {
+    // Name what WAS offered. "no EURC offer" is actionable; "empty accepts[]"
+    // when the array is full is the kind of message that sends someone into the
+    // wrong file.
+    const catalogue = required.accepts
+      .map((a) => `${a.scheme}/${String(a.extra?.["name"] ?? "?")}`)
+      .join(", ");
+    throw new Error(
+      args.token
+        ? `no exact offer in ${args.token}; the server offered ${catalogue || "nothing"}`
+        : "402 carried an empty accepts[]",
+    );
+  }
   console.log(`402 challenge decoded:`);
   console.log(`  scheme ${offer.scheme} on ${offer.network}`);
   console.log(`  ${formatUnits6(BigInt(offer.amount), 6)} of ${offer.asset} → payTo ${offer.payTo}`);
@@ -100,11 +142,13 @@ async function main() {
     const funder = await fetch(`${api}/api/faucet`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ address: payer.address }),
+      // Fund the currency this run will actually sign for, or a euro payer gets
+      // a dollar balance it cannot spend.
+      body: JSON.stringify({ address: payer.address, ...(args.token ? { token: args.token } : {}) }),
     });
     if (funder.ok) {
       const { funded } = (await funder.json()) as { funded: string };
-      console.log(`funder: sent ${formatUnits6(BigInt(funded))} USDC`);
+      console.log(`funder: sent ${formatUnits6(BigInt(funded))} ${args.token || "USDC"}`);
     } else {
       console.log(`funder refused (${funder.status}): ${await funder.text()}. Continuing anyway.`);
     }
@@ -113,9 +157,22 @@ async function main() {
   }
 
   // 3. The vanilla client: standard scheme registration, then one call.
-  const client = new x402Client().register(offer.network, new ExactEvmScheme(toClientEvmSigner(payer)));
+  //
+  // Without `--token` this is literally `new x402Client()` — the default
+  // selector, the first entry, nothing taught. With it, the same class gets its
+  // documented `paymentRequirementsSelector` argument. Worth keeping the two
+  // spellings visibly separate: the interop claim rests on the first one, and a
+  // single always-on selector would quietly retire it.
+  const base = args.token
+    ? new x402Client((_version, accepts) => wantedOffer(accepts) ?? accepts[0]!)
+    : new x402Client();
+  const client = base.register(offer.network, new ExactEvmScheme(toClientEvmSigner(payer)));
   const payFetch = wrapFetchWithPayment(fetch, client);
-  console.log(`paying via unmodified @x402/fetch…`);
+  console.log(
+    args.token
+      ? `paying via @x402/fetch, selecting the ${args.token} offer…`
+      : `paying via unmodified @x402/fetch…`,
+  );
   const paid = await payFetch(target, { method: verb });
   console.log(`response: ${paid.status}`);
   if (!paid.ok) {
