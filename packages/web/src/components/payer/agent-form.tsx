@@ -10,6 +10,7 @@ import {
   formatUnits6,
   shortAddress,
   type AgentSummary,
+  type TokenId,
 } from "@gantry/shared";
 import { Card, cn, Mono, useToast } from "@/components/primitives";
 import { Input } from "@/components/ui/input";
@@ -220,7 +221,10 @@ function AgentFormFields({
    * see `UnknownOutcomeError`. */
   const [unresolved, setUnresolved] = useState<{ text: string; txHash: Hex } | null>(null);
 
-  const problem = validate({ wallet, signer, name, dailyCap, perTxCap, categories, days, rate });
+  // The unit these caps are STORED in. An existing wallet reports its own; a
+  // new one has no balance yet, so it resolves to the default until funded.
+  const capToken: TokenId = existing?.token ?? "USDC";
+  const problem = validate({ wallet, signer, name, dailyCap, perTxCap, categories, days, rate, capToken });
 
   const expiryUnchanged = preservedExpiry !== null && days === initialDays;
   /** Every field of the POLICY is identical to what the wallet already holds, so
@@ -534,8 +538,8 @@ function AgentFormFields({
             </Field>
           </div>
           <p className="text-fine text-faint">
-            In S$. The contract stores USDC, so these convert at the swap&apos;s owner-set rate and
-            the wallet enforces the converted figure.
+            In S$. The contract stores {capToken}, so these convert at the swap&apos;s owner-set
+            rate and the wallet enforces the converted figure.
           </p>
 
           <Field label="Allowed at">
@@ -808,6 +812,7 @@ function validate(input: {
   categories: number[];
   days: string;
   rate: bigint | null;
+  capToken: TokenId;
 }): string | null {
   if (!input.rate) return "The swap's rate could not be read, so caps cannot be converted yet.";
   // Checked on an existing wallet too, now that the field is editable there.
@@ -837,7 +842,7 @@ function validate(input: {
   // Compared as the CONTRACT will see them: both caps are ceiled into token
   // units before `authorizeSpend` ever compares them.
   if (perTx > daily) {
-    return `The per-payment cap cannot exceed the daily cap (${formatUnits6(perTx, 6)} > ${formatUnits6(daily, 6)} USDC).`;
+    return `The per-payment cap cannot exceed the daily cap (${formatUnits6(perTx, 6)} > ${formatUnits6(daily, 6)} ${input.capToken}).`;
   }
   if (input.categories.length === 0) {
     return "Pick at least one category. An agent allowed nowhere can never spend.";

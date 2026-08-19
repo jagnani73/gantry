@@ -230,12 +230,15 @@ export function AgentsScreen() {
           </>
         )}
       </div>
-      {/* The caps below are stored in USDC; the S$ figures are a conversion at
-          a rate one address sets on FixedRateSwap. Every screen that shows them
-          back has to say so — this is the only place this screen can. */}
+      {/* The caps are stored in each agent's OWN token; the S$ figures are a
+          conversion at a rate one address sets on FixedRateSwap. Every screen
+          that shows them back has to say so — this is the only place this one
+          can. Naming a single token here was right while there was only one,
+          and became a lie about a euro agent's limits the moment there were
+          two, so the sentence follows what this payer actually owns. */}
       {agents && agents.length > 0 ? (
         <p className="mt-3 px-1 text-fine text-faint">
-          Caps are stored in USDC. S$ figures convert at the swap&apos;s owner-set rate.
+          {capTokenNote(agents)} S$ figures convert at the swap&apos;s owner-set rate.
         </p>
       ) : null}
       <div className="h-3" />
@@ -383,4 +386,19 @@ function SkeletonCard() {
       <div className="mt-3 h-3 w-1/2 rounded-badge bg-fill-subtle" />
     </Card>
   );
+}
+
+/**
+ * How to describe where these caps are denominated, given what this payer owns.
+ *
+ * An agent's cap is a single number in its own token's units, so with two
+ * currencies on screen there is no single token to name. Saying "each agent's
+ * own" is vaguer than naming one and is the only version that is true of both
+ * rows; when they agree, the specific answer is better and is still available.
+ */
+function capTokenNote(agents: AgentSummary[]): string {
+  const tokens = [...new Set(agents.map((a) => a.token))];
+  return tokens.length === 1
+    ? `Caps are stored in ${tokens[0]}.`
+    : "Caps are stored in each agent's own token.";
 }
