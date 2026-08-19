@@ -10,6 +10,7 @@ import {
   encodePaymentSignatureHeader,
   BASE_SEPOLIA_ADDRESSES,
   agentStatus,
+  selectAgentWallet,
   parseSgd,
   reviveSpendAuthorization,
   type AgentListResponse,
@@ -134,20 +135,12 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
   }
 
   const now = Math.floor(Date.now() / 1000);
-  // CURRENCY FIRST, then liveness. An agent wallet spends one token — its caps
-  // are a single number in that token's units — so a wallet holding euros
-  // cannot pay a dollar order at all, and preferring it because it happened to
-  // be newest is how a working setup starts failing `agent_currency_mismatch`
-  // the moment a second wallet exists. `token` is what the wallet actually
-  // holds, read live, so this asks "which of these can pay in my currency".
-  const wanted = payToken();
-  const spendsMine = agents.filter((a) => a.token === wanted);
-  // Falling back to ALL candidates rather than failing keeps an unfunded wallet
-  // usable: it reports the default token because it holds nothing, and the
-  // on-chain balance check is the right thing to refuse it, by name.
-  const pool = spendsMine.length > 0 ? spendsMine : agents;
-  const active = pool.filter((a) => agentStatus(a, now) === "active");
-  const usable = active.at(-1) ?? pool.at(-1);
+  // CURRENCY FIRST, then newest-active — and the rule lives in shared because
+  // THREE places apply it (here, demo-reset's provisioning, and demo-reset's
+  // step 6b check) and they have drifted before: the script armed one wallet
+  // while this resolved another. `token` is what the wallet actually holds,
+  // read live, so this asks "which of these can pay in my currency".
+  const usable = selectAgentWallet(agents, payToken(), (a) => agentStatus(a, now) === "active");
   if (!usable) {
     throw new Error(`no PBM wallet lists ${signer} as its agent signer. Has one been created?`);
   }
@@ -162,8 +155,11 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
   // about to revert PolicyExpired, and the fix is to arm it, not to debug the
   // payment.
   if (agents.length > 1) {
+    // Asked of the CHOSEN wallet rather than recomputed over the pool: the two
+    // are the same question, and the pool no longer exists here now that the
+    // selection rule lives in shared.
     console.error(
-      active.length > 0
+      agentStatus(usable, now) === "active"
         ? `agent: ${agents.length} wallets list this signer; spending from the newest ACTIVE one, ${usable.wallet}`
         : `agent: ${agents.length} wallets list this signer and NONE has a live policy; ` +
             `falling back to the newest, ${usable.wallet}. Expect PolicyExpired until it is re-armed.`,

@@ -68,6 +68,10 @@ const { BASE_SEPOLIA_ADDRESSES, BASE_SEPOLIA_RELAYER } = await import(
 const { DEMO_MERCHANTS, DEMO_MERCHANT_HANDLE, DEMO_POLICY } = await import(
   "../packages/shared/src/constants.ts"
 );
+// Reachable from here because it has a type-only import and no value ones —
+// see the note at the top of that file. This is the SAME function the agent CLI
+// calls, which is the whole point: the rule drifted when it was three copies.
+const { selectAgentWallet } = await import("../packages/shared/src/agentSelect.ts");
 const { gantryCoreAbi } = await import("../packages/shared/src/abis/gantryCore.ts");
 const { agentPbmWalletAbi } = await import("../packages/shared/src/abis/agentPbmWallet.ts");
 const { agentPbmWalletFactoryAbi } = await import(
@@ -513,20 +517,14 @@ let armed = null;
     degraded = true;
     walletProblems.push(`lookup failed (${why(res, body)}); nothing was created, funded or armed`);
   } else if (body.agents.length > 0) {
-    // The SAME rule step 6b checks and the agent CLI applies — newest active
-    // first. Taking `agents[0]` here was a second, silently different rule: with
-    // two wallets for one signer it funds and arms the OLDEST while 6b blesses
-    // the newest, so the script would arm one wallet, report another, and the
-    // agent would spend from a third state entirely. One rule, stated once.
-    // CURRENCY FIRST, then newest-active — the same rule the agent CLI applies.
-    // An agent wallet spends one token, so a euro wallet cannot run the USDC
-    // beats at all; picking it because it happened to be newest is how this
-    // script would provision the wrong agent and report it with a checkmark.
+    // ONE rule, imported. Currency first, then newest-active — the same call
+    // the agent CLI and step 6b make. This used to be a hand-written copy, and
+    // an earlier one took `agents[0]`: with two wallets for a signer it funded
+    // and armed the OLDEST while 6b blessed the newest, so the script armed one
+    // wallet, reported another, and the agent spent from a third state.
     const now = Math.floor(Date.now() / 1000);
-    const pool = body.agents.filter((agent) => agent.token === DEMO_AGENT_TOKEN);
-    const candidates = pool.length > 0 ? pool : body.agents;
-    const active = candidates.filter((agent) => isActive(agent, now));
-    wallet = (active.at(-1) ?? candidates.at(-1)).wallet;
+    wallet = selectAgentWallet(body.agents, DEMO_AGENT_TOKEN, (agent) => isActive(agent, now))
+      .wallet;
   } else {
     try {
       const receipt = await payerTx({
@@ -695,14 +693,14 @@ let signerLine = null;
 if (wallet) {
   const { res, body } = await call("GET", `/api/agents?agentSigner=${agentSigner}`);
   if (res?.ok && body) {
-    // Mirrors the CLI exactly, currency filter included. Without it this check
-    // reports a false mismatch the moment a second wallet in another currency
-    // exists — which is a warning that trains a presenter to ignore warnings.
+    // The SAME call the CLI makes, so this check cannot drift from the thing it
+    // is checking. Hand-mirrored, it once lagged the currency filter and
+    // reported a false mismatch whenever a second wallet in another currency
+    // existed — a warning that trains a presenter to ignore warnings.
     const now = Math.floor(Date.now() / 1000);
-    const pool = body.agents.filter((agent) => agent.token === DEMO_AGENT_TOKEN);
-    const candidates = pool.length > 0 ? pool : body.agents;
-    const active = candidates.filter((agent) => isActive(agent, now));
-    const chosen = active.at(-1) ?? candidates.at(-1);
+    const chosen = selectAgentWallet(body.agents, DEMO_AGENT_TOKEN, (agent) =>
+      isActive(agent, now),
+    );
     if (chosen && chosen.wallet.toLowerCase() !== wallet.toLowerCase()) {
       degraded = true;
       signerLine =

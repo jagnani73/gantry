@@ -22,6 +22,7 @@ export * from "./cursor";
 export * from "./payerFilter";
 export * from "./agentStatus";
 export * from "./agentCurrency";
+export * from "./agentSelect";
 export * from "./policyCheck";
 export * from "./eip3009";
 export * from "./agentPolicy";

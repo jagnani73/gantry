@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { canAgentSpend, resolveAgentCurrency } from "./agentCurrency";
-import { VANILLA_DEFAULT_TOKEN } from "./tokens";
+import { selectAgentWallet } from "./agentSelect";
+import { VANILLA_DEFAULT_TOKEN, type TokenId } from "./tokens";
 
 test("an agent's currency is whatever it holds", () => {
   assert.deepEqual(resolveAgentCurrency({ USDC: 10_000_000n }), {
@@ -91,4 +92,62 @@ test("an empty wallet may be quoted in anything", () => {
   // client-side "wrong currency" would not.
   assert.deepEqual(canAgentSpend({}, "EURC"), { ok: true });
   assert.deepEqual(canAgentSpend({ USDC: 0n }, "EURC"), { ok: true });
+});
+
+// ------------------------------------------- which wallet the agent spends from
+
+/** Newest last, matching the order `GET /api/agents` returns creation logs in. */
+const w = (wallet: string, token: TokenId, active: boolean) => ({ wallet, token, active });
+const live = (c: { active: boolean }) => c.active;
+
+test("currency wins over recency — a euro wallet cannot run a dollar order", () => {
+  // The rule three call sites share. Preferring the newest wallet because it is
+  // newest is how a working setup starts failing agent_currency_mismatch the
+  // moment a second wallet in another currency exists.
+  const chosen = selectAgentWallet(
+    [w("0xUSD", "USDC", true), w("0xEUR", "EURC", true)],
+    "USDC",
+    live,
+  );
+  assert.equal(chosen?.wallet, "0xUSD");
+});
+
+test("among wallets in the right currency, the NEWEST ACTIVE one wins", () => {
+  const chosen = selectAgentWallet(
+    [w("0xOld", "USDC", true), w("0xNew", "USDC", true), w("0xLapsed", "USDC", false)],
+    "USDC",
+    live,
+  );
+  assert.equal(chosen?.wallet, "0xNew");
+});
+
+test("with nothing active it still returns the newest, so the refusal names the real problem", () => {
+  // Returning null here would report "no wallet lists this signer", which is
+  // false and sends an operator looking for a missing wallet instead of arming
+  // the one they have.
+  const chosen = selectAgentWallet([w("0xA", "USDC", false), w("0xB", "USDC", false)], "USDC", live);
+  assert.equal(chosen?.wallet, "0xB");
+});
+
+test("no wallet in the wanted currency falls back to all, never to none", () => {
+  // An unfunded wallet reports the default token because it holds nothing. The
+  // on-chain balance check is the right thing to refuse it, by name.
+  const chosen = selectAgentWallet([w("0xEUR", "EURC", true)], "USDC", live);
+  assert.equal(chosen?.wallet, "0xEUR");
+});
+
+test("an empty candidate list is the one case that returns null", () => {
+  assert.equal(selectAgentWallet([], "USDC", live), null);
+});
+
+test("a lapsed wallet in the right currency beats an active one in the wrong one", () => {
+  // Currency is the FIRST filter, so the wrong-currency wallet is out of the
+  // pool before liveness is considered at all. Getting this order backwards is
+  // what made demo-reset arm one wallet while the CLI spent from another.
+  const chosen = selectAgentWallet(
+    [w("0xUsdLapsed", "USDC", false), w("0xEurLive", "EURC", true)],
+    "USDC",
+    live,
+  );
+  assert.equal(chosen?.wallet, "0xUsdLapsed");
 });
