@@ -16,6 +16,7 @@ import {
   ExactEvmPayloadSchema,
   VERIFY_MARGIN_SECONDS,
   orderPin,
+  paidToken,
   parseOrderPins,
   parseOrderResource,
   reasonForGantryError,
@@ -332,3 +333,42 @@ test("a currency mismatch and an unknown asset keep their own reason codes", () 
   // display can never disagree about what an agent's currency is.
   assert.match(facilitator, /canAgentSpend\(/);
 });
+
+// ---------------------------------------------- which currency it was paid in
+
+/**
+ * The order confirmation's `token` field.
+ *
+ * It stated `USDC` unconditionally until `exact` learned to fan out, and the
+ * first euro payment through that door came back describing itself as dollars.
+ * All three of its "say nothing" branches are exercised here, because each one
+ * would otherwise be the shape that silently reintroduces a wrong label.
+ */
+test("the paid token is read from the header, per currency", () => {
+  const addresses = BASE_SEPOLIA_ADDRESSES;
+  assert.equal(paidToken(addresses, signatureHeader(addresses.realUsdc)), "USDC");
+  assert.equal(paidToken(addresses, signatureHeader(addresses.realEurc)), "EURC");
+});
+
+test("an absent, unreadable or unknown asset yields NO token, never a default", () => {
+  const addresses = BASE_SEPOLIA_ADDRESSES;
+  // Absent: a caller that did not pay through the middleware at all.
+  assert.equal(paidToken(addresses, undefined), null);
+  // Unreadable: not base64, or not the shape the codec expects. The caller is
+  // handed the error rather than it being swallowed — a throw here means the
+  // codec broke, and @x402 churn is exactly where that would hide.
+  let seen: unknown = null;
+  assert.equal(paidToken(addresses, "not-base64-at-all!!", (err) => (seen = err)), null);
+  assert.notEqual(seen, null, "an unreadable header must reach the caller's logger");
+  // A real address this build does not know: refused rather than guessed at.
+  const stranger = `0x${"ab".repeat(20)}` as const;
+  assert.equal(paidToken(addresses, signatureHeader(stranger)), null);
+});
+
+/** The PAYMENT-SIGNATURE shape the middleware has already verified by the time
+ * `paidToken` sees it — only `accepted.asset` is read. */
+function signatureHeader(asset: string): string {
+  return Buffer.from(JSON.stringify({ x402Version: 2, accepted: { asset } }), "utf8").toString(
+    "base64",
+  );
+}

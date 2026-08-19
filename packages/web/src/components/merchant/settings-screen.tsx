@@ -347,8 +347,8 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
                reviews a merchant. */
             <p className="border-t border-hairline pt-5.5 text-fine text-quiet">
               Editing a shop from this page spends Gantry&apos;s own gas key, so it runs on the demo
-              host instead. Your name, location and one-liner are still yours to change — get in
-              touch and we&apos;ll write them for you. Nothing here reviews or approves a shop.
+              host instead. Your name, location and one-liner are still yours to change there.
+              Nothing here reviews or approves a shop.
             </p>
           )}
         </Card>

@@ -3,13 +3,17 @@ import { parseSignature, verifyTypedData, type Address, type Hex } from "viem";
 import { z } from "zod";
 import {
   buildTransferAuthorization,
+  decodePaymentSignatureHeader,
   isValidHandle,
   parseSgd,
+  tokenIdByAddress,
   type DecodedGantryError,
   type Eip712TokenDomain,
   type X402ExactEvmPayload,
   type X402PaymentPayload,
   type X402PaymentRequirements,
+  type GantryAddresses,
+  type TokenId,
 } from "@gantry/shared";
 
 /**
@@ -245,4 +249,37 @@ export function reasonForGantryError(decoded: DecodedGantryError): string {
     return "authorization_already_used";
   }
   return "settlement_failed";
+}
+
+/**
+ * Which currency an order was actually paid in, read off the verified
+ * PAYMENT-SIGNATURE header.
+ *
+ * The confirmation body used to state `USDC` unconditionally, which was true
+ * only while `exact` offered nothing else — the first euro payment through that
+ * door came back describing itself as dollars. By the time this runs the
+ * middleware has verified the header and subset-matched `accepted` against the
+ * server-built entry, so the asset here is the SERVER's, not the caller's.
+ *
+ * Returns null rather than a default whenever the header is absent or
+ * unreadable: this body is a courtesy — the receipt that matters travels in
+ * PAYMENT-RESPONSE — and a field naming the wrong currency is worse than a
+ * field that is not there. `onError` is how the caller logs an unreadable
+ * header without this module needing a logger; a throw here means the CODEC is
+ * broken, not the caller, and going silent would lose the field on every
+ * confirmation with all tests still green.
+ */
+export function paidToken(
+  addresses: GantryAddresses,
+  header: string | undefined,
+  onError?: (err: unknown) => void,
+): TokenId | null {
+  if (!header) return null;
+  try {
+    const asset = decodePaymentSignatureHeader(header).accepted?.asset;
+    return asset ? tokenIdByAddress(addresses, asset) : null;
+  } catch (err) {
+    onError?.(err);
+    return null;
+  }
 }

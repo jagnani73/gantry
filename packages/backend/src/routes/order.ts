@@ -7,18 +7,16 @@ import {
   VANILLA_DEFAULT_TOKEN,
   TOKENS,
   caip2,
-  decodePaymentSignatureHeader,
   formatUnits6,
   parseSgd,
   quoteAmountIn,
   tokenAddress,
-  tokenIdByAddress,
   type TokenId,
 } from "@gantry/shared";
 import { relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
-import { orderPin, parseOrderResource } from "../services/facilitator-core";
+import { orderPin, paidToken, parseOrderResource } from "../services/facilitator-core";
 import { payerAppOrigin, payerAppUrl, prefersHtml } from "../services/pay-link";
 import { readRate } from "../services/intents";
 import { getMerchant } from "../services/merchants";
@@ -226,38 +224,6 @@ export const ordersRouter = Router();
 
 /** One body for both doors. Two handlers that formatted their own confirmation
  * would be free to drift, and "the two doors agree" is the entire claim. */
-/**
- * Which currency this order was actually paid in.
- *
- * The confirmation used to state `USDC` unconditionally, which was true only
- * while the `exact` door offered nothing else — the first euro payment through it
- * came back describing itself as dollars. Read instead from the PAYMENT-SIGNATURE
- * header the middleware has ALREADY verified: `accepted` is the client's echo of
- * an accepts[] entry, and the SDK subset-matches it against the server-built one
- * before this handler is reached, so by here the asset is the server's own and
- * not the caller's claim.
- *
- * Null rather than a default when the header is missing or unreadable. This body
- * is a courtesy — the receipt that matters travels in PAYMENT-RESPONSE — and a
- * field naming the wrong currency is worse than a field that is not there.
- */
-function paidToken(header: string | undefined): TokenId | null {
-  if (!header) return null;
-  try {
-    const asset = decodePaymentSignatureHeader(header).accepted?.asset;
-    return asset ? tokenIdByAddress(config.addresses, asset) : null;
-  } catch (err) {
-    // Absent beats wrong, but not absent AND silent. By the time this runs the
-    // middleware has verified the header and subset-matched it against the
-    // server-built entry, so a throw here means the CODEC is broken, not the
-    // caller — and @x402 version churn is a known risk this repo already keeps
-    // insurance against. Unlogged, every confirmation would quietly lose its
-    // `token` field and every test would still pass.
-    console.warn("order: could not read the paid asset from PAYMENT-SIGNATURE", err);
-    return null;
-  }
-}
-
 async function orderConfirmation(handle: string, sgd: string, token: TokenId | null) {
   const merchant = await getMerchant(handle);
   let xsgdAmount: bigint;
@@ -279,6 +245,13 @@ async function orderConfirmation(handle: string, sgd: string, token: TokenId | n
   };
 }
 
+/** A PAYMENT-SIGNATURE the middleware already verified should always decode, so
+ * a failure here is a broken codec rather than a bad caller — and @x402 version
+ * churn is a known risk. Absent beats wrong, but not absent AND silent. */
+function logPaidTokenError(err: unknown): void {
+  console.warn("order: could not read the paid asset from PAYMENT-SIGNATURE", err);
+}
+
 /** These bodies are per-payment and reached only with a valid payment header;
  * nothing about them may sit in a shared cache. */
 function noStore(res: Response): void {
@@ -295,7 +268,7 @@ ordersRouter.post("/api/order/:handle", async (req, res) => {
     await orderConfirmation(
       String(req.params.handle),
       requestedSgd(req.query.sgd),
-      paidToken(req.get(PAYMENT_SIGNATURE_HEADER)),
+      paidToken(config.addresses, req.get(PAYMENT_SIGNATURE_HEADER), logPaidTokenError),
     ),
   );
 });
@@ -312,7 +285,7 @@ ordersRouter.get("/pay/:handle", async (req, res) => {
     await orderConfirmation(
       String(req.params.handle),
       requestedSgd(req.query.sgd),
-      paidToken(req.get(PAYMENT_SIGNATURE_HEADER)),
+      paidToken(config.addresses, req.get(PAYMENT_SIGNATURE_HEADER), logPaidTokenError),
     ),
   );
 });

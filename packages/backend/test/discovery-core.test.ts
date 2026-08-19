@@ -180,4 +180,9 @@ test("paging clamps rather than trusting or throwing", () => {
   // Junk must not empty the registry — a discovery endpoint that lists nothing
   // because a query param was malformed helps nobody.
   assert.deepEqual(parsePaging("abc", "-4"), { limit: 100, offset: 0 });
+  // limit=0 falls back rather than returning an empty page: an empty `items`
+  // beside a non-zero `total` reads as the end of the rail and stops the walk.
+  // offset=0 is a real position, so only `limit` floors at 1.
+  assert.deepEqual(parsePaging("0", "0"), { limit: 100, offset: 0 });
+  assert.deepEqual(parsePaging("1", "0"), { limit: 1, offset: 0 });
 });

@@ -187,9 +187,17 @@ export function parsePaging(
   rawOffset: unknown,
   max = 100,
 ): { limit: number; offset: number } {
-  const asInt = (value: unknown, fallback: number) => {
+  const asInt = (value: unknown, fallback: number, min: number) => {
     const n = typeof value === "string" ? Number.parseInt(value, 10) : NaN;
-    return Number.isFinite(n) && n >= 0 ? n : fallback;
+    return Number.isFinite(n) && n >= min ? n : fallback;
   };
-  return { limit: Math.min(asInt(rawLimit, max), max), offset: asInt(rawOffset, 0) };
+  // `limit` floors at 1, not 0. `?limit=0` is not a request for an empty page —
+  // it is the shape a client sends when its own paging arithmetic produced a
+  // zero, and answering with `items: []` beside a non-zero `total` reads as "the
+  // rail is empty at this offset" and ends the walk. `offset` may legitimately
+  // be 0, which is why the floors differ.
+  return {
+    limit: Math.min(asInt(rawLimit, max, 1), max),
+    offset: asInt(rawOffset, 0, 0),
+  };
 }

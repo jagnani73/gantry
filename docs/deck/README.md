@@ -58,11 +58,12 @@ a deliberate re-export, not a drive-by.
 
 Known drift as of 18 Aug 2026:
 
-- **Slide 8 states `Tests 446 · Foundry 191 · TypeScript 255`.** Already wrong on `main` (191 / 130
-  / 139 = 460) and further out once the pending branches land. Do not quote this slide's numbers —
-  run the suites.
-- **Slide 7 lists the live model as Gemini.** The agent narrates through AIsa's gateway on
-  `feat/aisa-provider`.
+- **Slide 8 states `Tests 446 · Foundry 191 · TypeScript 255`.** It was already wrong when the deck
+  shipped and it has kept moving — `main` is at **548** as of 19 Aug 2026 (201 Foundry, 174 shared,
+  169 backend, 4 agent). Do not quote this slide's numbers, and do not treat any figure written here
+  as current either: run the four suites and count.
+- **Slide 7 lists the live model as Gemini.** The agent narrates through AIsa's gateway, which
+  landed on `main` on 18 Aug 2026.
 - **Slide 8 hardcodes all four contract addresses.** They are correct today, and a
   `pnpm contracts:fresh` would silently invalidate the slide — the deck reads no address from
   `addresses.ts`.
