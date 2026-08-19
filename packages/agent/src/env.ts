@@ -2,6 +2,12 @@ import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { privateKeyToAccount } from "viem/accounts";
+import {
+  PAYABLE_TOKEN_IDS,
+  VANILLA_DEFAULT_TOKEN,
+  isPayableTokenId,
+  type TokenId,
+} from "@gantry/shared";
 
 const agentRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envFile = resolve(agentRoot, ".env");
@@ -80,6 +86,57 @@ export const env = {
   aisaModel: process.env.AISA_MODEL,
   llmTimeoutMs: Number(process.env.AGENT_LLM_TIMEOUT_MS ?? 8000),
 } as const;
+
+/**
+ * Every misconfiguration this file can detect, as one sentence, before a run.
+ *
+ * Both values below reach code that spends money, and both fail in the shape
+ * this project cares most about — quietly, while the run still looks correct.
+ * `selectProvider` already established the pattern for `AISA_MODEL`: report it
+ * as `misconfigured` and exit 2, rather than throwing at module load, which
+ * would take the test suite down with it.
+ *
+ * Returns null when there is nothing wrong.
+ */
+export function envProblem(): string | null {
+  // A malformed timeout DISABLES the LLM and the fallback engine PAYS.
+  //
+  // `Number("8s")` and `Number(undefined)` are NaN; `??` does not catch an empty
+  // value, so `AGENT_LLM_TIMEOUT_MS=` in a .env is `Number("")`, i.e. 0. Any of
+  // the three makes setTimeout fire before a byte leaves the machine, so
+  // `sawStream` is false, `toolCallsStarted` is 0, and runAgent falls through to
+  // the scripted engine -- which pays, and exits 0. It also routes AROUND the
+  // `silent` refusal, which exists to stop exactly this and exits 1. The only
+  // trace is one stderr line reading "sent nothing in 0ms".
+  if (!Number.isFinite(env.llmTimeoutMs) || env.llmTimeoutMs <= 0) {
+    return (
+      `AGENT_LLM_TIMEOUT_MS is ${JSON.stringify(process.env.AGENT_LLM_TIMEOUT_MS)}, ` +
+      `which is not a positive number of milliseconds. Unset it for the 8000ms default. ` +
+      `Left as-is, the live model is abandoned before it is called and every run falls ` +
+      `back to the scripted engine -- which pays.`
+    );
+  }
+  // An unknown AGENT_PAY_TOKEN is cast to TokenId unchecked at the point of use,
+  // so it dies in tokenAddress as a TypeError inside the pre-payment try, and is
+  // reported as `transport_error: ... retrying once is safe` -- pointing the
+  // operator at the network instead of at a one-word typo. The confusion is a
+  // live one now that both vocabularies exist: the payer app's picker says EUR
+  // and USD, this wants EURC and USDC.
+  if (env.agentPayToken !== undefined && !isPayableTokenId(env.agentPayToken)) {
+    return (
+      `AGENT_PAY_TOKEN is ${JSON.stringify(env.agentPayToken)}, which is not a token ` +
+      `this rail can be paid in. Use one of: ${PAYABLE_TOKEN_IDS.join(", ")}. ` +
+      `(Those are TOKEN ids, not the currency codes the payer app shows.)`
+    );
+  }
+  return null;
+}
+
+/** The pay token as a checked `TokenId`. Safe only after `envProblem()` passes,
+ * which is why that call gates every run. */
+export function payToken(): TokenId {
+  return isPayableTokenId(env.agentPayToken) ? env.agentPayToken : VANILLA_DEFAULT_TOKEN;
+}
 
 /**
  * The signer, not the wallet. Wallets are created on-chain by their owner — the

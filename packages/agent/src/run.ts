@@ -1,7 +1,7 @@
 import { stepCountIs, streamText, type LanguageModel } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { env } from "./env";
+import { env, envProblem } from "./env";
 import * as narrator from "./narrator";
 import { runScripted } from "./scripted";
 import { agentTools, lockLiveTools, resetRunState, toolCallsStarted } from "./tools";
@@ -64,7 +64,9 @@ type Provider = { model: LanguageModel; label: string };
 export type RunOutcome =
   | { kind: "completed" }
   | { kind: "scripted"; reason: string }
-  | { kind: "silent" }
+  /** The model produced output and called no tool. `detail` is set only when a
+   * stream error ended the run; a clean finish has nothing to add. */
+  | { kind: "silent"; detail?: string }
   | { kind: "abandoned"; context: string; toolCalls: number; detail?: string }
   | { kind: "misconfigured"; message: string };
 
@@ -105,6 +107,26 @@ function selectProvider(): Provider | null | { error: string } {
     return { model: google(GOOGLE_MODEL), label: `google/${GOOGLE_MODEL}` };
   }
   return null;
+}
+
+/**
+ * A live run that failed, plus the one fact the fallback decision needs: had
+ * the model streamed anything before it broke?
+ *
+ * "Nothing streamed" is an infrastructure failure — a refused connection, a
+ * 401, a 429 at the door — and says nothing about what the model wanted, which
+ * is the same position the timeout leaves us in. "It streamed prose and then
+ * broke" is different: the model was talking, and on a gateway that answers
+ * tool calls as prose that talk IS the failure mode. Paying on the strength of
+ * it is the thing `silent` exists to prevent.
+ */
+class LiveRunError extends Error {
+  readonly streamed: boolean;
+  constructor(cause: unknown, streamed: boolean) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "LiveRunError";
+    this.streamed = streamed;
+  }
 }
 
 async function runLive(prompt: string, provider: Provider): Promise<"done" | "timeout"> {
@@ -159,7 +181,14 @@ async function runLive(prompt: string, provider: Provider): Promise<"done" | "ti
     timer.unref?.();
   });
 
-  const outcome = await Promise.race([consume, timeout]);
+  let outcome: "done" | "timeout";
+  try {
+    outcome = await Promise.race([consume, timeout]);
+  } catch (err) {
+    // Carry whether anything actually streamed before the failure. The fallback
+    // decision upstream turns on it, and `sawStream` is local to this closure.
+    throw new LiveRunError(err, sawStream);
+  }
   if (outcome === "timeout") {
     abandoned = true;
     // A stalled request holds its socket, which holds the event loop open —
@@ -184,6 +213,13 @@ export async function runAgent(
   onProvider?: (label: string) => void,
 ): Promise<RunOutcome> {
   resetRunState();
+
+  // Before the provider, because both values this checks reach code that spends
+  // money and neither announces itself when wrong — a bad timeout silently
+  // routes every run into the paying scripted engine, and a bad pay token
+  // surfaces as a network error much later.
+  const problem = envProblem();
+  if (problem !== null) return { kind: "misconfigured", message: problem };
 
   const selected = selectProvider();
   if (selected !== null && "error" in selected) {
@@ -222,6 +258,17 @@ export async function runAgent(
         detail,
       };
     }
+    // Zero tool calls, and the model HAD started streaming: it was producing
+    // prose and never called anything. That is the `silent` shape arriving by a
+    // different route, and the scripted engine pays — so refuse, exactly as the
+    // clean-completion branch does. Falling back here would turn "it only
+    // talked, then the gateway 429'd" into a real S$4.50 payment.
+    if (err instanceof LiveRunError && err.streamed) {
+      return { kind: "silent", detail };
+    }
+    // Nothing streamed, so this is the timeout's situation with an error
+    // attached — the model never got as far as saying anything, and the
+    // fallback is what keeps a demo alive through a dead key or a cold gateway.
     lockLiveTools();
     await runScripted(prompt);
     return { kind: "scripted", reason: detail };

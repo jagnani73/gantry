@@ -17,10 +17,9 @@ import {
   type MerchantResponse,
   type PbmIntentResponse,
   tokenAddress as gantryTokenAddress,
-  type TokenId,
   type X402PaymentRequirements,
 } from "@gantry/shared";
-import { env, requireSigningEnv } from "./env";
+import { env, payToken, requireSigningEnv } from "./env";
 
 /**
  * The deterministic gantry-pbm client — bare fetch + the owned wire codec,
@@ -141,7 +140,7 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
   // be newest is how a working setup starts failing `agent_currency_mismatch`
   // the moment a second wallet exists. `token` is what the wallet actually
   // holds, read live, so this asks "which of these can pay in my currency".
-  const wanted = (env.agentPayToken as TokenId | undefined) ?? "USDC";
+  const wanted = payToken();
   const spendsMine = agents.filter((a) => a.token === wanted);
   // Falling back to ALL candidates rather than failing keeps an unfunded wallet
   // usable: it reports the default token because it holds nothing, and the
@@ -285,16 +284,18 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
     if (pbmOffers.length === 0) {
       return fail("no_pbm_offer", "server offered no gantry-pbm accepts entry");
     }
-    const wantedAsset = env.agentPayToken
-      ? gantryTokenAddress(BASE_SEPOLIA_ADDRESSES, env.agentPayToken as TokenId)
-      : null;
-    const pbmOffer = wantedAsset
-      ? pbmOffers.find((a) => a.asset.toLowerCase() === wantedAsset.toLowerCase())
-      : pbmOffers[0];
+    // `payToken()` rather than the raw env value: an unknown id used to be cast
+    // straight into `tokenAddress`, where it dereferenced `undefined.addressKey`
+    // and was caught by the pre-payment handler below as `transport_error —
+    // retrying once is safe`. That sends an operator to the network for what is
+    // a one-word typo, and the retry is deterministic failure. `envProblem()`
+    // now refuses the run at startup, so by here the id is known good.
+    const wantedAsset = gantryTokenAddress(BASE_SEPOLIA_ADDRESSES, payToken());
+    const pbmOffer = pbmOffers.find((a) => a.asset.toLowerCase() === wantedAsset.toLowerCase());
     if (!pbmOffer) {
       return fail(
         "no_pbm_offer",
-        `server offered no gantry-pbm entry in ${env.agentPayToken}; it offered ${pbmOffers
+        `server offered no gantry-pbm entry in ${payToken()}; it offered ${pbmOffers
           .map((a) => a.asset)
           .join(", ")}`,
       );
@@ -310,9 +311,11 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
       headers: { "content-type": "application/json" },
       // The agent declares its currency; the backend quotes in it and the
       // facilitator refuses it if the wallet does not actually hold that token.
-      // Omitted means USDC, so an agent configured before EURC existed is
-      // unaffected.
-      body: JSON.stringify({ handle, xsgdAmount, token: env.agentPayToken }),
+      // `payToken()` resolves an unset AGENT_PAY_TOKEN to the vanilla default,
+      // which is the same USDC the backend would have defaulted to — stated
+      // here rather than left implicit, since the offer above is now selected
+      // by the same value.
+      body: JSON.stringify({ handle, xsgdAmount, token: payToken() }),
     });
     if (!intentRes.ok) {
       return fail(

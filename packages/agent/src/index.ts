@@ -34,12 +34,17 @@ function report(outcome: RunOutcome): number {
 
     case "silent":
       console.error(
-        "\n[agent] the model finished without calling a single tool: nothing was " +
-          "checked and nothing was paid, whatever the narration above implied.\n" +
+        `\n[agent] the model ${outcome.detail ? "failed mid-stream" : "finished"} without ` +
+          "calling a single tool: nothing was checked and nothing was paid, whatever the " +
+          "narration above implied.\n" +
           "[agent] not falling back, because the scripted engine would pay and " +
           "this run gave no evidence that was wanted. Check the model supports " +
           "native tool calling, then re-run.",
       );
+      // The stream error, when there was one. Kept separate from the sentence
+      // above because that sentence is the operator's instruction and this is
+      // the machine detail behind it.
+      if (outcome.detail) console.error(`[agent] (${outcome.detail})`);
       return 1;
 
     case "abandoned":

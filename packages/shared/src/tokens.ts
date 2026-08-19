@@ -154,6 +154,22 @@ export function isPayableToken(id: TokenId): boolean {
   return TOKENS[id].payable;
 }
 
+/**
+ * The same question asked of an UNTRUSTED string, as a type guard.
+ *
+ * `isPayableToken` takes a `TokenId`, so it can only be reached by a caller that
+ * already has one — which means anything arriving from outside (an env var, a
+ * query param, a JSON body) has to be cast before it can be checked, and a cast
+ * is exactly what the check was for. `AGENT_PAY_TOKEN=usdc` went in unvalidated
+ * and came out as a TypeError inside a try block, reported as a network fault.
+ *
+ * Narrowing to `TokenId` rather than to a payable subtype because none exists
+ * yet; the caller still gets a value it may safely index `TOKENS` with.
+ */
+export function isPayableTokenId(value: string | undefined): value is TokenId {
+  return value !== undefined && (PAYABLE_TOKEN_IDS as readonly string[]).includes(value);
+}
+
 export function tokenAddress(addresses: GantryAddresses, id: TokenId): Address {
   return addresses[TOKENS[id].addressKey];
 }
