@@ -21,6 +21,7 @@ export * from "./overviewWindow";
 export * from "./cursor";
 export * from "./payerFilter";
 export * from "./agentStatus";
+export * from "./policyCheck";
 export * from "./eip3009";
 export * from "./agentPolicy";
 export * from "./errors";
