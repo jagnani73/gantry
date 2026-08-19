@@ -208,19 +208,36 @@ export function readDenial(
   agent: AgentSummary | undefined,
   merchantCategory: string | undefined,
 ): DenialReading {
-  const allowed = agent ? categoryLabels(agent.categories) : undefined;
+  // The agent is consulted ONLY for its rate, which is a display conversion.
+  // Nothing describing what happened may be read off it: this is a historical
+  // record and the agent is current state, and the two diverge the moment the
+  // owner uses the remedy loop on the very receipt they are reading.
   const rate = agent ? BigInt(agent.rate) : null;
   const sgd = (units: string | undefined): string | undefined =>
     units === undefined || rate === null ? undefined : `S$${sgdFromCapUnits(units, rate)}`;
 
   switch (denial.errorName) {
-    case "CategoryNotAllowed":
+    case "CategoryNotAllowed": {
+      // From the REVERT's own argument, never from the agent's current
+      // categories. Its siblings below already work this way — DailyCapExceeded
+      // names the cap the contract actually compared against — and this case
+      // reaching for live state was a bug the remedy loop makes reachable BY
+      // DESIGN: the moment a payer widens the policy, every past refusal began
+      // claiming the rule that stopped it was a list that now contains the very
+      // category it refused. It only ever looked right because nobody had
+      // changed the list yet.
+      const refused = argOf(denial, "categoryId");
+      const refusedLabel =
+        refused === undefined
+          ? undefined
+          : (CATEGORY_LABELS[Number(refused)] ?? categoryName(Number(refused)));
       return {
-        rule: allowed ? `categoryBitmap · ${allowed} only` : "categoryBitmap",
+        rule: refusedLabel ? `categoryBitmap · ${refusedLabel} not allowed` : "categoryBitmap",
         explanation: merchantCategory
-          ? `${merchantCategory} is not in this agent's allowed categories.`
-          : "This shop's category is not in this agent's allowed categories.",
+          ? `${merchantCategory} was not in this agent's allowed categories at the time.`
+          : "This shop's category was not in this agent's allowed categories at the time.",
       };
+    }
     case "DailyCapExceeded":
       return {
         rule: `dailyCap · ${sgd(argOf(denial, "cap")) ?? "the daily allowance"} a day`,
@@ -229,17 +246,20 @@ export function readDenial(
     case "PerTxCapExceeded":
       return {
         rule: `perTxCap · ${sgd(argOf(denial, "cap")) ?? "the per-payment limit"} a payment`,
-        explanation: "This payment is larger than the agent's per-payment limit.",
+        explanation: "This payment was larger than the agent's per-payment limit at the time.",
       };
     case "PolicyExpired":
       return {
         rule: "expiry · policy no longer live",
-        explanation: "This agent's policy has expired or been revoked, so every spend reverts.",
+        explanation:
+          "This agent's policy had expired or been revoked when this was attempted, so every spend reverted.",
       };
     case "InsufficientWalletBalance":
       return {
         rule: "balance",
-        explanation: "The agent's wallet did not hold enough USDC to cover the payment.",
+        // No token named: a euro agent's wallet holds EURC, and the amount is
+        // already on the row above in its own currency.
+        explanation: "The agent's wallet did not hold enough to cover the payment.",
       };
     case "InvalidAgentSignature":
       return {
