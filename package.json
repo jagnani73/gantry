@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck",
     "abis": "forge build --root packages/contracts && node packages/shared/scripts/gen-abis.mjs",
+    "demo:seed": "node scripts/demo-seed.mjs",
     "demo:reset": "node scripts/demo-reset.mjs",
     "dev": "concurrently -n backend,web -c blue,green \"pnpm --filter @gantry/backend dev\" \"pnpm --filter @gantry/web dev\"",
     "contracts:fresh": "node scripts/contracts-fresh.mjs"
