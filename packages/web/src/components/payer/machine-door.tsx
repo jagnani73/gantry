@@ -117,6 +117,19 @@ export function MachineDoor({ handle }: { handle: string }) {
   );
 }
 
+/**
+ * The ticker for one offer, taken from the challenge rather than assumed.
+ *
+ * `extra.name` is the EIP-712 token name the server published — the same key the
+ * agent and `x402:buy` select on — so this card names what the server named.
+ * Null when it is absent: this card's whole claim is that it shows you the real
+ * response, so a missing ticker prints no ticker rather than a plausible one.
+ */
+function tokenLabel(offer: X402PaymentRequired["accepts"][number]): string | null {
+  const name = offer.extra?.["name"];
+  return typeof name === "string" && name ? name : null;
+}
+
 function Challenge({ challenge }: { challenge: X402PaymentRequired }) {
   return (
     <div className="rounded-control border border-fill-subtle">
@@ -127,11 +140,17 @@ function Challenge({ challenge }: { challenge: X402PaymentRequired }) {
         <span className="text-fine text-faint">asked just now</span>
       </div>
       <div className="flex flex-col gap-3 px-3.5 py-3">
+        {/* Keyed on scheme AND currency: each scheme is offered once per payable
+            token, so the scheme alone stopped being unique the moment `exact`
+            fanned out — and duplicate keys make React reuse the wrong row. */}
         {challenge.accepts.map((offer) => (
-          <div key={offer.scheme}>
+          <div key={`${offer.scheme}/${tokenLabel(offer) ?? "?"}`}>
             <div className="flex items-baseline justify-between gap-3">
               <Mono size="md" className="text-ink">
                 {offer.scheme}
+                {tokenLabel(offer) ? (
+                  <span className="text-faint"> · {tokenLabel(offer)}</span>
+                ) : null}
               </Mono>
               <span className="text-fine text-faint">
                 {offer.scheme === "exact"
@@ -142,9 +161,13 @@ function Challenge({ challenge }: { challenge: X402PaymentRequired }) {
             {/* Six decimals, not the 2dp default: this is the exact figure a
                 client signs for, and 3.352955 rounded to 3.35 is a different
                 amount of someone's money on the one card whose claim is that
-                these numbers are real. */}
+                these numbers are real. The TICKER has to come from the challenge
+                for the same reason — this said "USDC" on every row, so the euro
+                offers rendered as dollars on the one card claiming to show you
+                exactly what the server said. */}
             <Mono size="3xs" tone="faintest" className="mt-1 block">
-              {formatUnits6(BigInt(offer.amount), 6)} USDC → {shortAddress(offer.payTo)} on{" "}
+              {formatUnits6(BigInt(offer.amount), 6)}
+              {tokenLabel(offer) ? ` ${tokenLabel(offer)}` : ""} → {shortAddress(offer.payTo)} on{" "}
               {offer.network}
             </Mono>
           </div>
