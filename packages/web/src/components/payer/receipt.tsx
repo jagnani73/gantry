@@ -17,6 +17,7 @@ import { categoryLabels, readDenial } from "./agent-rules";
 import { clockTime, effectiveRate, formatRate, relativeWhen } from "./format";
 import { MerchantTile } from "./merchant-tile";
 import { OverlayHeader, OverlayScreen } from "./overlay";
+import { DenialRemedy } from "./denial-remedy";
 import { usePayer } from "./payer-context";
 import { PriceReference } from "./price-reference";
 
@@ -172,6 +173,8 @@ function DeclinedBody({
           rule is the contract.
         </p>
       </Card>
+
+      <DenialRemedy denial={denial} agent={agent} record={record} />
 
       <Card radius="card-m" pad="none" className="px-5 py-2">
         <KeyValueList>

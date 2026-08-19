@@ -50,7 +50,7 @@ const DEFAULT_DAYS = "30";
 const MAX_DAYS = 365;
 const DAY_SECONDS = 86_400;
 
-export function AgentForm({ wallet }: { wallet: Address | null }) {
+export function AgentForm({ wallet, addCategory }: { wallet: Address | null; addCategory?: number }) {
   const { popOverlay } = usePayer();
 
   // Read the wallet directly and use NOTHING else. The agents list is enumerated
@@ -125,15 +125,19 @@ export function AgentForm({ wallet }: { wallet: Address | null }) {
   // once `existing` is the wallet's own answer, so the frozen initializers and
   // the derived `initialDays` / `preservedExpiry` / `writesNothing` are all
   // reading the same snapshot.
-  return <AgentFormFields key={wallet ?? "new"} wallet={wallet} existing={existing} />;
+  return (
+    <AgentFormFields key={wallet ?? "new"} wallet={wallet} existing={existing} addCategory={addCategory} />
+  );
 }
 
 function AgentFormFields({
   wallet,
   existing,
+  addCategory,
 }: {
   wallet: Address | null;
   existing: AgentSummary | undefined;
+  addCategory?: number;
 }) {
   const {
     expectAgentPolicy,
@@ -186,9 +190,17 @@ function AgentFormFields({
   const [perTxCap, setPerTxCap] = useState(() =>
     existing && rate ? sgdFromCapUnits(existing.perTxCap, rate) : "10.00",
   );
-  const [categories, setCategories] = useState<number[]>(() =>
-    existing ? categoryIdsOf(BigInt(existing.categoryBitmap)) : [1],
-  );
+  /** On-chain, plus the one the payer arrived here to add.
+   *
+   * `addCategory` is a starting value, not a write: the payer still sees it
+   * ticked, still confirms, and `writesNothing` still compares against what the
+   * wallet actually holds — so arriving from a refusal whose category is ALREADY
+   * allowed ticks nothing new and leaves Save correctly inert. */
+  const [categories, setCategories] = useState<number[]>(() => {
+    const onChain = existing ? categoryIdsOf(BigInt(existing.categoryBitmap)) : [1];
+    if (addCategory === undefined || onChain.includes(addCategory)) return onChain;
+    return [...onChain, addCategory].sort((a, b) => a - b);
+  });
   const [days, setDays] = useState(initialDays);
 
   const [busy, setBusy] = useState<string | null>(null);

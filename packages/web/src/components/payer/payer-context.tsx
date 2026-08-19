@@ -46,8 +46,12 @@ export type Overlay =
   | { kind: "receipt"; row: ActivityRow }
   | { kind: "merchant"; handle: string }
   | { kind: "agent"; wallet: Address }
-  /** null = create a new agent; an address = edit that wallet's rules. */
-  | { kind: "agentForm"; wallet: Address | null };
+  /** null = create a new agent; an address = edit that wallet's rules.
+   * `addCategory` arrives from a refusal the payer is fixing: it ticks that
+   * category on top of what is on-chain, so the way out of a denial is one tap
+   * rather than a hunt through the list. It is a starting value only — the form
+   * still reads the wallet itself and the payer still confirms. */
+  | { kind: "agentForm"; wallet: Address | null; addCategory?: number };
 
 export interface PayerStore {
   identity: PayerIdentity;

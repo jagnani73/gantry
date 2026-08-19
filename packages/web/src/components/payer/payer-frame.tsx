@@ -113,6 +113,12 @@ function OverlayHost({ overlay }: { overlay: Overlay | null }) {
     case "agent":
       return <AgentDetail key={overlay.wallet} wallet={overlay.wallet} />;
     case "agentForm":
-      return <AgentForm key={overlay.wallet ?? "new"} wallet={overlay.wallet} />;
+      return (
+        <AgentForm
+          key={overlay.wallet ?? "new"}
+          wallet={overlay.wallet}
+          addCategory={overlay.addCategory}
+        />
+      );
   }
 }
