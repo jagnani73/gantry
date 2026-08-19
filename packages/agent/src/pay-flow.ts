@@ -234,7 +234,20 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
     return fail("no_agent_wallet", err instanceof Error ? err.message : String(err));
   }
 
-  const orderUrl = `${env.gantryApi}/api/order/${handle}?sgd=${encodeURIComponent(sgd)}`;
+  // The agent-only endpoint by default; the DUAL-DOOR pay link when asked.
+  //
+  // Both routes share one `orderAccepts` array by reference, so this changes the
+  // string and the verb and nothing else about the payment. It exists so the
+  // demo's strongest line can be literally true: the agent is handed the same
+  // URL the tourist just opened, and anyone in the room can check that claim
+  // afterwards by opening it themselves.
+  const payLink = `${env.gantryApi}/pay/${handle}?sgd=${encodeURIComponent(sgd)}`;
+  const orderUrl = env.usePayLink
+    ? payLink
+    : `${env.gantryApi}/api/order/${handle}?sgd=${encodeURIComponent(sgd)}`;
+  // GET on the pay link because a person opens it in a browser; the agent-only
+  // route stays a POST. Everything after this line is identical either way.
+  const orderMethod = env.usePayLink ? "GET" : "POST";
 
   // ------------------------------------------------------------------ pre-payment
   // Steps 1-5: nothing irreversible happens here (an abandoned intent just
@@ -245,7 +258,7 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
   let resource: { url: string } | undefined;
   try {
     // 1. The 402 challenge.
-    const challenge = await fetch(orderUrl, { method: "POST" });
+    const challenge = await fetch(orderUrl, { method: orderMethod });
     if (challenge.status !== 402) {
       return fail("unexpected_status", `expected a 402 challenge, got ${challenge.status}`);
     }
@@ -331,7 +344,7 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
   // a failure here is UNKNOWN, never retryable.
   try {
     const paid = await fetch(orderUrl, {
-      method: "POST",
+      method: orderMethod,
       headers: {
         [PAYMENT_SIGNATURE_HEADER]: encodePaymentSignatureHeader({
           x402Version: 2,

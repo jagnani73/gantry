@@ -31,6 +31,19 @@ export const env = {
    */
   agentWallet: process.env.AGENT_WALLET as `0x${string}` | undefined,
   /**
+   * Pay the DUAL-DOOR pay link (`GET /pay/:handle`) instead of the agent-only
+   * endpoint (`POST /api/order/:handle`).
+   *
+   * Both routes share one `orderAccepts` array by reference, so this changes the
+   * URL and the verb and nothing else about the payment. It exists for the demo:
+   * the strongest line in the script is that the agent is handed the same link
+   * the tourist just opened, and that has to be literally true on the night —
+   * it is a claim anyone in the room can check afterwards by opening the URL.
+   *
+   * Off by default, so the agent's normal path is unchanged.
+   */
+  usePayLink: process.env.AGENT_USE_PAY_LINK === "1",
+  /**
    * Which currency this agent pays in. ONE per agent, and the constraint comes
    * from the contract: the wallet holds a single `dailyCap`, a single
    * `perTxCap` and a single `spentToday` counter, all denominated in one

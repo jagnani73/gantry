@@ -1,25 +1,55 @@
-# Demo scripts (DRAFT for review)
+# Demo scripts
 
-Three things here: the 3-minute finals script, the 60–90s Stage 1 clip, and the
-Q&A prep. Rehearse against the finals script; record against the clip script.
+Three things here: the 3-minute finals script, the Stage 1 clip (shot and
+submitted — kept as a record), and the Q&A prep. Rehearse against the finals
+script.
+
+**What changed on 19 Aug, and why the script did.** Six capabilities landed after
+this file was last written: the dual-door pay link, machine-readable discovery,
+EURC as a real second input currency, a public refusal verifier, the denial →
+remedy loop, and the machine door on every shop's public page. Three minutes
+cannot hold six more beats, and padding the script is how a demo overruns.
+
+So almost nothing was *added*. The existing beats were rewired to **demonstrate
+what they used to assert**:
+
+- the tourist now pays in **euros**, which costs no extra seconds and turns
+  "any currency in, Singapore dollars out" from a claim into two live rows;
+- the agent now pays **the same URL the tourist just used**, which makes the
+  convergence beat mechanical instead of narrated;
+- the revoke beat gained the **one-tap remedy**, on a screen already open.
+
+Discovery, the verifier and the machine-door card are **deliberately not in the
+three minutes**. They are the best Q&A answers this project has and they are all
+things a judge can run themselves — see *Let them poke it*.
 
 **Stage setup.** The merchant back-office
 (`/merchant/ah-hock-chicken-rice/overview`) never leaves the projector. The
 phone (via scrcpy) and the agent terminal swap into a side panel; the payer app's
-agents screen (`/app/agents`) is a third tab, because that is where revoke now
-lives. Everything runs against **Base Sepolia over the laptop's own hotspot** —
-never venue wifi. Local Anvil was considered and deliberately not built; the
-hotspot covers the same failure mode without a second orchestration path to
-maintain.
+agents screen (`/app/agents`) is a third tab, because that is where revoke and
+the remedy tap both live. Everything runs against **Base Sepolia over the
+laptop's own hotspot** — never venue wifi. Local Anvil was considered and
+deliberately not built; the hotspot covers the same failure mode without a second
+orchestration path to maintain.
 
 **Before every run:** `pnpm demo:reset` — it provisions/tops up and re-arms the
 demo agent wallet, registers the demo shops on-chain if they are missing, checks
-`gadgethub-sg` is still registered, and prints the funder's ETH
-**and** USDC balances, swapping ETH→USDC if the USDC has run low. Check both
-numbers. Every register and every settle spends ETH; every payer grant and wallet
-top-up spends USDC, which cannot be minted. The re-arm is signed by the **demo
-payer's** key, not the relayer's — `setPolicy` is `onlyOwner` and the payer owns
-the wallet — so that key needs a little ETH, which the faucet's gas leg supplies.
+`gadgethub-sg` is still registered, and prints the funder's ETH, **USDC and
+EURC** balances, swapping ETH→USDC if the USDC has run low. Check all three.
+Every register and every settle spends ETH; every payer grant and wallet top-up
+spends stablecoin, and **EURC cannot be bought** — Base Sepolia has no EURC
+market at all, so Circle's faucet is the only tap and `demo:reset` will warn
+before it matters. The re-arm is signed by the **demo payer's** key, not the
+relayer's — `setPolicy` is `onlyOwner` and the payer owns the wallet — so that
+key needs a little ETH, which the faucet's gas leg supplies.
+
+**Set the payer app to EUR before the run.** Settings → *Currency you pay in* →
+**€ EUR**. It is a stored preference, so it survives reloads, but it is per
+browser — check it on the phone, not on the laptop. Without it the tourist beat
+still works and simply pays dollars, which costs the euro line and nothing else.
+
+**Set `AGENT_USE_PAY_LINK=1` in `packages/agent/.env` before the run**, or the
+agent beat's "same link" line is not true — see the note under the table.
 
 It does **not** clear the merchant feed, and nothing does: every host indexes the
 same chain from the same block and shows everything it finds, which is what keeps
@@ -44,20 +74,37 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 |---|---|---|---|
 | 0:00–0:12 | **Hook** | Title slide, dashboard behind | "Every payment system ever built assumes the payer is a human. That assumption is about to break." |
 | 0:12–0:22 | **Scene** | Printed QR standee held up | "This is Ah Hock, Maxwell Food Centre. One printed sticker. He set it up in about two minutes and he has never heard of a blockchain." |
-| 0:22–0:45 | **Tourist pays** | Phone mirrored: scan → S$1.50 → Confirm | "A tourist lands at Changi with no Singapore bank account. She scans. She signs one authorization — she holds no ETH, and she never sends a transaction. Our relayer pays the gas." |
-| 0:45–1:00 | **WOW 1** | Dashboard: chime, row slides in — 1.12 USDC in, S$1.50 XSGD out, net and fee inline on the row | "Under two seconds. 1.12 USDC came in — real Circle USDC, not a testnet toy — and 1.50 XSGD went out, swapped atomically inside the settlement contract. Ah Hock only ever sees Singapore dollars." |
+| 0:22–0:45 | **Tourist pays, in euros** | Phone mirrored: scan → S$1.50 → Confirm | "A tourist lands at Changi with no Singapore bank account — and no Singapore dollars either. She holds euros. She scans, and she signs one authorization: no ETH, no transaction of her own. Our relayer pays the gas." |
+| 0:45–1:00 | **WOW 1 — any currency in** | Dashboard: chime, row slides in — 0.99 EURC in, S$1.50 XSGD out, net and fee inline | "Under two seconds. Ninety-nine cents of **euros** came in — Circle's real EURC, not a mock — and one-fifty in Singapore dollars went out, swapped atomically inside the settlement contract. Ah Hock never sees a euro. He cannot: the output token is `immutable` in the contract." |
 | 1:00–1:08 | **Pivot** | Dashboard stays up | "That's the easy customer. My next customer has no hands." |
-| 1:08–1:40 | **Agent lunch** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch. It hits the endpoint, gets back HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$4.50." |
-| 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same contract. Same feed. Ah Hock does not know or care that one of these customers is software." |
-| 1:48–2:12 | **WOW 2** | Terminal only — the agent narrates the revert | "Now watch it get told no. I ask it for a S$4 phone cable from an electronics shop — well inside its budget. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
-| 2:12–2:26 | **Revoke** | Payer app `/app/agents`: cap meter, tap Revoke, confirm | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a daily cap, an allowlist, an expiry, and a kill switch the human owner holds. And *holds* is literal: this wallet is owned by me on-chain, so that's my signature, not a Gantry API call. One tap, done." |
-| 2:26–2:44 | **Fee tiles** | Back to the merchant Overview screen | "Two payments. Ah Hock keeps five ninety-seven of six dollars — the third tile is what we saved him. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
-| 2:44–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike. Every contract is verified on Base Sepolia — the address is on the slide." |
+| 1:08–1:40 | **Agent lunch — the same URL** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch, and I give it **the same link the tourist just opened**. A browser gets a payment page. A machine gets HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$4.50, in dollars this time." |
+| 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same URL, same contract, same feed — one paid in euros, one in dollars, both landed as Singapore dollars. Ah Hock does not know or care that one of these customers is software." |
+| 1:48–2:12 | **WOW 2 — the refusal** | Terminal only — the agent narrates the revert | "Now watch it get told no. I ask it for a S$4 phone cable from an electronics shop — well inside its budget. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
+| 2:12–2:30 | **Revoke, and the way back** | Payer app `/app/agents`: cap meter → declined receipt → *Allow Electronics* → back → tap Revoke | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a cap, an allowlist, an expiry, and a kill switch the human holds. And *holds* is literal: this wallet is mine on-chain, so this is my signature, not a Gantry API call. The refusal isn't a dead end either — one tap widens the rule. And one tap stops the agent dead." |
+| 2:30–2:46 | **Fee tiles** | Back to the merchant Overview screen | "Two payments. Ah Hock keeps five ninety-seven of six dollars — the third tile is what we saved him versus cards. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
+| 2:46–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike — in whatever currency they hold. Every contract is verified on Base Sepolia; the address is on the slide." |
+
+**Say "the same link" only if you actually used it — set `AGENT_USE_PAY_LINK=1`.**
+The agent beat is stronger because the URL is genuinely shared, and that is
+checkable by anyone in the room afterwards, so it has to be true on the night.
+The agent's DEFAULT endpoint is `POST /api/order/:handle` — the same `accepts[]`
+by reference, but not literally the same string, and "the same link" would be a
+claim the audience could disprove by watching the terminal.
+
+With the flag set it fetches `GET /pay/:handle?sgd=`, the exact URL the phone
+opened. Proven end to end:
+[`0xf0099f0e…`](https://sepolia.basescan.org/tx/0xf0099f0e7ef8cf5b84dfef26228c1b8bf931c6f304bdbe5b3e95acc07a2a839b),
+on-chain payer the policy wallet. `x402:buy -- --link` proves the same door for a
+vanilla client.
+
+**The fee tile trap.** The *Saved vs cards* tile reads **S$0.13**. That is the
+card fee minus ours, not our cut. Never say "we took thirteen" — our cut is three
+cents, and the gross and the card fee are not on screen at all.
 
 ### Optional opening beat — live onboarding (~25s, decide against the clock)
 
 Insert between 0:12 and 0:22, pushing everything back by ~25s (so trim the
-revoke beat to ~8s, or skip narrating the row's FX detail, to absorb it).
+revoke beat to ~8s and drop the remedy tap, to absorb it).
 
 > Open `/onboard`, type a handle — availability turns green as I type, and it's
 > green because we're reading the chain. Shop name, stall location, one line
@@ -71,12 +118,54 @@ stage, and it's the only beat that demonstrates the "2-minute onboarding" claim
 rather than asserting it.
 
 **Why it's optional:** it adds a *third* live on-chain transaction to the
-riskiest three minutes of the project, and it spends time that currently goes
-to the two beats that score Innovation. Verified working end-to-end (see
-`kopi-corner-sg` on Basescan), so this is purely a clock decision.
+riskiest three minutes of the project, and it now competes with the remedy tap
+for the same seconds. Verified working end-to-end (see `kopi-corner-sg` on
+Basescan), so this is purely a clock decision.
 
 **Decide after rehearsal 5.** If the full script lands under 2:40 consistently,
 add it. If not, it lives in the clip and the deck only.
+
+### Let them poke it — the three best answers we do not perform
+
+None of these fit the three minutes. All are stronger *because* the judge runs
+them rather than watching them, and all work on the deployed host with no key.
+
+**"Prove the machine door is real."** One curl, on stage or on their laptop:
+
+```bash
+curl -i 'https://gantry-backend.onrender.com/pay/ah-hock-chicken-rice?sgd=4.50'
+```
+
+402 with a live challenge. Add `-H 'Accept: text/html'` and the same URL 302s
+into the payment page. That is the whole thesis in two commands. It is also
+rendered, decoded, on every shop's public page at `/m/<handle>` for anyone who
+will not open a terminal.
+
+**"How would an agent find you without being told?"**
+
+```bash
+curl https://gantry-backend.onrender.com/discovery/resources
+```
+
+Every registered shop as a payable resource, in the x402 Bazaar's shape — **the
+shape is theirs, the index is ours, and we publish to nobody's catalog**, so do
+not call it a Bazaar registry. `x402:buy -- --discover` closes the loop live:
+find a shop, pay its listing verbatim, settle, with no handle hardcoded anywhere.
+
+**"Why should I believe your refusal was real?"** This is the strongest one, and
+the honest framing is the point:
+
+```bash
+pnpm --filter @gantry/backend verify:denial -- --tx <cancelTxHash>
+```
+
+It reads the policy, the spend counter, the balance and the merchant's category
+**at the denial's block**, recomputes the wallet's decision and compares it to
+what we recorded. Every input is a public getter. **It can return
+`contradicted`** — a checker that can only agree proves nothing — and it still
+does not check the signature, so it proves the wallet *would have refused*, never
+that the agent *asked*. Say "re-derivable from public state". Never
+"reproducible", never "chain-proven".
 
 ### Failure drills
 
@@ -92,13 +181,22 @@ add it. If not, it lives in the clip and the deck only.
 | Revoke button errors | The revoke is the *payer's* transaction, so the demo account needs gas. `pnpm demo:reset` funds it; if it still fails, the relayer's ETH is near its reserve — check the reset output's ETH line, because that also means every settlement is about to fail |
 | Agents screen is empty | The list comes from `WalletCreated` logs filtered by owner, so an empty list means the demo account owns no wallet yet. `pnpm demo:reset` provisions one |
 | Wallet, activity and agents ALL empty, and the address is unfamiliar | Someone tapped Settings → "Use my own wallet instead" on this browser. The choice is stored in `localStorage` and survives reloads. Settings → "Go back to the demo account" restores it; nothing was lost, the screens were showing a different account's (empty) history |
+| **The phone shows a USDC balance when you expected euros** | The currency is a per-browser preference and you set it on the laptop. Settings → *Currency you pay in* → **€ EUR** on the phone. Harmless: the beat still settles, just in dollars |
+| **`demo:reset` prints an EURC warning** | The relayer is low and EURC cannot be swapped for — no pool exists on this testnet at any fee tier. Circle's faucet is the only tap. Run the tourist beat in **USD** tonight and top up after; nothing else in the demo touches EURC |
+| **`demo:reset` exits DEGRADED with `Missing or invalid parameters`** | Almost certainly an RPC blip, not your code — the public fallback node answers `no backend is currently healthy` under load and that is what surfaces. **Re-run it first.** If it repeats, check three things: relayer `latest` vs `pending` nonce (equal = nothing stuck), `eth_getCode` on the relayer (`0x` = no 7702 delegation), and its ETH |
+| **The agent refuses with `agent_currency_mismatch`** | It was told to pay in a currency its wallet does not hold. One currency per agent, enforced at the door — `AGENT_PAY_TOKEN` in `packages/agent/.env` must match what the pinned wallet actually holds. "Kopi Runner" holds USDC; "Euro Runner" holds EURC |
 
 ---
 
-## Stage 1 clip — 60–90s (target 80s, record 10 Aug AM)
+## Stage 1 clip — 60–90s (SHOT AND SUBMITTED, kept as a record)
+
+Submitted 11 Aug. It predates everything in the *What changed* note above, so it
+shows the USDC-only flow and no pay link. **That is fine and it is not being
+re-cut** — Stage 1 is judged on what was submitted. Recorded here so nobody
+mistakes it for a plan.
 
 Captions burned in; voiceover recorded separately so a muffed line costs one
-audio take, not one screen take. Shoot each screen action twice.
+audio take, not one screen take. Each screen action shot twice.
 
 | # | Length | Shot |
 |---|---|---|
@@ -112,12 +210,11 @@ audio take, not one screen take. Shoot each screen action twice.
 | 8 | 8s | The phone-cable attempt → red `CategoryNotAllowed` row |
 | 9 | 6s | Closing card: pitch line, repo URL, Basescan address |
 
-Total ≈ 82s. If it runs long, shot 2 is the one to cut — onboarding is well
-covered by the deck.
+Total ≈ 82s.
 
 ---
 
-## Q&A prep — nine hard answers
+## Q&A prep — twelve hard answers
 
 **1. Why not just use PayNow?**
 For a Singaporean paying a Singaporean, you should — it's free and it works.
@@ -167,8 +264,9 @@ an *unmodified* one. We built for a standard that exists rather than inventing a
 protocol and hoping.
 
 **7. Where does the FX rate come from?**
-On testnet, from me — it's an owner-set fixed rate at 1.3421 and it's labelled
-as such everywhere, because XSGD exists on no testnet at all. That's why
+On testnet, from me — owner-set fixed rates, 1.3421 for USDC and 1.51 for EURC,
+labelled as such everywhere, because XSGD exists on no testnet at all. Two
+owner-set rates are not an FX engine and I won't call them one. That's why
 settlement talks to an `IGantrySwap` interface rather than to a pool: production
 swaps in real XSGD liquidity through an aggregator or an RFQ quote, optionally
 bounded by a Chainlink SGD/USD check. The contract already enforces its own
@@ -198,14 +296,59 @@ regulation posture on slide 9. The payout address is validated as strict EIP-55
 rather than just well-formed hex, because `setMerchantPayout` is gated on the
 current payout: a mistyped-but-valid address would be unrecoverable by anyone.
 
+**10. "Any currency in" — how many currencies is that, really?**
+Two, and I'd rather give you the number than the adjective: US dollars and euros,
+both Circle's own real testnet tokens, both settling to XSGD through the same
+`_settle`. Rupees are in the picker and visibly **locked**, because no INR
+stablecoin exists on Base Sepolia — shown rather than hidden, so you can see
+what's true today and what isn't.
+
+The claim that generalises isn't the count, it's the cost of the third one:
+listing EURC took **one owner transaction and no redeploy**, because `rateOf` is
+an open mapping and the core holds no token allowlist. And it cost no honesty —
+no mock was added. MockXSGD is still the only mocked token in the system, and it
+is mocked because XSGD exists on no testnet at all.
+
+One limit worth stating before you find it: an agent wallet spends **one**
+currency. Its `Policy` has a single cap and a single spend counter in one token's
+units, so a wallet spending both would count €1 as $1 — about 13% adrift, and
+silently. Per-token counters mean redeploying all four contracts, so the rule is
+enforced at the door instead, with its own refusal code.
+
+**11. Where does the euro actually cost you more?**
+Nowhere, and that's measurable rather than asserted: 181,676 gas for a euro
+settle against 181,676 for a dollar one on the `exact` door, and 267,408 against
+267,416 end to end. Same contract call with a different `tokenIn`.
+
+The one honest wrinkle is in `docs/measurements.md`: the very first euro payment
+cost 197,356, about 7% more. That was cold storage for a token the contracts had
+never touched — repeated warm it's 183,692. We kept the outlier in the doc rather
+than quietly dropping it, because the first transaction against a newly listed
+token is not a sample of what that token costs.
+
+**12. What are you weakest at?**
+Three things, and none of them is a surprise to us. **The merchant back-office is
+unauthenticated** — anyone with the URL can read a shop's takings, and we did not
+invent a login we couldn't secure in the time. **The demo payer is one shared
+account**, so on the deployed build every visitor signs as the same key and the
+history is not private; the app says so on two screens. And **a denial record is
+relayer-attested** — the verifier re-derives the policy half from public state
+and cannot check the signature, so it proves the wallet would have refused, not
+that the agent asked.
+
+The one I'd fix next with more time is the bridge's compensation path: the single
+place we briefly hold someone else's funds has no automated coverage. It's in the
+gaps list in `CLAUDE.md`, not hidden.
+
 ### Rapid-fire spares
 
 - *Why XSGD and not USDC to the merchant?* A hawker prices in dollars and pays
   rent in dollars. FX risk is exactly what a merchant shouldn't hold.
-- *Why Base?* Cheap L2, real Circle USDC with a faucet on testnet, and it's
-  where x402 tooling actually runs.
+- *Why Base?* Cheap L2, real Circle USDC **and EURC** with faucets on testnet,
+  and it's where x402 tooling actually runs.
 - *Did you write the x402 client?* No — that's the point. We wrote the server
-  and the facilitator; the client is `@x402/fetch`, unmodified.
+  and the facilitator; the client is `@x402/fetch`, unmodified. It takes
+  `accepts[0]` without choosing, which is exactly why the dollar offer is first.
 - *Is the LLM making the payment?* No. The model chooses and narrates; the
   signing and the HTTP live in tools it cannot reach. If the model times out, a
   scripted path sends identical wire traffic.
@@ -216,4 +359,8 @@ current payout: a mistyped-but-valid address would be unrecoverable by anyone.
   key, and we will not leave an unauthenticated ETH spend on the public
   internet. Nothing in Gantry reviews or verifies a merchant. Categories are
   self-attested and there is no KYC anywhere in the system.
+- *How many tests?* 538 — 201 Foundry, 170 shared, 163 backend, 4 agent. Five of
+  the Foundry ones are fork tests that skip without a fork RPC, so CI runs 196 of
+  the 201; don't let a slide imply otherwise. Four are invariants, not unit
+  tests. `packages/web` has no suite at all.
 - *Solo project?* Yes. Solo student entry, NTU.
