@@ -1,11 +1,15 @@
 import { ContractFunctionExecutionError, keccak256, toBytes, type Address, type Hex } from "viem";
 import {
   IntentStatus,
+  PAYABLE_TOKEN_IDS,
   agentPbmWalletAbi,
   caip2,
+  canAgentSpend,
   eip3009TokenAbi,
   gantryCoreAbi,
+  tokenAddress,
   tokenIdByAddress,
+  type TokenId,
   type X402PaymentPayload,
   type X402PaymentRequirements,
   type X402SupportedResponse,
@@ -215,12 +219,44 @@ export async function verifyPbm(
   // DeployPBM.s.sol and is topped up by a relayer transfer that demo-reset makes
   // well before any payment (unlike exact's faucet-just-funded burners, whose
   // grant lands seconds before they sign), so a shortfall here is real.
-  const balance = await publicClient.readContract({
-    address: requirements.asset,
-    abi: eip3009TokenAbi,
-    functionName: "balanceOf",
-    args: [pbmWallet],
-  });
+  // Every payable token, not just the one being asked for, because the answer
+  // to "can this wallet pay" now has two parts and they share these reads.
+  const balances: Partial<Record<TokenId, bigint>> = {};
+  await Promise.all(
+    PAYABLE_TOKEN_IDS.map(async (id) => {
+      balances[id] = await publicClient.readContract({
+        address: tokenAddress(config.addresses, id),
+        abi: eip3009TokenAbi,
+        functionName: "balanceOf",
+        args: [pbmWallet],
+      });
+    }),
+  );
+
+  // ONE CURRENCY PER AGENT, enforced here because the contract cannot enforce
+  // it. `dailyCap`, `perTxCap` and `_spentToday` are single values in one
+  // token's units, so a wallet that spends both counts €1 as $1 — ~13% wrong at
+  // the demo rates, and wrong silently, on the one figure this product promises
+  // the chain enforces. The wallet has no field naming its currency and cannot
+  // get one without redeploying all four contracts, so this door is where the
+  // rule lives: it is the only path that turns an agent payload into a spend.
+  const asset = tokenIdByAddress(config.addresses, requirements.asset as Address);
+  if (asset === null) {
+    // Unknown to this build. Refused rather than guessed at, the same way every
+    // other reverse lookup in the system treats a token it does not know.
+    return invalid("unknown_asset", `asset ${requirements.asset} is not a Gantry token`, pbmWallet);
+  }
+  const spendable = canAgentSpend(balances, asset);
+  if (!spendable.ok) {
+    // Its OWN reason code, not the generic `invalid_payload`. A verify-stage
+    // refusal re-challenges, and the x402 re-challenge carries only the reason
+    // — our message does not survive the SDK — so a generic code would reach
+    // the agent's operator as "payment rejected at verify (status 402)" and
+    // name nothing. The code has to be the explanation.
+    return invalid("agent_currency_mismatch", spendable.reason, pbmWallet);
+  }
+
+  const balance = balances[asset] ?? 0n;
   if (balance < BigInt(requirements.amount)) {
     return invalid("insufficient_funds", "wallet balance below the required amount", pbmWallet);
   }

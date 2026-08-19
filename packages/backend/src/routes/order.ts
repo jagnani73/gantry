@@ -1,6 +1,15 @@
 import { Router } from "express";
 import type { HTTPRequestContext, RoutesConfig } from "@x402/core/server";
-import { TOKENS, caip2, formatUnits6, parseSgd, quoteAmountIn, tokenAddress } from "@gantry/shared";
+import {
+  PAYABLE_TOKEN_IDS,
+  TOKENS,
+  caip2,
+  formatUnits6,
+  parseSgd,
+  quoteAmountIn,
+  tokenAddress,
+  type TokenId,
+} from "@gantry/shared";
 import { relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
@@ -39,7 +48,8 @@ export const PAY_LINK_ROUTE = "GET /pay/:handle";
  * the facts the bridge trusts at settle time. The extra is server-authored and
  * subset-matched against the client echo, so the client cannot redirect the
  * order to a different merchant. */
-async function buildOrderPrice(context: HTTPRequestContext) {
+function priceIn(token: TokenId) {
+  return async function buildOrderPrice(context: HTTPRequestContext) {
   const order = parseOrderResource(context.adapter.getUrl());
   if (!order) {
     // Names both doors: this fires on /pay/:handle too, and an error quoting a
@@ -53,7 +63,6 @@ async function buildOrderPrice(context: HTTPRequestContext) {
   }
   await getMerchant(order.handle); // unknown merchant → 404 before any quote
   const xsgdAmount = parseSgd(order.sgd); // cannot throw: parseOrderResource validated it
-  const token = "USDC" as const;
   let rate: bigint;
   try {
     rate = await readRate(token);
@@ -86,7 +95,12 @@ async function buildOrderPrice(context: HTTPRequestContext) {
       pin: orderPin({ ...pins, asset, amount }),
     },
   };
+  };
 }
+
+/** The USDC price function, kept under its old name because `exact` uses it and
+ * the boot assertion below names it. */
+const buildOrderPrice = priceIn("USDC");
 
 const orderAccepts = [
   // `exact` MUST stay first: vanilla clients (and scripts/x402-buy.ts)
@@ -99,19 +113,25 @@ const orderAccepts = [
     price: buildOrderPrice,
     maxTimeoutSeconds: 600,
   },
-  // `gantry-pbm`: non-custodial — the wallet pushes straight into the
-  // core at settle, so payTo is GantryCore itself. Shares buildOrderPrice
-  // deliberately (one deterministic quote, one drift surface); the static
-  // extra merges after the price extra, adding the intent-endpoint hint
-  // the Gantry agent uses for the pre-signing step.
-  {
+  // `gantry-pbm`: non-custodial — the wallet pushes straight into the core at
+  // settle, so payTo is GantryCore itself. The static extra merges after the
+  // price extra, adding the intent-endpoint hint the Gantry agent uses for the
+  // pre-signing step.
+  //
+  // ONE ENTRY PER PAYABLE TOKEN, which is what `accepts[]` is for: an agent
+  // wallet spends a single currency (its caps are one number in one token's
+  // units), so the server offers each and the agent takes the one matching what
+  // it holds. A single USDC entry would have made a euro agent's intent
+  // disagree with the offer it was answering, which surfaces as `quote_changed`
+  // — a confusing way to say "we never offered euros".
+  ...PAYABLE_TOKEN_IDS.map((token) => ({
     scheme: "gantry-pbm",
     network: caip2(config.chainId),
     payTo: config.addresses.gantryCore,
-    price: buildOrderPrice,
+    price: priceIn(token),
     maxTimeoutSeconds: 600,
     extra: { intentEndpoint: "/api/pbm/intent" },
-  },
+  })),
 ];
 // Boot-time guard: the vanilla-interop beat dies silently if a reorder ever
 // demotes `exact` from accepts[0].

@@ -309,6 +309,10 @@ const PAYER_ETH_FLOOR = 1_000_000_000_000_000n;
  * label bound — 11 ASCII bytes here, with plenty of room. */
 const DEMO_AGENT_LABEL = "Kopi Runner";
 
+/** The rehearsal agent pays in USDC. A wallet holding another payable token is
+ * a different agent with its own caps, and must not be provisioned as this one. */
+const DEMO_AGENT_TOKEN = "USDC";
+
 async function payerBalances() {
   const [eth, usdc] = await Promise.all([
     publicClient.getBalance({ address: payer.address }),
@@ -493,9 +497,15 @@ let armed = null;
     // two wallets for one signer it funds and arms the OLDEST while 6b blesses
     // the newest, so the script would arm one wallet, report another, and the
     // agent would spend from a third state entirely. One rule, stated once.
+    // CURRENCY FIRST, then newest-active — the same rule the agent CLI applies.
+    // An agent wallet spends one token, so a euro wallet cannot run the USDC
+    // beats at all; picking it because it happened to be newest is how this
+    // script would provision the wrong agent and report it with a checkmark.
     const now = Math.floor(Date.now() / 1000);
-    const active = body.agents.filter((agent) => isActive(agent, now));
-    wallet = (active.at(-1) ?? body.agents.at(-1)).wallet;
+    const pool = body.agents.filter((agent) => agent.token === DEMO_AGENT_TOKEN);
+    const candidates = pool.length > 0 ? pool : body.agents;
+    const active = candidates.filter((agent) => isActive(agent, now));
+    wallet = (active.at(-1) ?? candidates.at(-1)).wallet;
   } else {
     try {
       const receipt = await payerTx({
@@ -664,9 +674,14 @@ let signerLine = null;
 if (wallet) {
   const { res, body } = await call("GET", `/api/agents?agentSigner=${agentSigner}`);
   if (res?.ok && body) {
+    // Mirrors the CLI exactly, currency filter included. Without it this check
+    // reports a false mismatch the moment a second wallet in another currency
+    // exists — which is a warning that trains a presenter to ignore warnings.
     const now = Math.floor(Date.now() / 1000);
-    const active = body.agents.filter((agent) => isActive(agent, now));
-    const chosen = active.at(-1) ?? body.agents.at(-1);
+    const pool = body.agents.filter((agent) => agent.token === DEMO_AGENT_TOKEN);
+    const candidates = pool.length > 0 ? pool : body.agents;
+    const active = candidates.filter((agent) => isActive(agent, now));
+    const chosen = active.at(-1) ?? candidates.at(-1);
     if (chosen && chosen.wallet.toLowerCase() !== wallet.toLowerCase()) {
       degraded = true;
       signerLine =
@@ -677,7 +692,7 @@ if (wallet) {
     } else if (body.agents.length > 1) {
       signerLine =
         `agent CLI resolves to the same wallet (${body.agents.length} list this signer; ` +
-        `the newest active one wins)`;
+        `the newest active ${DEMO_AGENT_TOKEN} one wins)`;
     }
   } else {
     degraded = true;

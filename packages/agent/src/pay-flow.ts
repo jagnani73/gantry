@@ -8,6 +8,7 @@ import {
   decodePaymentRequiredHeader,
   decodePaymentResponseHeader,
   encodePaymentSignatureHeader,
+  BASE_SEPOLIA_ADDRESSES,
   agentStatus,
   parseSgd,
   reviveSpendAuthorization,
@@ -15,6 +16,8 @@ import {
   type AgentSummary,
   type MerchantResponse,
   type PbmIntentResponse,
+  tokenAddress as gantryTokenAddress,
+  type TokenId,
   type X402PaymentRequirements,
 } from "@gantry/shared";
 import { env, requireSigningEnv } from "./env";
@@ -132,8 +135,20 @@ async function resolveAgentWallet(signer: `0x${string}`): Promise<`0x${string}`>
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const active = agents.filter((a) => agentStatus(a, now) === "active");
-  const usable = active.at(-1) ?? agents.at(-1);
+  // CURRENCY FIRST, then liveness. An agent wallet spends one token — its caps
+  // are a single number in that token's units — so a wallet holding euros
+  // cannot pay a dollar order at all, and preferring it because it happened to
+  // be newest is how a working setup starts failing `agent_currency_mismatch`
+  // the moment a second wallet exists. `token` is what the wallet actually
+  // holds, read live, so this asks "which of these can pay in my currency".
+  const wanted = (env.agentPayToken as TokenId | undefined) ?? "USDC";
+  const spendsMine = agents.filter((a) => a.token === wanted);
+  // Falling back to ALL candidates rather than failing keeps an unfunded wallet
+  // usable: it reports the default token because it holds nothing, and the
+  // on-chain balance check is the right thing to refuse it, by name.
+  const pool = spendsMine.length > 0 ? spendsMine : agents;
+  const active = pool.filter((a) => agentStatus(a, now) === "active");
+  const usable = active.at(-1) ?? pool.at(-1);
   if (!usable) {
     throw new Error(`no PBM wallet lists ${signer} as its agent signer. Has one been created?`);
   }
@@ -246,10 +261,31 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
 
     // 2. Select the pbm offer — never fall back to exact (the non-custodial
     //    path IS the story; a missing offer is a server misconfiguration).
-    const pbmOffer = required.accepts.find(
+    //    The server offers one gantry-pbm entry per payable token, so pick the
+    //    one in THIS agent's currency rather than whichever came first. Taking
+    //    the first entry blindly is what made a euro agent create a euro intent
+    //    against a dollar offer and get told `quote_changed` — technically
+    //    correct and useless as an explanation.
+    const pbmOffers = required.accepts.filter(
       (a): a is X402PaymentRequirements => a.scheme === "gantry-pbm",
     );
-    if (!pbmOffer) return fail("no_pbm_offer", "server offered no gantry-pbm accepts entry");
+    if (pbmOffers.length === 0) {
+      return fail("no_pbm_offer", "server offered no gantry-pbm accepts entry");
+    }
+    const wantedAsset = env.agentPayToken
+      ? gantryTokenAddress(BASE_SEPOLIA_ADDRESSES, env.agentPayToken as TokenId)
+      : null;
+    const pbmOffer = wantedAsset
+      ? pbmOffers.find((a) => a.asset.toLowerCase() === wantedAsset.toLowerCase())
+      : pbmOffers[0];
+    if (!pbmOffer) {
+      return fail(
+        "no_pbm_offer",
+        `server offered no gantry-pbm entry in ${env.agentPayToken}; it offered ${pbmOffers
+          .map((a) => a.asset)
+          .join(", ")}`,
+      );
+    }
     offer = pbmOffer;
 
     // 3. Pre-create the intent the signature must bind.
@@ -259,7 +295,11 @@ export async function payMerchant(handle: string, sgd: string): Promise<PayResul
     const intentRes = await fetch(`${env.gantryApi}${intentEndpoint}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ handle, xsgdAmount }),
+      // The agent declares its currency; the backend quotes in it and the
+      // facilitator refuses it if the wallet does not actually hold that token.
+      // Omitted means USDC, so an agent configured before EURC existed is
+      // unaffected.
+      body: JSON.stringify({ handle, xsgdAmount, token: env.agentPayToken }),
     });
     if (!intentRes.ok) {
       return fail(

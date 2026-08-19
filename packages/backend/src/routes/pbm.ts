@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   Door,
+  PAYABLE_TOKEN_IDS,
   isValidHandle,
   toWireSpendAuthorization,
   type PbmIntentResponse,
@@ -27,6 +28,16 @@ export const pbmRouter = Router();
 const BodySchema = z.object({
   handle: z.string().refine(isValidHandle, "invalid merchant handle"),
   xsgdAmount: z.string().regex(/^\d+$/, "expected 6dp XSGD units as a decimal string"),
+  /**
+   * Which currency this agent pays in. Optional, defaulting to USDC, so an
+   * agent configured before EURC existed keeps working unchanged.
+   *
+   * Quoting is all this decides. Whether the wallet may actually SPEND it is
+   * decided at verify, against the wallet's own holdings — an agent wallet has
+   * one cap in one token's units, so paying in a token it does not hold would
+   * count against a cap denominated in another.
+   */
+  token: z.enum(PAYABLE_TOKEN_IDS).optional(),
 });
 
 /** Same bound as POST /api/intents: one relayer tx per call, one nonce queue. */
@@ -41,7 +52,7 @@ pbmRouter.post("/api/pbm/intent", async (req, res) => {
   // only for the agent scheme, so everything it creates is an Agent intent.
   const intent = await pbmIntentGuard.run(req.ip, () =>
     createIntent(
-      { handle: body.handle, xsgdAmount: body.xsgdAmount, token: "USDC" as const },
+      { handle: body.handle, xsgdAmount: body.xsgdAmount, token: body.token ?? "USDC" },
       Door.Agent,
     ),
   );

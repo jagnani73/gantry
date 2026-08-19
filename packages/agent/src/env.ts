@@ -30,6 +30,19 @@ export const env = {
    * still discovers, and says loudly when the answer was ambiguous.
    */
   agentWallet: process.env.AGENT_WALLET as `0x${string}` | undefined,
+  /**
+   * Which currency this agent pays in. ONE per agent, and the constraint comes
+   * from the contract: the wallet holds a single `dailyCap`, a single
+   * `perTxCap` and a single `spentToday` counter, all denominated in one
+   * token's units — so an agent spending two would have its euros counted as
+   * dollars, about 13% adrift at the demo rates and silent about it.
+   *
+   * Unset means USDC, which is what every agent was before EURC existed. The
+   * wallet must actually HOLD this token: the facilitator refuses a spend in a
+   * token the wallet does not hold, precisely because the cap would otherwise
+   * be denominated in the wrong currency without saying so.
+   */
+  agentPayToken: process.env.AGENT_PAY_TOKEN,
   /** Google AI Studio key (free tier). */
   googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
   /**

@@ -1,4 +1,10 @@
 import { erc20Abi, formatEther, formatUnits, type Address } from "viem";
+import {
+  PAYABLE_TOKEN_IDS,
+  resolveAgentCurrency,
+  tokenAddress,
+  type TokenId,
+} from "@gantry/shared";
 import { publicClient, relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
@@ -301,34 +307,73 @@ const WALLET_TARGET = 10_000_000n; // 10 USDC
 const BALANCE_LAG_RETRIES = 5;
 const BALANCE_LAG_DELAY_MS = 1_000;
 
-function readWalletBalance(wallet: Address): Promise<bigint> {
+function readWalletBalance(wallet: Address, token: TokenId): Promise<bigint> {
   return publicClient.readContract({
-    address: config.addresses.realUsdc,
+    address: tokenAddress(config.addresses, token),
     abi: erc20Abi,
     functionName: "balanceOf",
     args: [wallet],
   });
 }
 
+/**
+ * Which currency this wallet already spends, so a top-up cannot change it.
+ *
+ * An agent wallet holds ONE token: its caps are a single number in that
+ * token unit, so funding a euro agent with dollars does not top it up, it
+ * makes its daily cap count two currencies as one. That is exactly what this
+ * function existed to do before EURC — it sent USDC to whichever wallet
+ * demo-reset had found, and a euro agent would have been quietly broken by
+ * the provisioning step that is supposed to make it work.
+ */
+async function walletCurrency(wallet: Address): Promise<{ token: TokenId; ambiguous: boolean }> {
+  const balances: Partial<Record<TokenId, bigint>> = {};
+  await Promise.all(
+    PAYABLE_TOKEN_IDS.map(async (id) => {
+      balances[id] = await readWalletBalance(wallet, id);
+    }),
+  );
+  return resolveAgentCurrency(balances);
+}
+
 export async function topUpPbmWallet(
   wallet: Address,
-): Promise<{ wallet: Address; usdc: string; sent: string }> {
-  const balance = await readWalletBalance(wallet);
+): Promise<{ wallet: Address; usdc: string; sent: string; token: TokenId }> {
+  // TOP UP WHAT IT ALREADY SPENDS. Sending a euro agent dollars would not fund
+  // it — it would make its single daily counter add two currencies together.
+  const currency = await walletCurrency(wallet);
+  if (currency.ambiguous) {
+    throw new ApiError(
+      409,
+      "WalletCurrencyAmbiguous",
+      `${wallet} already holds more than one payable token, so its daily cap is counting them as ` +
+        `equal. Withdraw one before topping it up.`,
+    );
+  }
+  const token = currency.token;
+  const asset = tokenAddress(config.addresses, token);
+
+  const balance = await readWalletBalance(wallet, token);
   if (balance >= WALLET_FLOOR) {
-    return { wallet, usdc: formatUnits(balance, 6), sent: "0" };
+    return { wallet, usdc: formatUnits(balance, 6), sent: "0", token };
   }
 
   const send = WALLET_TARGET - balance;
-  const funderBalance = await usdcBalance();
+  const funderBalance = await publicClient.readContract({
+    address: asset,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [relayerAccount.address],
+  });
   if (funderBalance < send) {
     throw new ApiError(
       503,
       "FunderExhausted",
-      `need ${formatUnits(send, 6)} USDC for the PBM wallet but the funder holds ${formatUnits(funderBalance, 6)}`,
+      `need ${formatUnits(send, 6)} ${token} for the PBM wallet but the funder holds ${formatUnits(funderBalance, 6)}`,
     );
   }
   const { receipt } = await sendRelayerTx({
-    address: config.addresses.realUsdc,
+    address: asset,
     abi: erc20Abi,
     functionName: "transfer",
     args: [wallet, send],
@@ -344,17 +389,17 @@ export async function topUpPbmWallet(
   // seen it, which reports the PRE-transfer figure and (worse) fires the
   // shortfall warning below on a wallet that is actually full.
   const expected = balance + send;
-  let after = await readWalletBalance(wallet);
+  let after = await readWalletBalance(wallet, token);
   for (let attempt = 0; after < expected && attempt < BALANCE_LAG_RETRIES; attempt++) {
     await new Promise((r) => setTimeout(r, BALANCE_LAG_DELAY_MS));
-    after = await readWalletBalance(wallet);
+    after = await readWalletBalance(wallet, token);
   }
   if (after < WALLET_FLOOR) {
     console.error(
       `funder CRITICAL: the PBM wallet is still below the ${formatUnits(WALLET_FLOOR, 6)} floor ` +
-        `(${formatUnits(after, 6)} USDC) after a CONFIRMED transfer in ${receipt.transactionHash} — ` +
+        `(${formatUnits(after, 6)} ${token}) after a CONFIRMED transfer in ${receipt.transactionHash} — ` +
         `concurrent outflow? The rejection beat will fail as insufficient_funds.`,
     );
   }
-  return { wallet, usdc: formatUnits(after, 6), sent: formatUnits(send, 6) };
+  return { wallet, usdc: formatUnits(after, 6), sent: formatUnits(send, 6), token };
 }

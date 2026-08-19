@@ -3,6 +3,8 @@ import {
   agentPbmWalletAbi,
   agentPbmWalletFactoryAbi,
   checksummed,
+  PAYABLE_TOKEN_IDS,
+  resolveAgentCurrency,
   tokenAddress,
   type AgentListResponse,
   type AgentSummary,
@@ -29,8 +31,21 @@ import { readRate } from "./intents";
  * server key can write a policy any more.
  */
 
-/** Every wallet is funded in the token every door settles in. */
-const SPEND_TOKEN: TokenId = "USDC";
+/*
+ * AN AGENT'S CURRENCY IS DERIVED FROM WHAT IT HOLDS, never stored — see
+ * `resolveAgentCurrency` in shared for why it cannot be.
+ *
+ * This file used to hold one constant, `SPEND_TOKEN = "USDC"`, and every
+ * agent's balance, rate and S$ cap conversion read off it. The moment EURC
+ * became payable that constant would have relabelled a euro wallet's caps in
+ * dollars, so the reads are per-token now and each wallet reports its own.
+ *
+ * ONE currency per agent, and the constraint is the contract's: `dailyCap`,
+ * `perTxCap` and `_spentToday` are single values in one token's units, so a
+ * wallet spending two of them counts €1 as $1. The default for an unfunded
+ * wallet lives in the resolver rather than here, so display and enforcement
+ * cannot disagree about it.
+ */
 
 // ---------------------------------------------------------------- enumeration
 //
@@ -176,10 +191,34 @@ interface AgentReads {
  */
 async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
   if (wallets.length === 0) return { agents: [], absent: [], unreadable: [] };
-  const token = tokenAddress(config.addresses, SPEND_TOKEN);
 
-  const [rate, owners, signers, policies, spent, balances, stamps, labels] = await Promise.all([
-    readRate(SPEND_TOKEN),
+  // One balance batch and one rate per PAYABLE token, so a wallet can be asked
+  // what it actually holds rather than assumed. Two tokens today: each balance
+  // batch is a single multicall, so this costs two round trips rather than two
+  // per wallet — which matters, because the sweep already leans on a
+  // rate-limited public node.
+  const [rates, balancesByToken] = await Promise.all([
+    Promise.all(PAYABLE_TOKEN_IDS.map((id) => readRate(id))),
+    Promise.all(
+      PAYABLE_TOKEN_IDS.map((id) =>
+        publicClient.multicall({
+          allowFailure: true,
+          contracts: wallets.map(
+            (wallet) =>
+              ({
+                address: tokenAddress(config.addresses, id),
+                abi: erc20Abi,
+                functionName: "balanceOf",
+                args: [wallet],
+              }) as const,
+          ),
+        }),
+      ),
+    ),
+  ]);
+  const rateOf = new Map(PAYABLE_TOKEN_IDS.map((id, i) => [id, rates[i]!]));
+
+  const [owners, signers, policies, spent, stamps, labels] = await Promise.all([
     publicClient.multicall({
       allowFailure: true,
       contracts: wallets.map(
@@ -202,12 +241,6 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
       allowFailure: true,
       contracts: wallets.map(
         (address) => ({ address, abi: agentPbmWalletAbi, functionName: "spentToday" }) as const,
-      ),
-    }),
-    publicClient.multicall({
-      allowFailure: true,
-      contracts: wallets.map(
-        (wallet) => ({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [wallet] }) as const,
       ),
     }),
     // These two are DISPLAY reads, and the `.catch` is what keeps them that way.
@@ -250,21 +283,35 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
   // wallet "holds code but did not answer" would hide a policy its owner may
   // still want to read or revoke. They degrade to 0 and "" instead, which is
   // what an unnamed, never-armed wallet reports anyway.
-  const batches: readonly BatchResult[][] = [owners, signers, policies, spent, balances];
+  // Every payable token’s balance must read, not just one: a EURC wallet whose
+  // EURC read failed would otherwise resolve as a USDC wallet holding nothing,
+  // and render a cap in the wrong currency rather than admitting it could not
+  // tell. Correctness about someone’s spending limit outranks listing it.
+  const batches: readonly BatchResult[][] = [owners, signers, policies, spent, ...balancesByToken];
   wallets.forEach((wallet, i) => {
     if (batches.some((batch) => batch[i]?.status !== "success")) {
       failed.push(wallet);
       return;
     }
+    // What this wallet holds, across every payable token, so its currency is an
+    // observation rather than an assumption.
+    const held: Partial<Record<TokenId, bigint>> = {};
+    PAYABLE_TOKEN_IDS.forEach((id, t) => {
+      held[id] = balancesByToken[t]![i]!.result as bigint;
+    });
+    const currency = resolveAgentCurrency(held);
+
     const raw: RawAgentState = {
       wallet,
       owner: owners[i]!.result as Address,
       agentSigner: signers[i]!.result as Address,
       policy: policies[i]!.result as readonly [bigint, bigint, number, bigint],
       spentToday: spent[i]!.result as bigint,
-      balance: balances[i]!.result as bigint,
-      token: SPEND_TOKEN,
-      rate,
+      // Each wallet reports ITS OWN currency, balance and rate. A single shared
+      // token here is what would relabel a euro agent’s caps in dollars.
+      balance: held[currency.token] ?? 0n,
+      token: currency.token,
+      rate: rateOf.get(currency.token)!,
       // `uint40`, so viem hands back a number rather than a bigint.
       policyUpdatedAt: stamps[i]?.status === "success" ? (stamps[i]!.result as number) : 0,
       label: labels[i]?.status === "success" ? (labels[i]!.result as string) : "",
