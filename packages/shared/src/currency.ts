@@ -1,132 +1,90 @@
-import type { TokenId } from "./tokens";
+import { VANILLA_DEFAULT_TOKEN, type TokenId } from "./tokens";
 
 /**
- * What currency a PAYER reads a price in. Never what a merchant receives.
+ * What currency a PAYER SENDS. Never what a merchant receives.
  *
- * The merchant's side is not configurable and cannot be: `GantryCore`'s XSGD is
- * `immutable`, set in the constructor, so the settlement asset is fixed for the
- * life of a deployment. Everything here is a reading aid laid over a price that
- * is denominated, quoted and settled in XSGD regardless.
+ * Choosing one of these sets the token on the EIP-3009 authorization, the
+ * balance the wallet reads, the rate every S$ figure converts at, and the asset
+ * the intent is quoted in. It does not change the shop's side and cannot:
+ * `GantryCore.XSGD` is `immutable`, set in the constructor, so the settlement
+ * asset is fixed for the life of a deployment. That is the whole claim — any
+ * currency in, Singapore dollars out.
  *
- * The distinction that matters, and the reason `RateSource` is a union rather
- * than a number: two of these currencies have a token behind them and one does
- * not. USD and EUR convert at the rate `FixedRateSwap` will actually enforce
- * when the payer signs. INR converts at a constant we picked. Presenting those
- * as the same kind of number would be the single most misleading thing this
- * app could do, so the type refuses to let a caller forget which it is holding.
+ * This module used to describe a READING aid — a currency a price was restated
+ * in while the payer still sent USDC — and carried an `indicative` rate arm and
+ * a `referenceAmount` converter for the currencies with no token behind them.
+ * That went when `PriceReference` was deleted and the token amount became the
+ * currency amount: restating a figure in a currency you are also sending prints
+ * the same number twice. The supporting code outlived the feature by a while;
+ * it is gone now, and nothing here converts anything.
  */
-
-const ONE = 1_000_000n;
 
 export type DisplayCurrencyCode = "SGD" | "USD" | "EUR" | "INR";
 
-export type RateSource =
-  /** The settlement unit itself. No conversion exists to get wrong. */
-  | { kind: "settlement" }
-  /**
-   * Backed by a payable token, converted at the live `FixedRateSwap.rateOf`
-   * for it — the same number `createIntent` pins and `_settle` enforces. Exact,
-   * and checkable on-chain.
-   */
-  | { kind: "onchain"; token: TokenId }
-  /**
-   * No token exists for this currency on Base Sepolia, so there is nothing
-   * on-chain to read and nothing a payer can sign. A reference only.
-   *
-   * `perSgd` is minor units of this currency per 1 XSGD, 6dp.
-   */
-  | { kind: "indicative"; perSgd: bigint };
-
-export interface DisplayCurrency {
+interface CurrencyBase {
   code: DisplayCurrencyCode;
   /** Rendered inline before the digits, matching how `S$` is used today. */
   symbol: string;
   label: string;
-  source: RateSource;
-  /**
-   * Can a payer actually SEND this currency today?
-   *
-   * Separate from `source` because the two answer different questions and only
-   * one of them is about money moving. `source` says where a displayed number
-   * comes from; this says whether choosing the currency changes the token on
-   * the authorization the payer signs.
-   *
-   * Exactly one is true today — **USD**, via Circle's real USDC. Not SGD: the
-   * settlement token is `MockXSGD`, whose `mint()` is public, so it is
-   * deliberately non-payable and quoting it would let anyone settle a
-   * fabricated payment for free. Not EUR or INR: no token for them is listed
-   * on `FixedRateSwap`, and listing is `onlyOwner`.
-   *
-   * The UI must not offer a currency as a way to pay while this is false. It
-   * may offer it as a PREVIEW that restates prices, provided it says the payer
-   * still sends USDC — which is the whole reason this flag exists rather than
-   * being inferred from `source`.
-   */
-  settleable: boolean;
 }
 
 /**
- * Deliberately ROUND indicative rates.
+ * A currency, and whether it is a way to pay.
  *
- * A figure like 64.8317 reads as a live quote pulled from somewhere. 65.00
- * reads as what it is — a number a human chose so a payer can tell whether a
- * price is large or small. There is no FX feed in this system and adding one
- * would put a network dependency in front of the demo's most important screen,
- * on venue wifi, to make a caveat look more precise than it is.
+ * A UNION rather than a `settleable: boolean` beside an optional token, because
+ * the two fields are not independent and the illegal combination is the
+ * dangerous one. With a flag, `DISPLAY_CURRENCIES.SGD.settleable = true`
+ * compiled: SGD would then appear in the picker, `setPayCurrency` would accept
+ * it, and `settlementSendToken` — finding no token and falling back — would
+ * label the whole flow in S$ while signing an authorization against USDC. The
+ * fallback added for safety is what turned a crash into a mislabel.
+ *
+ * Here a settleable currency cannot exist without naming its token, and an
+ * unsettleable one cannot name one. SGD is absent from every payment path by
+ * construction rather than by a filter someone can edit.
  */
-export const INDICATIVE_RATES_AS_OF = "August 2026";
+export type DisplayCurrency =
+  | (CurrencyBase & {
+      /** The payer signs against this token, and the picker offers it live. */
+      settleable: true;
+      /** Must be `payable` in `TOKENS` — pinned by test, since the union can
+       * enforce that a token is NAMED but not which one. */
+      token: TokenId;
+    })
+  | (CurrencyBase & {
+      /** Shown LOCKED rather than hidden. "Any currency in" is the claim, and a
+       * reader deserves to see what is true today and what is not. */
+      settleable: false;
+      token: null;
+    });
 
 export const DISPLAY_CURRENCIES: Record<DisplayCurrencyCode, DisplayCurrency> = {
   /**
    * The shop's own currency, and NOT a way to pay: the settlement token is the
    * open-mint `MockXSGD`, which `TOKENS` marks non-payable for that reason.
-   * Selecting SGD means "quote me in what the shop charges", which is default.
+   * Quoting it would let anyone settle a fabricated payment for free.
    */
-  SGD: {
-    code: "SGD",
-    symbol: "S$",
-    label: "Singapore Dollar",
-    source: { kind: "settlement" },
-    settleable: false,
-  },
-  /** The only currency a payer can actually send today. Real Circle USDC. */
-  USD: {
-    code: "USD",
-    symbol: "US$",
-    label: "US Dollar",
-    source: { kind: "onchain", token: "USDC" },
-    settleable: true,
-  },
+  SGD: { code: "SGD", symbol: "S$", label: "Singapore Dollar", settleable: false, token: null },
+  /** Real Circle USDC. The currency every demo payer holds. */
+  USD: { code: "USD", symbol: "US$", label: "US Dollar", settleable: true, token: "USDC" },
   /**
    * REAL since 19 Aug 2026. Circle's EURC is listed on `FixedRateSwap` at an
-   * owner-set 1.510000 XSGD per EURC (tx `0x6aded10d…`), so a payer choosing
-   * euros signs an EIP-3009 authorization against Circle's own contract and the
-   * hawker is still paid in XSGD. It took one owner transaction and no
-   * redeploy — `rateOf` is an open mapping and `GantryCore` holds no token
-   * allowlist, which is exactly the seam the design claimed.
+   * owner-set 1.510000 XSGD per EURC, so a payer choosing euros signs an
+   * EIP-3009 authorization against Circle's own contract and the hawker is
+   * still paid in XSGD. It took one owner transaction and no redeploy —
+   * `rateOf` is an open mapping and `GantryCore` holds no token allowlist,
+   * which is exactly the seam the design claimed.
    *
    * No mock was involved, and that matters: MockXSGD stays the only mocked
    * token in the system.
    */
-  EUR: {
-    code: "EUR",
-    symbol: "€",
-    label: "Euro",
-    source: { kind: "onchain", token: "EURC" },
-    settleable: true,
-  },
+  EUR: { code: "EUR", symbol: "€", label: "Euro", settleable: true, token: "EURC" },
   /**
-   * Indicative and likely to stay so: there is no INR stablecoin on Base
-   * Sepolia to settle against, so this can never become an `onchain` source
-   * however long the demo runs. An Indian visitor holds USDC and reads rupees.
+   * Locked, and likely to stay so: there is no INR stablecoin on Base Sepolia,
+   * so this can never become settleable here however long the demo runs. Shown
+   * anyway — hiding it would quietly imply the set is closed.
    */
-  INR: {
-    code: "INR",
-    symbol: "₹",
-    label: "Indian Rupee",
-    source: { kind: "indicative", perSgd: 65_000_000n },
-    settleable: false,
-  },
+  INR: { code: "INR", symbol: "₹", label: "Indian Rupee", settleable: false, token: null },
 };
 
 export const DISPLAY_CURRENCY_CODES = Object.keys(DISPLAY_CURRENCIES) as [
@@ -138,63 +96,17 @@ export function isDisplayCurrencyCode(value: string): value is DisplayCurrencyCo
   return value in DISPLAY_CURRENCIES;
 }
 
-/** The token whose on-chain rate this currency reads, or null if it has none. */
-export function currencyToken(currency: DisplayCurrency): TokenId | null {
-  return currency.source.kind === "onchain" ? currency.source.token : null;
-}
-
-/**
- * XSGD 6dp units → this currency's 6dp units.
- *
- * Returns **null** when an on-chain rate is required and absent, rather than
- * falling back to some other number. A dropped rate must render as "unavailable":
- * substituting an indicative figure for an exact one, silently, is how a payer
- * ends up told a price the contract will not honour.
- *
- * Rounds half-up rather than truncating. These are reference figures shown
- * behind a `≈`, and truncation makes a rate of exactly 0.70 print as 0.69 on
- * the amounts most likely to be on screen.
- */
-export function referenceAmount(
-  xsgdUnits: bigint,
-  currency: DisplayCurrency,
-  onchainRate: bigint | null,
-): bigint | null {
-  if (xsgdUnits < 0n) return null;
-  const { source } = currency;
-  if (source.kind === "settlement") return xsgdUnits;
-  if (source.kind === "indicative") {
-    return (xsgdUnits * source.perSgd + ONE / 2n) / ONE;
-  }
-  // `rateOf` is XSGD out per 1e6 of the token in, so the payer-side amount is
-  // the inverse. A zero or absent rate is the swap saying the token is not
-  // listed, which is exactly when a converted figure would be fiction.
-  if (onchainRate === null || onchainRate <= 0n) return null;
-  return (xsgdUnits * ONE + onchainRate / 2n) / onchainRate;
-}
-
-/**
- * Is this figure the rate the chain will actually enforce, or our constant?
- *
- * Every render site has to caption its number, and the caption differs. Kept
- * here so the two cannot drift: a screen that reads the amount from this module
- * reads its provenance from the same place.
- */
-export function isExact(currency: DisplayCurrency): boolean {
-  return currency.source.kind !== "indicative";
-}
-
 /**
  * Which token a payer's authorization will actually name.
  *
  * Two answers since EURC was listed, which is the whole feature: choosing euros
  * changes the token on the signature, the balance the wallet reads and the
- * asset the intent is quoted in. USDC is the fallback for any currency that is
- * not settleable, because a preview must still leave the payer able to pay.
+ * asset the intent is quoted in. A currency that cannot be sent falls back to
+ * the vanilla default, because a payer looking at a locked currency must still
+ * be able to pay.
  */
 export function settlementSendToken(currency: DisplayCurrency): TokenId {
-  const token = currencyToken(currency);
-  return currency.settleable && token !== null ? token : "USDC";
+  return currency.settleable ? currency.token : VANILLA_DEFAULT_TOKEN;
 }
 
 /**
@@ -213,9 +125,9 @@ export const PAYABLE_CURRENCY_CODES = DISPLAY_CURRENCY_CODES.filter(
  * What the payer's settings screen offers, in order: every currency that can be
  * sent, then the ones that cannot — which are shown LOCKED rather than hidden.
  *
- * Hiding them would be tidier and less honest. "Any currency in" is the claim,
- * and a reader deserves to see both which currencies that is true of today and
- * which are coming, rather than a list that quietly implies the set is closed.
+ * SGD is excluded by `settleable`, not by name. Spelling it as `code !== "SGD"`
+ * made the exclusion a string a refactor could lose, while the reason it is
+ * excluded — the settlement token is not payable — lives in `TOKENS`.
  */
 export const SEND_CURRENCY_OPTIONS: readonly { code: DisplayCurrencyCode; locked: boolean }[] =
   DISPLAY_CURRENCY_CODES.filter((code) => code !== "SGD")
