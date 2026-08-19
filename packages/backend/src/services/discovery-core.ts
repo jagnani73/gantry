@@ -28,15 +28,32 @@ import { caip2, quoteAmountIn, type MerchantSummary } from "@gantry/shared";
  * it appears in every listing and a hawker-scale figure keeps the demo honest. */
 export const SAMPLE_SGD_UNITS = 1_000_000n;
 
+/** One currency a listing can be paid in, priced. */
+export interface DiscoveryOfferToken {
+  /** The EIP-712 token name — the same key the 402's `extra` carries, so a
+   * client selects a currency the same way in a listing and in a challenge. */
+  name: string;
+  asset: string;
+  /** XSGD 6dp out per 1e6 token units, from FixedRateSwap. Per token, because
+   * the quote differs and a listing must carry the real one. */
+  rate: bigint;
+}
+
 export interface DiscoveryInputs {
   merchants: MerchantSummary[];
   /** Absolute origin this server is reachable at — the listing must be payable
    * by whoever reads it, so a relative path would be useless to an agent. */
   origin: string;
   chainId: number;
-  /** XSGD 6dp out per 1e6 token units, from FixedRateSwap. */
-  rate: bigint;
-  asset: string;
+  /**
+   * Every currency this rail accepts, in `OFFER_TOKEN_IDS` order.
+   *
+   * A LIST rather than one token because a listing describes the same resource
+   * the 402 does, and the two must offer the same set: when only the challenge
+   * learned to fan out, discovery advertised dollars alone and a euro-only agent
+   * reading it would have concluded the shop could not take its money.
+   */
+  tokens: DiscoveryOfferToken[];
   /** `exact` collects to the relayer (the custodial hop); `gantry-pbm` pushes
    * straight into the core. Both are offered on every shop, in that order. */
   relayer: string;
@@ -80,21 +97,23 @@ export interface DiscoveryItem {
  * registers.
  */
 export function buildDiscoveryListing(inputs: DiscoveryInputs): DiscoveryListing {
-  const { merchants, origin, chainId, rate, asset, relayer, core, limit, offset } = inputs;
-  const amount = quoteAmountIn(SAMPLE_SGD_UNITS, rate).toString();
+  const { merchants, origin, chainId, tokens, relayer, core, limit, offset } = inputs;
   const network = caip2(chainId);
   const base = origin.replace(/\/+$/, "");
 
   const items = merchants.slice(offset, offset + limit).map((merchant): DiscoveryItem => {
     const shop = merchant.displayName ?? merchant.handle;
-    const accept = (scheme: string, payTo: string) => ({
+    const accept = (scheme: string, payTo: string, token: DiscoveryOfferToken) => ({
       scheme,
       network,
-      asset,
-      amount,
+      asset: token.asset,
+      // Priced per currency. A shared amount would be right for one of them and
+      // a number the settle refuses for the rest, which makes a listing that
+      // claims to be payable verbatim into decoration.
+      amount: quoteAmountIn(SAMPLE_SGD_UNITS, token.rate).toString(),
       payTo,
       maxTimeoutSeconds: 600,
-      extra: { handle: merchant.handle, sgd: "1.00" },
+      extra: { handle: merchant.handle, sgd: "1.00", name: token.name },
     });
     return {
       // Carries the amount it is listed at, so an agent can pay this string
@@ -102,10 +121,15 @@ export function buildDiscoveryListing(inputs: DiscoveryInputs): DiscoveryListing
       resource: `${base}/pay/${merchant.handle}?sgd=1.00`,
       type: "http",
       x402Version: 2,
-      // `exact` first, matching the order the pay link itself offers — a vanilla
-      // client takes the first entry, and a discovery listing that reversed them
-      // would hand it a scheme only our agent implements.
-      accepts: [accept("exact", relayer), accept("gantry-pbm", core)],
+      // Scheme-major, then currency — byte-for-byte the order the pay link's own
+      // accepts[] uses, because these describe the same resource. `exact` in the
+      // default currency leads: a vanilla client takes the first entry, and a
+      // listing that led with anything else would hand it either a scheme only
+      // our agent implements or a currency it does not hold.
+      accepts: [
+        ...tokens.map((t) => accept("exact", relayer, t)),
+        ...tokens.map((t) => accept("gantry-pbm", core, t)),
+      ],
       lastUpdated: new Date(merchant.registeredAt * 1000).toISOString(),
       description: `Pay ${shop} in stablecoins. Any amount: change the sgd query parameter. Settles to the merchant in XSGD.`,
       mimeType: "application/json",

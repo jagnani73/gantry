@@ -1,9 +1,13 @@
 import { Router } from "express";
-import { tokenAddress } from "@gantry/shared";
+import { OFFER_TOKEN_IDS, TOKENS, tokenAddress } from "@gantry/shared";
 import { relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
-import { buildDiscoveryListing, parsePaging } from "../services/discovery-core";
+import {
+  buildDiscoveryListing,
+  parsePaging,
+  type DiscoveryOfferToken,
+} from "../services/discovery-core";
 import { listMerchantIndex } from "../services/merchants";
 import { readRate } from "../services/intents";
 
@@ -26,13 +30,20 @@ export const discoveryRouter = Router();
 discoveryRouter.get("/discovery/resources", async (req, res) => {
   const index = listMerchantIndex();
 
-  let rate: bigint;
+  // One rate per offered currency, in the same order the 402 offers them, so a
+  // listing and the challenge it points at can never advertise different sets.
+  // All-or-nothing: every listing carries a real quote, so a currency we could
+  // not price would be a number a client pays against and we then refuse.
+  let tokens: DiscoveryOfferToken[];
   try {
-    rate = await readRate("USDC");
+    tokens = await Promise.all(
+      OFFER_TOKEN_IDS.map(async (id) => ({
+        name: TOKENS[id].eip712.name,
+        asset: tokenAddress(config.addresses, id),
+        rate: await readRate(id),
+      })),
+    );
   } catch {
-    // Every listing carries a real quote, so without a rate there is nothing
-    // honest to return — an amount we could not price would be a number a
-    // client pays against and we refuse.
     throw new ApiError(503, "QuoteUnavailable", "rate source unreachable; retry shortly");
   }
 
@@ -48,8 +59,7 @@ discoveryRouter.get("/discovery/resources", async (req, res) => {
     // host, or be given a pinned origin instead.
     origin: `${req.protocol}://${req.get("host") ?? `localhost:${config.port}`}`,
     chainId: config.chainId,
-    rate,
-    asset: tokenAddress(config.addresses, "USDC"),
+    tokens,
     relayer: relayerAccount.address,
     core: config.addresses.gantryCore,
     limit,

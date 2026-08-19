@@ -1,8 +1,10 @@
 import { Router } from "express";
 import type { HTTPRequestContext, RoutesConfig } from "@x402/core/server";
 import {
+  OFFER_TOKEN_IDS,
   PAYABLE_TOKEN_IDS,
   PAYMENT_SIGNATURE_HEADER,
+  VANILLA_DEFAULT_TOKEN,
   TOKENS,
   caip2,
   decodePaymentSignatureHeader,
@@ -101,24 +103,6 @@ function priceIn(token: TokenId) {
   };
 }
 
-/**
- * What a client that expresses no preference is quoted.
- *
- * An UNMODIFIED x402 client takes `accepts[0]` without choosing, so the first
- * entry has to stay the currency the demo funds and every payer already holds.
- * Named here rather than leaning on whatever order `PAYABLE_TOKEN_IDS` happens
- * to have — that order comes from the key order of the TOKENS object, so tidying
- * the registry could otherwise move every vanilla client onto euros without
- * anyone touching this file.
- */
-const VANILLA_DEFAULT_TOKEN: TokenId = "USDC";
-
-/** Every payable token, the vanilla default first. */
-const OFFER_TOKENS: readonly TokenId[] = [
-  VANILLA_DEFAULT_TOKEN,
-  ...PAYABLE_TOKEN_IDS.filter((id) => id !== VANILLA_DEFAULT_TOKEN),
-];
-
 const orderAccepts = [
   // `exact` MUST stay first: vanilla clients (and scripts/x402-buy.ts)
   // take the first matching entry. Funds route to the relayer — the
@@ -132,7 +116,7 @@ const orderAccepts = [
   // A client that wants euros asks through the SDK's own
   // `paymentRequirementsSelector`; one that asks for nothing is quoted dollars,
   // exactly as before.
-  ...OFFER_TOKENS.map((token) => ({
+  ...OFFER_TOKEN_IDS.map((token) => ({
     scheme: "exact",
     network: caip2(config.chainId),
     payTo: relayerAccount.address,
@@ -150,7 +134,7 @@ const orderAccepts = [
   // single USDC entry made a euro agent's intent disagree with the offer it was
   // answering, which surfaces as `quote_changed` — a confusing way to say "we
   // never offered euros".
-  ...OFFER_TOKENS.map((token) => ({
+  ...OFFER_TOKEN_IDS.map((token) => ({
     scheme: "gantry-pbm",
     network: caip2(config.chainId),
     payTo: config.addresses.gantryCore,

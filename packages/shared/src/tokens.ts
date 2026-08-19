@@ -120,6 +120,35 @@ export const PAYABLE_TOKEN_IDS = TOKEN_IDS.filter((id) => TOKENS[id].payable) as
   ...TokenId[],
 ];
 
+/**
+ * What a client that expresses no preference is quoted.
+ *
+ * An unmodified x402 client takes `accepts[0]` without choosing, so whatever
+ * leads an offer list has to be the currency the demo funds and every payer
+ * already holds.
+ */
+export const VANILLA_DEFAULT_TOKEN: TokenId = "USDC";
+
+/**
+ * Every payable token, the vanilla default first — the ONE order in which any
+ * surface offers currencies.
+ *
+ * Here rather than in a route because two surfaces offer them and they must not
+ * disagree: the 402's `accepts[]` and the discovery listing describe the same
+ * resource, so a listing advertising fewer currencies than the challenge it
+ * points at tells a euro-only agent the shop cannot take its money. That drift
+ * happened the moment `exact` learned to fan out, and a comment in each file
+ * saying "keep these in step" is not a mechanism.
+ *
+ * NOT plain `PAYABLE_TOKEN_IDS`: that order comes from the key order of the
+ * TOKENS object, so tidying the registry would move every vanilla client onto a
+ * different currency without anyone touching a route.
+ */
+export const OFFER_TOKEN_IDS: readonly TokenId[] = [
+  VANILLA_DEFAULT_TOKEN,
+  ...PAYABLE_TOKEN_IDS.filter((id) => id !== VANILLA_DEFAULT_TOKEN),
+];
+
 /** Is this token one a payer may be quoted in? The guard behind the schema. */
 export function isPayableToken(id: TokenId): boolean {
   return TOKENS[id].payable;

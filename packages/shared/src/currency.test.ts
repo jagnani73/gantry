@@ -11,6 +11,7 @@ import {
   referenceAmount,
   settlementSendToken,
 } from "./currency";
+import { OFFER_TOKEN_IDS, PAYABLE_TOKEN_IDS, VANILLA_DEFAULT_TOKEN } from "./tokens";
 import { DEMO_RATE } from "./constants";
 import { TOKENS } from "./tokens";
 import { quoteAmountIn } from "./quote";
@@ -182,4 +183,23 @@ test("every offered live option is genuinely settleable", () => {
     );
   }
   assert.deepEqual([...PAYABLE_CURRENCY_CODES], ["USD", "EUR"]);
+});
+
+// ------------------------------------------------- the one order offers use
+
+test("the offer order leads with the vanilla default and loses no currency", () => {
+  // Two surfaces build offers from this — the 402's accepts[] and the discovery
+  // listing — and they describe the SAME resource. A listing advertising fewer
+  // currencies than the challenge it points at tells a euro-only agent the shop
+  // cannot take its money, which is exactly what happened when only `exact`
+  // learned to fan out.
+  assert.equal(OFFER_TOKEN_IDS[0], VANILLA_DEFAULT_TOKEN);
+  assert.deepEqual([...OFFER_TOKEN_IDS].sort(), [...PAYABLE_TOKEN_IDS].sort());
+  assert.equal(new Set(OFFER_TOKEN_IDS).size, OFFER_TOKEN_IDS.length, "no duplicates");
+});
+
+test("the vanilla default is itself payable", () => {
+  // accepts[0] naming a token the quote path refuses is a 402 nobody can pay,
+  // produced by a server that thinks it is fine.
+  assert.ok(PAYABLE_TOKEN_IDS.includes(VANILLA_DEFAULT_TOKEN));
 });
