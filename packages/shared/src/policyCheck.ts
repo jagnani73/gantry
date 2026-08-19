@@ -177,18 +177,71 @@ export function checkSpend(policy: PolicyState, request: SpendRequest): PolicyVe
  * one that makes this worth shipping:
  *
  * - `consistent` — the chain would have refused, for the reason we said.
- * - `contradicted` — the chain says otherwise. Either the record is wrong or it
- *   was computed against different state; either way, do not trust the record.
- * - `unprovable` — the claim is real but not decidable from public state now
- *   (an `InvalidAgentSignature`, or a dimension whose inputs have since moved).
+ * - `contradicted` — the chain says otherwise, on a dimension that cannot have
+ *   moved. Either the record is wrong or it was computed against different
+ *   state; either way, do not trust the record.
+ * - `unprovable` — the claim is real but not decidable from public state now:
+ *   an `InvalidAgentSignature`, or one of `VOLATILE_DIMENSIONS`, whose inputs
+ *   move between the decision and the cancel that records it.
  *
  * A checker that can only ever agree proves nothing, which is why
- * `contradicted` exists and is tested against a fabricated claim.
+ * `contradicted` exists and is tested against a fabricated claim. The
+ * volatile-dimension carve-out is deliberately narrow for the same reason: it
+ * covers the two dimensions whose inputs are genuinely unpinnable, and nothing
+ * else, so a fabricated `CategoryNotAllowed` is still caught.
  */
 export type DenialAudit = "consistent" | "contradicted" | "unprovable";
 
+/**
+ * Dimensions whose inputs MOVE between the decision and the record.
+ *
+ * A refusal has no reverted transaction: the policy revert is caught by
+ * simulate-before-send and never broadcast, so the record rides on the CANCEL,
+ * which lands in a LATER block. Every input is therefore read one block or more
+ * after the decision was taken, and for these two that gap is enough to change
+ * the answer:
+ *
+ * - `daily` reads `spentToday()`, which the contract buckets by UTC day. A day
+ *   boundary (08:00 SGT) between the simulate and the cancel reads it as 0, so
+ *   a real `DailyCapExceeded` recomputes as allowed.
+ * - `balance` is a plain ERC-20 balance that anyone may change, and `demo-reset`
+ *   routinely tops these wallets up.
+ *
+ * The other three are stable at any block: `expiry`, the category bitmap and
+ * `perTxCap` change only when the owner writes a policy.
+ *
+ * This is what CLAUDE.md means by "`DailyCapExceeded` needs archive
+ * `spentToday()`; `InsufficientWalletBalance` is not checkable".
+ */
+export const VOLATILE_DIMENSIONS: readonly PolicyDimension[] = ["daily", "balance"];
+
 export function auditDenial(claimed: string, verdict: PolicyVerdict): DenialAudit {
-  if (!POLICY_DIMENSIONS.some((d) => DIMENSION_ERROR[d] === claimed)) return "unprovable";
+  const dimension = POLICY_DIMENSIONS.find((d) => DIMENSION_ERROR[d] === claimed);
+  // Not a policy dimension at all — an `InvalidAgentSignature`, a string reason,
+  // an undecodable shape. Real, and not ours to decide.
+  if (dimension === undefined) return "unprovable";
+  // Agreement is agreement whatever the dimension: re-deriving the same answer
+  // from public state is evidence, and it costs nothing to accept it.
   if (verdict.errorName === claimed) return "consistent";
+  // Disagreement on a volatile dimension is NOT a contradiction — it is the
+  // expected consequence of reading state after the fact. Calling it one would
+  // have the checker accuse an honest record of lying, and exit 1, on the
+  // artifact whose whole purpose is to survive that scrutiny. The same argument
+  // this module already makes for `InvalidAgentSignature`: "reporting it as
+  // contradicted would accuse the record of lying whenever the agent simply
+  // signed wrong."
+  if (VOLATILE_DIMENSIONS.includes(dimension)) return "unprovable";
   return "contradicted";
+}
+
+/** Why an audit could not decide — one sentence, for a caller that has to say
+ * so out loud. Null when the verdict was decidable. */
+export function unprovableBecause(claimed: string): string {
+  const dimension = POLICY_DIMENSIONS.find((d) => DIMENSION_ERROR[d] === claimed);
+  if (dimension === undefined) {
+    return `"${claimed}" is not a policy dimension, so public state cannot speak to it`;
+  }
+  return dimension === "daily"
+    ? `"${claimed}" depends on spentToday(), which the contract buckets by UTC day — the cancel lands after the decision, so a day boundary in between reads it as zero`
+    : `"${claimed}" depends on the wallet's balance, which anyone can change between the decision and the cancel that records it`;
 }

@@ -30,6 +30,7 @@ import {
   SIGNATURE_IS_NOT_CHECKED,
   agentPbmWalletAbi,
   auditDenial,
+  unprovableBecause,
   checkSpend,
   decodeRawError,
   formatUnits6,
@@ -247,7 +248,11 @@ async function main() {
   } else if (audit === "contradicted") {
     console.log(`VERDICT: CONTRADICTED — public state does not support the reason we published.`);
   } else {
-    console.log(`VERDICT: UNPROVABLE from public state — "${claimedName}" is not a policy dimension.`);
+    // Say what could not be read, not merely that something could not be. A
+    // checker that answers "cannot say" without naming the missing input is
+    // indistinguishable from a broken one — and this branch now covers two
+    // different situations, only one of which is "not a policy dimension".
+    console.log(`VERDICT: UNPROVABLE from public state — ${unprovableBecause(claimedName)}.`);
   }
   console.log(`\nNote: ${SIGNATURE_IS_NOT_CHECKED}.`);
   process.exitCode = audit === "contradicted" ? 1 : 0;

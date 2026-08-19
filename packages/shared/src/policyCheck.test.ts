@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {
   DIMENSION_ERROR,
   POLICY_DIMENSIONS,
+  VOLATILE_DIMENSIONS,
   auditDenial,
   checkSpend,
+  unprovableBecause,
   type PolicyState,
 } from "./policyCheck";
 
@@ -132,4 +134,40 @@ test("auditDenial calls a signature failure unprovable, never contradicted", () 
   const allowed = checkSpend(armed, iceTea);
   assert.equal(auditDenial("InvalidAgentSignature", allowed), "unprovable");
   assert.equal(auditDenial("SomethingElseEntirely", allowed), "unprovable");
+});
+
+test("a dimension whose inputs have since moved is unprovable, not contradicted", () => {
+  // The docstring promised this and the code did not deliver it: `unprovable`
+  // was reachable ONLY for a claim outside DIMENSION_ERROR, so a real
+  // DailyCapExceeded that no longer re-derives came back as `contradicted` —
+  // our own verifier calling our own honest record a lie, and exiting 1.
+  //
+  // It is reachable without anybody misbehaving. A refusal has no reverted
+  // transaction, so the record rides on the cancel, which lands in a LATER
+  // block; `spentToday()` is bucketed by UTC day, so a boundary in that gap
+  // reads it as zero and the spend recomputes as allowed.
+  const rolledOver = checkSpend(armed, iceTea);
+  assert.equal(rolledOver.allowed, true, "the day rolled, so nothing refuses it now");
+  assert.equal(auditDenial("DailyCapExceeded", rolledOver), "unprovable");
+  // Same for a balance, which anyone may change and demo-reset routinely does.
+  assert.equal(auditDenial("InsufficientWalletBalance", rolledOver), "unprovable");
+});
+
+test("the volatile carve-out is narrow — a fabricated stable claim is still caught", () => {
+  // The carve-out must not become a way for any wrong record to escape. The
+  // three dimensions that cannot move between the decision and the cancel
+  // (expiry, category, perTx) stay fully checkable.
+  const allowed = checkSpend(armed, iceTea);
+  assert.equal(auditDenial("CategoryNotAllowed", allowed), "contradicted");
+  assert.equal(auditDenial("PerTxCapExceeded", allowed), "contradicted");
+  assert.equal(auditDenial("PolicyExpired", allowed), "contradicted");
+  assert.deepEqual([...VOLATILE_DIMENSIONS], ["daily", "balance"]);
+});
+
+test("an unprovable verdict can say WHY, in the caller's own output", () => {
+  // The CLI prints this beside the verdict. A checker that answers "cannot say"
+  // without saying what it could not read is indistinguishable from a broken one.
+  assert.match(unprovableBecause("DailyCapExceeded"), /spentToday\(\).*UTC day/);
+  assert.match(unprovableBecause("InsufficientWalletBalance"), /balance, which anyone can change/);
+  assert.match(unprovableBecause("InvalidAgentSignature"), /not a policy dimension/);
 });
