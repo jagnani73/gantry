@@ -324,7 +324,13 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
               });
             if ((await readBalance()) < BigInt(intent.amountIn)) {
               setStep({ name: "funding", intent });
-              const granted = await api.faucet(account.address);
+              // The INTENT's token, not the payer's current preference: the
+              // balance loop below reads `intent.tokenIn`, so funding anything
+              // else grants a currency this payment cannot spend and then spins
+              // out the ten retries against a balance that was never topped up.
+              // The intent is also the pinned quote, so it stays right if the
+              // preference changes while this screen is open.
+              const granted = await api.faucet(account.address, intent.tokenSymbol);
               // The grant carries a second leg. A refused gas top-up changes
               // nothing here — the payer signs, the relayer sends — so it must
               // not interrupt a payment in progress; but it is the reason an
@@ -646,7 +652,13 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
               <Mono>{formatUnits6(BigInt(intent.xsgdAmount))} XSGD</Mono>
             </BreakdownRow>
             <BreakdownRow label="Rate">
-              <Mono>1 USDC = {formatRate(BigInt(intent.rate))}</Mono>
+              {/* The intent's OWN token. `rate` is XSGD per 1e6 units of
+                  `tokenIn`, so naming a fixed ticker here restated a euro
+                  payment's rate as a dollar one on the screen the payer signs
+                  from — and the correct symbol was already two rows up. */}
+              <Mono>
+                1 {intent.tokenSymbol} = {formatRate(BigInt(intent.rate))}
+              </Mono>
             </BreakdownRow>
             <div className="flex items-baseline justify-between gap-3.5 border-t border-fill-subtle pt-3">
               <span className="text-body text-muted">Network fee</span>

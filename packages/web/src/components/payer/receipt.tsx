@@ -111,7 +111,16 @@ function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: numb
             {formatUnits6(amountIn, 6)} {settlement.tokenSymbol ?? "tokens"}
           </KeyValue>
           <KeyValue label="Shop received">{formatUnits6(netToShop)} XSGD</KeyValue>
-          {rate === null ? null : <KeyValue label="Rate">1 USDC = {formatRate(rate)}</KeyValue>}
+          {/* Both halves or neither. `rate` is XSGD per 1e6 units of THIS
+              settlement's token, so a fixed ticker here reported a euro payment
+              at a dollar rate; and an unknown token leaves the figure with no
+              unit at all, which is worse than omitting it — the same "absent
+              beats wrong" rule `paidToken` follows on the order confirmation. */}
+          {rate === null || settlement.tokenSymbol === null ? null : (
+            <KeyValue label="Rate">
+              1 {settlement.tokenSymbol} = {formatRate(rate)}
+            </KeyValue>
+          )}
           <KeyValue label="Network fee" mono={false}>
             <span className="text-accent">0.00 · sponsored</span>
           </KeyValue>
