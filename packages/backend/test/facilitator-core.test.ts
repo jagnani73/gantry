@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   BASE_SEPOLIA_ADDRESSES,
@@ -311,4 +312,23 @@ test("reasonForGantryError passes custom names through and maps Circle strings",
   );
   assert.equal(reasonForGantryError({ kind: "string", reason: "FiatTokenV2: caller must be the payee" }), "settlement_failed");
   assert.equal(reasonForGantryError({ kind: "unknown", message: "0xdeadbeef" }), "settlement_failed");
+});
+
+/**
+ * The two verify-stage refusals whose CODE is the whole message.
+ *
+ * A verify-stage refusal re-challenges, and the x402 re-challenge carries only
+ * the reason — our prose does not survive the SDK. So collapsing either of
+ * these into the generic `invalid_payload` reaches the agent's operator as
+ * "payment rejected at verify (status 402)" and names nothing, while every
+ * suite stays green. Read off the source because the branch itself is in the
+ * chain-touching half; what is pinned is that the literal is still there.
+ */
+test("a currency mismatch and an unknown asset keep their own reason codes", () => {
+  const facilitator = readFileSync(new URL("../src/services/facilitator.ts", import.meta.url), "utf8");
+  assert.match(facilitator, /invalid\("agent_currency_mismatch"/);
+  assert.match(facilitator, /invalid\("unknown_asset"/);
+  // And the guard that produces it is the shared one, so the door and the
+  // display can never disagree about what an agent's currency is.
+  assert.match(facilitator, /canAgentSpend\(/);
 });

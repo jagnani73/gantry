@@ -152,9 +152,10 @@ export function WalletScreen() {
             at the demo rate · 1 {sendToken} = {formatRate(rate)} XSGD, set by the swap&apos;s owner
           </p>
         ) : rateError ? (
-          // Without the rate every S$ figure in the app silently becomes USDC.
-          // Say which one is on screen rather than letting the units change
-          // underneath the same layout.
+          // Without the rate there is no S$ conversion at all, so the figure
+          // above is raw token units. Name the token — it is no longer always
+          // USDC — rather than letting the units change underneath the same
+          // layout with nothing on screen saying so.
           <p className="mt-2.5 text-fine text-on-accent-muted">
             showing {sendToken}: the swap&apos;s rate could not be read, so no S$ conversion is shown
           </p>

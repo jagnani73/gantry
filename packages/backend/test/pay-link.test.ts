@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { isPrivateHost, payerAppOrigin, payerAppUrl, prefersHtml } from "../src/services/pay-link";
 
 const WILDCARD = ["*", "/", "*"].join("");
@@ -113,4 +114,35 @@ test("the amount survives into the payer app exactly as written", () => {
     payerAppUrl("http://localhost:3000", "ah-hock-chicken-rice", null),
     "http://localhost:3000/pay/ah-hock-chicken-rice",
   );
+});
+
+// ------------------------------------------------- the route's own call site
+
+/**
+ * `prefersHtml` is well covered above; the bug it exists for lives at the CALL
+ * SITE. The naive implementation is `req.accepts("text/html")`, and Express
+ * resolves a bare wildcard Accept — what curl and most agent HTTP clients send
+ * — to text/html. Writing it that way hands an agent a redirect, closes the
+ * machine door, and leaves every test in this file passing.
+ *
+ * Read off the source rather than mocked, because what is being pinned is which
+ * function the route chose, and a mock would let the route call anything.
+ */
+test("GET /pay/:handle negotiates with prefersHtml, never req.accepts", () => {
+  const route = readFileSync(new URL("../src/routes/order.ts", import.meta.url), "utf8");
+  assert.match(route, /prefersHtml\(req\.headers\.accept\)/, "the route must use prefersHtml");
+  assert.doesNotMatch(
+    route,
+    /req\.accepts\(/,
+    "req.accepts resolves a bare wildcard to text/html, which closes the machine door",
+  );
+});
+
+test("the pay link refuses rather than guessing when it cannot resolve an origin", () => {
+  // payerAppOrigin fails CLOSED, and the route must carry that through as an
+  // error instead of falling back to the request host — that fallback was a
+  // live open redirect one hop before a payer signs an authorization.
+  const route = readFileSync(new URL("../src/routes/order.ts", import.meta.url), "utf8");
+  assert.match(route, /PayLinkNotConfigured/);
+  assert.match(route, /res\.redirect\(302,/, "302, not 301 — the payer-app host is deploy state");
 });

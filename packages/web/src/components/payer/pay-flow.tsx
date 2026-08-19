@@ -636,9 +636,10 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
           <Card tone="accent" radius="card-m" pad="md">
             <p className="text-label uppercase text-on-accent-muted">You&apos;re paying</p>
             <Figure units={intent.xsgdAmount} size="balance" tone="on-accent" className="mt-3" />
-            {/* Beside the price, never instead of it. The Singapore figure is
-                what the shop charges and what it receives; this is a reading
-                aid for a payer who does not think in dollars. */}
+            {/* The shop, under the price it charges. The S$ figure above is
+                what the merchant receives and is never restated in another
+                currency here — the payer sends their own, and the breakdown
+                below names both. */}
             <p className="mt-3.5 text-body-sm text-on-accent-body">{title}</p>
           </Card>
 
@@ -760,9 +761,6 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
                     ? "Rate locks when you continue"
                     : "Enter an amount"}
             </p>
-            {/* Only once the amount parses — the keypad is mid-edit the rest of
-                the time, and a reference figure that flickers per keystroke is
-                noise rather than help. */}
             {lookupFailed ? (
               <p className="mt-3 max-w-[34ch] px-8 text-center text-fine text-faint">
                 We couldn&apos;t look this shop up ({lookupFailed}).{" "}

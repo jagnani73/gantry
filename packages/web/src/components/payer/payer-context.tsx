@@ -276,6 +276,18 @@ export function PayerProvider({
    * it: a payer who chose euros sees one frame of dollars.
    */
   const [payCurrencyCode, setPayCurrencyCode] = useState<DisplayCurrencyCode>("USD");
+  /**
+   * Has the stored preference been read yet?
+   *
+   * The default above is a GUESS until the effect below runs, and the two chain
+   * reads in this provider both follow `sendToken` — so without this gate a
+   * euro payer's first frame issues a USDC balance read and a USDC rate read,
+   * then re-issues both. That is a wasted round-trip on a venue hotspot and,
+   * worse, a window in which every S$ figure in the app is converted at the
+   * wrong token's rate. The signer preference has the same rule and for the
+   * same reason: defaulting before the read is a claim, not a default.
+   */
+  const [payCurrencyReady, setPayCurrencyReady] = useState(false);
   const [balanceWatch, setBalanceWatch] = useState<BalanceWatch>("idle");
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
@@ -301,6 +313,11 @@ export function PayerProvider({
       // data is blocked. Unguarded that propagates out of the provider and takes
       // down the whole payer app over a currency symbol.
       console.warn("gantry: pay currency preference could not be read", err);
+    } finally {
+      // In a `finally`, so a blocked-storage SecurityError releases the reads
+      // too. Failing to read the preference means falling back to the default,
+      // which is an answer; leaving the app permanently waiting is not.
+      setPayCurrencyReady(true);
     }
   }, []);
 
@@ -549,7 +566,10 @@ export function PayerProvider({
      leaves the wallet screen reading "reading balance…" for as long as the app
      stays open. */
   useEffect(() => {
-    if (!address || !publicClient) return;
+    // `payCurrencyReady` too: until the stored preference has been read,
+    // `sendTokenAddress` is the DEFAULT rather than the payer's choice, and
+    // reading against it would answer in a token they do not pay in.
+    if (!address || !publicClient || !payCurrencyReady) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -579,7 +599,7 @@ export function PayerProvider({
   // sendTokenAddress is load-bearing here, not incidental: without it a payer
   // who switches to euros keeps reading their USDC balance, and the figure on
   // the wallet screen would describe a token they are no longer paying in.
-  }, [address, publicClient, balanceNonce, nonce, sendTokenAddress]);
+  }, [address, publicClient, balanceNonce, nonce, sendTokenAddress, payCurrencyReady]);
 
   /* ── The rate and the chain's clock ─────────────────────────────────────
      The rate is read live rather than taken from the seeded constant: it is
@@ -593,7 +613,10 @@ export function PayerProvider({
      degrades gracefully — the offset stays 0 and the device's clock is used — so
      that one is logged and not shown. */
   useEffect(() => {
-    if (!address || !publicClient) return;
+    // `payCurrencyReady` too: until the stored preference has been read,
+    // `sendTokenAddress` is the DEFAULT rather than the payer's choice, and
+    // reading against it would answer in a token they do not pay in.
+    if (!address || !publicClient || !payCurrencyReady) return;
     let cancelled = false;
     void (async () => {
       const [rateResult, blockResult] = await Promise.allSettled([
@@ -625,7 +648,7 @@ export function PayerProvider({
   // Same reason as the balance read: the rate is per-token, so switching
   // currency has to re-read it or every S$ figure stays converted at the old
   // token's rate.
-  }, [address, publicClient, nonce, sendTokenAddress]);
+  }, [address, publicClient, nonce, sendTokenAddress, payCurrencyReady]);
 
   const chainNow = useCallback(
     () => Math.floor(Date.now() / 1000) + clockOffset,
