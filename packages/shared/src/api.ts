@@ -390,6 +390,9 @@ export interface ApiErrorBody {
 
 export interface FaucetRequest {
   address: Address;
+  /** Which payable token to grant. Omitted means USDC, so this stayed
+   * backwards compatible when EURC was added. */
+  token?: TokenId;
 }
 
 /**

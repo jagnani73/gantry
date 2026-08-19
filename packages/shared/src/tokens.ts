@@ -2,18 +2,24 @@ import type { Address } from "viem";
 import type { GantryAddresses } from "./addresses";
 
 /**
- * Two tokens, and the ids say which is which.
+ * Three tokens, and the ids say which is which.
  *
- * `USDC` is Circle's real testnet contract — payers really do sign EIP-3009
- * authorizations against it. There is no mock USD token: MockUSDC existed only
- * because it has an open mint, and funding a payer now means the relayer
- * *transferring* real USDC instead.
+ * `USDC` and `EURC` are Circle's real testnet contracts — payers really do sign
+ * EIP-3009 authorizations against them. There is no mock USD or EUR token:
+ * MockUSDC existed only because it has an open mint, and funding a payer now
+ * means the relayer *transferring* the real thing instead.
+ *
+ * TWO payable tokens is the point rather than an increment: it is what makes
+ * "any currency in, Singapore dollars out" a demonstrated property of `_settle`
+ * instead of a claim about a seam. Both are 6dp with a byte-identical
+ * `TRANSFER_WITH_AUTHORIZATION_TYPEHASH`, so the human door needed no new
+ * signing path — only the token it points at.
  *
  * `MockXSGD` is a mock and is named so it cannot be mistaken for anything else.
  * Real XSGD exists on no testnet — only on mainnet via StraitsX — so it is the
- * one thing here that cannot be un-mocked.
+ * one thing here that cannot be un-mocked, and it stays the ONLY mocked token.
  */
-export type TokenId = "USDC" | "MockXSGD";
+export type TokenId = "USDC" | "EURC" | "MockXSGD";
 
 /**
  * Fields of `GantryAddresses` that hold a TOKEN address.
@@ -22,7 +28,7 @@ export type TokenId = "USDC" | "MockXSGD";
  * at `gantryCore` or the factory, which are addresses of the same shape and
  * would fail only at settle time.
  */
-export type TokenAddressKey = "realUsdc" | "mockXsgd";
+export type TokenAddressKey = "realUsdc" | "realEurc" | "mockXsgd";
 
 export interface TokenInfo {
   id: TokenId;
@@ -56,6 +62,25 @@ export const TOKENS: Record<TokenId, TokenInfo> = {
     id: "USDC",
     addressKey: "realUsdc",
     eip712: { name: "USDC", version: "2" },
+    payable: true,
+  },
+  /**
+   * Circle EURC, and REAL — not a mock. Verified on Base Sepolia: 6 decimals,
+   * version "2", and a TRANSFER_WITH_AUTHORIZATION_TYPEHASH byte-identical to
+   * USDC's, which is why the payer's signing path needed no second branch.
+   *
+   * 6dp is mandatory, not incidental: FixedRateSwap divides by a literal 1e6 and
+   * the quote math hardcodes ONE = 1_000_000n, so a token with other decimals
+   * would silently misprice rather than fail.
+   *
+   * The swap must also LIST it (setRate) or a settlement reverts — listing is
+   * onlyOwner and independent of this table, so an entry here is necessary and
+   * not sufficient.
+   */
+  EURC: {
+    id: "EURC",
+    addressKey: "realEurc",
+    eip712: { name: "EURC", version: "2" },
     payable: true,
   },
   /**

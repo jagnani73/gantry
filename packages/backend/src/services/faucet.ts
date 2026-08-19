@@ -1,5 +1,5 @@
 import { erc20Abi, formatEther, type Address, type Hex } from "viem";
-import type { FaucetResponse } from "@gantry/shared";
+import { tokenAddress, type FaucetResponse, type TokenId } from "@gantry/shared";
 import { publicClient, relayerAccount } from "../chain";
 import { config } from "../config";
 import { ApiError } from "../errors";
@@ -82,9 +82,15 @@ const nothingSent = (): GasTopUpResult => ({ txHash: null, funded: "0" });
  * never throws on this path, which is what makes it reachable even when the
  * USDC leg is about to refuse.
  */
-export async function fundPayer(address: Address): Promise<FaucetGrantResponse> {
+export async function fundPayer(
+  address: Address,
+  /** Which of Circle's tokens to grant. The payer app asks for whichever
+   * currency the payer chose, so a payer paying in euros is funded in EURC
+   * rather than handed a balance they cannot spend. */
+  token: TokenId = "USDC",
+): Promise<FaucetGrantResponse> {
   const gas = await topUpGas(address, false);
-  const funded = await grantUsdc(address);
+  const funded = await grantToken(address, token);
   return { ...funded, gas };
 }
 
@@ -106,7 +112,7 @@ export function fundPayerGas(address: Address): Promise<GasTopUpResult> {
 
 // ------------------------------------------------------------------ USDC leg
 
-async function grantUsdc(address: Address): Promise<FaucetResponse> {
+async function grantToken(address: Address, token: TokenId): Promise<FaucetResponse> {
   const key = address.toLowerCase();
   const refusal = legs.usdc.claim(key, GRANT, Date.now());
   if (refusal) throw usdcRefusalError(refusal);
@@ -117,7 +123,10 @@ async function grantUsdc(address: Address): Promise<FaucetResponse> {
   // this bracket has to start here rather than at the transfer: an RPC failure
   // on a READ moves no funds, and used to burn 4 USDC of the ceiling anyway.
   try {
-    const usdc = config.addresses.realUsdc;
+    // ONE ceiling across tokens, deliberately. The scarce thing is the
+    // relayer's balance and the abuse surface is identical, so a per-token
+    // allowance would just double what a fresh address can drain.
+    const usdc = tokenAddress(config.addresses, token);
     const funderBalance = await publicClient.readContract({
       address: usdc,
       abi: erc20Abi,
@@ -130,7 +139,7 @@ async function grantUsdc(address: Address): Promise<FaucetResponse> {
       throw new ApiError(
         503,
         "FunderExhausted",
-        `the demo funder is out of USDC (holds ${funderBalance}, needs ${GRANT}). Top up ${relayerAccount.address}`,
+        `the demo funder is out of ${token} (holds ${funderBalance}, needs ${GRANT}). Top up ${relayerAccount.address}`,
       );
     }
 
@@ -224,7 +233,7 @@ async function topUpGas(address: Address, fatal: boolean): Promise<GasTopUpResul
   // would clear the in-flight marker of the request mid-transfer, letting a
   // third claim and send a second top-up before the first arms its cooldown —
   // repeatable, against the relayer's only gas key, which pays for every door.
-  // `grantUsdc` avoids this by claiming before its try; this leg has to read a
+  // `grantToken` avoids this by claiming before its try; this leg has to read a
   // balance first to know the amount, so it tracks ownership instead.
   let claimed = false;
   try {

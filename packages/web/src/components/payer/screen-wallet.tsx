@@ -10,7 +10,6 @@ import { placesPaid } from "./activity";
 import { formatRate, sgdUnits } from "./format";
 import { MerchantTile } from "./merchant-tile";
 import { usePayer } from "./payer-context";
-import { PriceReference } from "./price-reference";
 
 /**
  * The payer's home: what they can spend, the way in, and where their money has
@@ -33,6 +32,7 @@ export function WalletScreen() {
     merchant,
     refreshBalance,
     pushOverlay,
+    sendToken,
   } = usePayer();
   const toast = useToast();
   const [toppingUp, setToppingUp] = useState(false);
@@ -54,7 +54,7 @@ export function WalletScreen() {
     setTopUpNote(null);
     setToppingUp(true);
     try {
-      const granted = await api.faucet(identity.address);
+      const granted = await api.faucet(identity.address, sendToken);
       // `expectChange`: the transfer is mined by the time this resolves, but the
       // replica answering the next read can still be behind it. Without this the
       // figure stayed put and the whole action looked like it did nothing.
@@ -62,7 +62,7 @@ export function WalletScreen() {
       // Say what arrived, not just that something did. The balance is at the top
       // of a screen the payer may have scrolled past, so the confirmation has to
       // carry the amount itself.
-      const added = `Added ${formatUnits6(BigInt(granted.funded), 2)} USDC`;
+      const added = `Added ${formatUnits6(BigInt(granted.funded), 2)} ${sendToken}`;
       const gas = granted.gas?.error;
       if (gas) {
         // The USDC landed and the ETH leg did not. The route reports that leg
@@ -115,26 +115,19 @@ export function WalletScreen() {
             units={balance}
             dp={2}
             prefix={null}
-            suffix="USDC"
+            suffix={sendToken}
             size="balance"
             tone="on-accent"
             className="mt-3"
           />
         )}
-        {/* The balance in the payer's chosen currency. Gated on a resolved rate
-            because the S$ figure above is itself a conversion — without a rate
-            it falls back to raw USDC, and restating that in rupees would be a
-            conversion of a conversion nobody could check. */}
-        {balance !== null && rate ? (
-          <PriceReference xsgdUnits={sgdUnits(balance, rate)} tone="on-accent" />
-        ) : null}
         <div className="mt-3 flex items-center justify-between gap-3">
           {/* Four answers: read, no payer to read for, the read FAILED, and not
               yet. Collapsing the last two left "reading balance…" on screen for
               as long as the app stayed open. */}
           <Mono size="sm" className="text-on-accent-muted">
             {balance !== null
-              ? `${formatUnits6(balance, 6)} USDC`
+              ? `${formatUnits6(balance, 6)} ${sendToken}`
               : noWallet
                 ? "no wallet"
                 : balanceError
@@ -156,14 +149,14 @@ export function WalletScreen() {
             on FixedRateSwap and nothing arbitrages it. */}
         {rate ? (
           <p className="mt-2.5 text-fine text-on-accent-muted">
-            at the demo rate · 1 USDC = {formatRate(rate)} XSGD, set by the swap&apos;s owner
+            at the demo rate · 1 {sendToken} = {formatRate(rate)} XSGD, set by the swap&apos;s owner
           </p>
         ) : rateError ? (
           // Without the rate every S$ figure in the app silently becomes USDC.
           // Say which one is on screen rather than letting the units change
           // underneath the same layout.
           <p className="mt-2.5 text-fine text-on-accent-muted">
-            showing USDC: the swap&apos;s rate could not be read, so no S$ conversion is shown
+            showing {sendToken}: the swap&apos;s rate could not be read, so no S$ conversion is shown
           </p>
         ) : null}
       </Card>

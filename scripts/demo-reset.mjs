@@ -271,6 +271,7 @@ const brief = (value, max = 140) => {
 };
 const why = (res, body) => (res ? `${res.status}: ${brief(body)}` : brief(body));
 const usd = (units) => `${Number(formatUnits(BigInt(units), 6)).toFixed(2)} USDC`;
+const eur = (units) => `${Number(formatUnits(BigInt(units), 6)).toFixed(2)} EURC`;
 
 // 1. Funder: reports ETH/USDC/WETH and swaps ETH for USDC when USDC runs low.
 //    First, because every step below spends what it holds.
@@ -321,6 +322,17 @@ async function payerBalances() {
   return { eth, usdc };
 }
 
+/** Enough for one euro-denominated payment at the demo cap. */
+const PAYER_EURC_FLOOR = 3_000_000n;
+
+const eurcBalanceOf = (address) =>
+  publicClient.readContract({
+    address: BASE_SEPOLIA_ADDRESSES.realEurc,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: [address],
+  });
+
 let payerLine;
 {
   let unreadable = null;
@@ -351,6 +363,42 @@ let payerLine;
     payerLine =
       `payer    ${payer.address}  ${usd(balances.usdc)} · ${Number(formatEther(balances.eth)).toFixed(4)} ETH` +
       (faucet === null ? "" : ` (${faucet})`);
+  }
+}
+
+/**
+ * The euro half of "any currency in".
+ *
+ * Reported but never `degraded`: the demo spine is the USDC path and it is
+ * unaffected by an empty EURC balance. What must not happen is silence — a
+ * presenter switching the payer app to euros and discovering an empty wallet
+ * mid-demo is exactly the failure this line exists to pre-empt.
+ *
+ * The relayer is the source (the faucet transfers, it cannot mint Circle's
+ * token), so a shortfall here is a human errand: fund the relayer from Circle's
+ * faucet at https://faucet.circle.com.
+ */
+let eurcLine;
+{
+  try {
+    const [payerEurc, relayerEurc] = await Promise.all([
+      eurcBalanceOf(payer.address),
+      eurcBalanceOf(BASE_SEPOLIA_RELAYER),
+    ]);
+    let topped = null;
+    if (payerEurc < PAYER_EURC_FLOOR && relayerEurc >= PAYER_EURC_FLOOR) {
+      const { res, body } = await post("/api/faucet", { address: payer.address, token: "EURC" });
+      topped = res?.ok && body ? `faucet +${eur(body.funded)}` : `faucet ${why(res, body)}`;
+    }
+    const after = await eurcBalanceOf(payer.address);
+    eurcLine =
+      after >= PAYER_EURC_FLOOR
+        ? `payer    ${eur(after)} for the euro beat${topped === null ? "" : ` (${topped})`}`
+        : `⚠ payer   ${eur(after)} — the euro beat needs ${eur(PAYER_EURC_FLOOR)}. ` +
+          `Relayer holds ${eur(relayerEurc)}; top it up at https://faucet.circle.com. ` +
+          `The USDC path is unaffected.`;
+  } catch (err) {
+    eurcLine = `⚠ payer   EURC balance unreadable (${brief(err instanceof Error ? err.message : String(err))})`;
   }
 }
 
@@ -695,6 +743,7 @@ if (!finalHealth) {
 
 console.log(`${mark(indexerLine)}
 ${mark(payerLine)}
+${mark(eurcLine)}
 ${mark(profileLine)}
 ${mark(walletLine)}${signerLine ? `\n${signerLine}` : ""}
 ${mark(gadgetLine)}

@@ -98,18 +98,22 @@ export const DISPLAY_CURRENCIES: Record<DisplayCurrencyCode, DisplayCurrency> = 
     settleable: true,
   },
   /**
-   * Indicative TODAY, and structurally ready to stop being so. Listing a EURC
-   * rate on `FixedRateSwap` and adding the token to `TOKENS` is all that stands
-   * between this and `{ kind: "onchain", token: "EURC" }` — the swap's `rateOf`
-   * is an open mapping and `GantryCore` holds no token allowlist, so that is an
-   * owner transaction rather than a redeploy.
+   * REAL since 19 Aug 2026. Circle's EURC is listed on `FixedRateSwap` at an
+   * owner-set 1.510000 XSGD per EURC (tx `0x6aded10d…`), so a payer choosing
+   * euros signs an EIP-3009 authorization against Circle's own contract and the
+   * hawker is still paid in XSGD. It took one owner transaction and no
+   * redeploy — `rateOf` is an open mapping and `GantryCore` holds no token
+   * allowlist, which is exactly the seam the design claimed.
+   *
+   * No mock was involved, and that matters: MockXSGD stays the only mocked
+   * token in the system.
    */
   EUR: {
     code: "EUR",
     symbol: "€",
     label: "Euro",
-    source: { kind: "indicative", perSgd: 700_000n },
-    settleable: false,
+    source: { kind: "onchain", token: "EURC" },
+    settleable: true,
   },
   /**
    * Indicative and likely to stay so: there is no INR stablecoin on Base
@@ -181,14 +185,39 @@ export function isExact(currency: DisplayCurrency): boolean {
 }
 
 /**
- * Which token a payer's authorization will actually name, whatever currency
- * they are reading in.
+ * Which token a payer's authorization will actually name.
  *
- * Always USDC today. Exposed as a function rather than a constant so the day a
- * second token is listed, the screens that promise "you will send X" change
- * with the token table instead of being found by grep.
+ * Two answers since EURC was listed, which is the whole feature: choosing euros
+ * changes the token on the signature, the balance the wallet reads and the
+ * asset the intent is quoted in. USDC is the fallback for any currency that is
+ * not settleable, because a preview must still leave the payer able to pay.
  */
 export function settlementSendToken(currency: DisplayCurrency): TokenId {
   const token = currencyToken(currency);
   return currency.settleable && token !== null ? token : "USDC";
 }
+
+/**
+ * The currencies a payer may actually PAY in — the picker's live options.
+ *
+ * Derived from `settleable` rather than listed, so a currency cannot appear as
+ * a way to pay by being typed into a component. SGD is absent by construction
+ * and that is correct: it is the OUTPUT, `GantryCore.XSGD` is immutable, and
+ * the settlement token is deliberately non-payable.
+ */
+export const PAYABLE_CURRENCY_CODES = DISPLAY_CURRENCY_CODES.filter(
+  (code) => DISPLAY_CURRENCIES[code].settleable,
+);
+
+/**
+ * What the payer's settings screen offers, in order: every currency that can be
+ * sent, then the ones that cannot — which are shown LOCKED rather than hidden.
+ *
+ * Hiding them would be tidier and less honest. "Any currency in" is the claim,
+ * and a reader deserves to see both which currencies that is true of today and
+ * which are coming, rather than a list that quietly implies the set is closed.
+ */
+export const SEND_CURRENCY_OPTIONS: readonly { code: DisplayCurrencyCode; locked: boolean }[] =
+  DISPLAY_CURRENCY_CODES.filter((code) => code !== "SGD")
+    .map((code) => ({ code, locked: !DISPLAY_CURRENCIES[code].settleable }))
+    .sort((a, b) => Number(a.locked) - Number(b.locked));

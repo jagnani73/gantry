@@ -29,7 +29,14 @@ const SettleSchema = z.object({
   validBefore: z.string().regex(/^\d+$/).optional(),
 });
 
-const FaucetSchema = z.object({ address: hexAddress });
+/** `token` is optional and defaults to USDC, so an older client that omits it
+ * behaves exactly as before. Constrained to the PAYABLE set from the same
+ * source the intent schema uses — the faucet must never hand out a token a
+ * payer cannot then spend. */
+const FaucetSchema = z.object({
+  address: hexAddress,
+  token: z.enum(PAYABLE_TOKEN_IDS).optional(),
+});
 
 /** Each call costs the relayer one createIntent tx on the shared nonce queue. */
 const createGuard = inFlightGuard(
@@ -68,7 +75,7 @@ intentsRouter.post("/api/intents/:intentId/requote", async (req, res) => {
 
 intentsRouter.post("/api/faucet", async (req, res) => {
   const body = FaucetSchema.parse(req.body);
-  res.json(await fundPayer(body.address as `0x${string}`));
+  res.json(await fundPayer(body.address as `0x${string}`, body.token));
 });
 
 /**

@@ -17,12 +17,15 @@ import {
   DISPLAY_CURRENCIES,
   fixedRateSwapAbi,
   isDisplayCurrencyCode,
+  settlementSendToken,
+  tokenAddress,
   type AgentSummary,
   type DenialEvent,
   type DisplayCurrency,
   type DisplayCurrencyCode,
   type MerchantResponse,
   type SettlementEvent,
+  type TokenId,
 } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
 import { toActivityRows, type ActivityRow } from "./activity";
@@ -83,28 +86,36 @@ export interface PayerStore {
   /** Settlements and refusals merged, newest first. */
   rows: ActivityRow[];
 
-  /** Payer's USDC balance in 6dp units; null until the read lands. */
+  /** Payer's balance of `sendToken` in 6dp units; null until the read lands.
+   * Follows the pay currency, so switching to euros re-reads EURC. */
   balance: bigint | null;
   /** Non-null when the balance READ failed, which is not the same as "not yet"
    * — a screen showing "reading balance…" off `balance === null` alone spins
    * forever on a dead RPC. */
   balanceError: string | null;
-  /** OWNER-SET XSGD-per-USDC rate from FixedRateSwap; null if the read failed —
-   * in which case no S$ conversion may be rendered at all. */
+  /** OWNER-SET XSGD-per-`sendToken` rate from FixedRateSwap; null if the read
+   * failed — in which case no S$ conversion may be rendered at all. It is the
+   * rate for the CHOSEN token, so it changes with the pay currency. */
   rate: bigint | null;
   /** Non-null when the rate READ failed. Every S$ figure in the app is this
-   * conversion, so a silent failure quietly restates the whole product in USDC. */
+   * conversion, so a silent failure quietly restates the whole product in the
+   * pay token. */
   rateError: string | null;
   /**
-   * The currency the payer READS prices in — never what the merchant receives.
+   * The currency the payer PAYS IN — never what the merchant receives.
    *
    * A shop is always paid XSGD: `GantryCore`'s XSGD is `immutable`, so the
-   * settlement asset cannot differ by screen or by payer. This selects a
-   * reference figure rendered BESIDE the price, and `isExact` says whether that
-   * figure is the rate the contract will enforce or a constant we chose.
+   * settlement asset cannot differ by screen or by payer. What this changes is
+   * the payer's side of the trade: the token on the authorization, the balance
+   * read, and the asset the intent is quoted in.
+   *
+   * Only ever a settleable currency. `setPayCurrency` refuses anything else, so
+   * consumers may assume `sendToken` names a token that exists and is payable.
    */
-  displayCurrency: DisplayCurrency;
-  setDisplayCurrency(code: DisplayCurrencyCode): void;
+  payCurrency: DisplayCurrency;
+  setPayCurrency(code: DisplayCurrencyCode): void;
+  /** The token `payCurrency` resolves to — what a signature will name. */
+  sendToken: TokenId;
   /**
    * Whether a balance change this app just caused has actually shown up.
    *
@@ -215,7 +226,10 @@ const BALANCE_POLL_ATTEMPTS = 8;
 const BALANCE_POLL_MS = 1_500;
 
 /** Namespaced like the other payer preferences so one origin can hold several. */
-const DISPLAY_CURRENCY_KEY = "gantry.displayCurrency";
+/** New key on purpose: the preference used to choose a display symbol and now
+ * chooses the token a payer signs, so a value stored under the old meaning must
+ * not be silently reinterpreted as a payment instruction. */
+const PAY_CURRENCY_KEY = "gantry.payCurrency";
 
 export type BalanceWatch = "idle" | "watching" | "unconfirmed";
 
@@ -246,18 +260,22 @@ export function PayerProvider({
   const [rate, setRate] = useState<bigint | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
   /**
-   * Which currency the payer READS prices in. Lives here rather than in each
+   * Which currency the payer PAYS IN — no longer merely what they read.
+   *
+   * It now decides the token on the authorization they sign, the balance the
+   * wallet reads and the asset the intent is quoted in, so it is the closest
+   * thing this app has to an account setting. Lives here rather than in each
    * screen because the settings sheet and the pay overlay are mounted at the
    * same time — two useState copies would let a payer change it in one and
-   * watch the other keep the old symbol, which is the same divergence the
+   * watch the other sign in the old token, which is the same divergence the
    * signer preference reloads the page to avoid.
    *
-   * Starts at SGD on both sides of hydration; the stored value is read in an
-   * effect because the server cannot know it. A payer who chose rupees sees one
-   * frame of Singapore dollars, which is a settlement figure and never wrong —
-   * only less useful to them.
+   * Constrained to PAYABLE currencies, which is what makes the rest of the app
+   * able to assume `sendToken` exists. Starts at USD on both sides of hydration
+   * and the stored value is read in an effect, because the server cannot know
+   * it: a payer who chose euros sees one frame of dollars.
    */
-  const [displayCurrencyCode, setDisplayCurrencyCode] = useState<DisplayCurrencyCode>("SGD");
+  const [payCurrencyCode, setPayCurrencyCode] = useState<DisplayCurrencyCode>("USD");
   const [balanceWatch, setBalanceWatch] = useState<BalanceWatch>("idle");
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
@@ -269,31 +287,43 @@ export function PayerProvider({
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(DISPLAY_CURRENCY_KEY);
-      // Validated rather than cast: the key is user-writable and a stale or
-      // hand-edited value must fall back to the settlement currency, not index
-      // the table with undefined and blank every price in the app.
-      if (stored !== null && isDisplayCurrencyCode(stored)) setDisplayCurrencyCode(stored);
+      const stored = window.localStorage.getItem(PAY_CURRENCY_KEY);
+      // Validated AND checked for payability, not merely cast. The key is
+      // user-writable, and a value that is a real currency but not a payable one
+      // — a stale "SGD" or "INR" from when this preference only chose a display
+      // symbol — would resolve to a token nothing can settle and strand the
+      // payer on a signing screen. Anything unusable falls back to the default.
+      if (stored !== null && isDisplayCurrencyCode(stored) && DISPLAY_CURRENCIES[stored].settleable) {
+        setPayCurrencyCode(stored);
+      }
     } catch (err) {
       // Touching `window.localStorage` at all throws SecurityError when site
       // data is blocked. Unguarded that propagates out of the provider and takes
       // down the whole payer app over a currency symbol.
-      console.warn("gantry: display currency preference could not be read", err);
+      console.warn("gantry: pay currency preference could not be read", err);
     }
   }, []);
 
-  const setDisplayCurrency = useCallback((code: DisplayCurrencyCode) => {
-    setDisplayCurrencyCode(code);
+  const setPayCurrency = useCallback((code: DisplayCurrencyCode) => {
+    // Refuses silently rather than throwing: the caller is a button, and the
+    // locked options are already unclickable. This is the second gate, so a
+    // future screen cannot make an unsendable currency current by wiring a
+    // handler to it.
+    if (!DISPLAY_CURRENCIES[code].settleable) return;
+    setPayCurrencyCode(code);
     try {
-      window.localStorage.setItem(DISPLAY_CURRENCY_KEY, code);
+      window.localStorage.setItem(PAY_CURRENCY_KEY, code);
     } catch (err) {
       // The selection has already applied, so this only means it will not
       // survive a reload. Better a preference that forgets than a crash.
-      console.warn("gantry: display currency preference could not be saved", err);
+      console.warn("gantry: pay currency preference could not be saved", err);
     }
   }, []);
 
-  const displayCurrency = DISPLAY_CURRENCIES[displayCurrencyCode];
+  const payCurrency = DISPLAY_CURRENCIES[payCurrencyCode];
+  /** The token every read and every signature below follows. */
+  const sendToken = settlementSendToken(payCurrency);
+  const sendTokenAddress = tokenAddress(BASE_SEPOLIA_ADDRESSES, sendToken);
 
   // Overlays are a stack so "receipt → about this shop → back" lands on the
   // receipt rather than dumping the payer onto a tab they never chose.
@@ -524,7 +554,7 @@ export function PayerProvider({
     void (async () => {
       try {
         const next = await publicClient.readContract({
-          address: BASE_SEPOLIA_ADDRESSES.realUsdc,
+          address: sendTokenAddress,
           abi: erc20Abi,
           functionName: "balanceOf",
           args: [address],
@@ -546,7 +576,10 @@ export function PayerProvider({
     return () => {
       cancelled = true;
     };
-  }, [address, publicClient, balanceNonce, nonce]);
+  // sendTokenAddress is load-bearing here, not incidental: without it a payer
+  // who switches to euros keeps reading their USDC balance, and the figure on
+  // the wallet screen would describe a token they are no longer paying in.
+  }, [address, publicClient, balanceNonce, nonce, sendTokenAddress]);
 
   /* ── The rate and the chain's clock ─────────────────────────────────────
      The rate is read live rather than taken from the seeded constant: it is
@@ -568,7 +601,7 @@ export function PayerProvider({
           address: BASE_SEPOLIA_ADDRESSES.fixedRateSwap,
           abi: fixedRateSwapAbi,
           functionName: "rateOf",
-          args: [BASE_SEPOLIA_ADDRESSES.realUsdc],
+          args: [sendTokenAddress],
         }),
         publicClient.getBlock(),
       ]);
@@ -589,7 +622,10 @@ export function PayerProvider({
     return () => {
       cancelled = true;
     };
-  }, [address, publicClient, nonce]);
+  // Same reason as the balance read: the rate is per-token, so switching
+  // currency has to re-read it or every S$ figure stays converted at the old
+  // token's rate.
+  }, [address, publicClient, nonce, sendTokenAddress]);
 
   const chainNow = useCallback(
     () => Math.floor(Date.now() / 1000) + clockOffset,
@@ -727,8 +763,9 @@ export function PayerProvider({
       balanceError,
       rate,
       rateError,
-      displayCurrency,
-      setDisplayCurrency,
+      payCurrency,
+      setPayCurrency,
+      sendToken,
       balanceWatch,
       chainNow,
       merchant,
@@ -762,8 +799,9 @@ export function PayerProvider({
       balanceError,
       rate,
       rateError,
-      displayCurrency,
-      setDisplayCurrency,
+      payCurrency,
+      setPayCurrency,
+      sendToken,
       balanceWatch,
       chainNow,
       merchant,

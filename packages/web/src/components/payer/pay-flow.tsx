@@ -24,7 +24,6 @@ import { AmountKeypad, isAmountShape, isValidAmount } from "./amount-keypad";
 import { formatRate } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
-import { PriceReference } from "./price-reference";
 
 /**
  * The demo spine: scan → amount → review → paid.
@@ -159,6 +158,7 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
     refreshBalance,
     closeOverlays,
     replaceOverlay,
+    sendToken,
   } = usePayer();
 
   const [step, setStep] = useState<Step>({ name: "entry" });
@@ -268,13 +268,16 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
       const intent = await api.createIntent({
         handle,
         xsgdAmount: parseSgd(amount).toString(),
-        token: "USDC",
+        // The payer's choice, not a constant. The backend quotes in this token
+        // and returns the EIP-712 domain for it, so the signature below names
+        // whichever of Circle's tokens they picked without a second branch.
+        token: sendToken,
       });
       setStep({ name: "review", intent });
     } catch (err) {
       fail(null, null, err);
     }
-  }, [amount, handle, fail]);
+  }, [amount, handle, fail, sendToken]);
 
   const requote = useCallback(
     async (old: IntentResponse) => {
@@ -630,7 +633,6 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
             {/* Beside the price, never instead of it. The Singapore figure is
                 what the shop charges and what it receives; this is a reading
                 aid for a payer who does not think in dollars. */}
-            <PriceReference xsgdUnits={BigInt(intent.xsgdAmount)} tone="on-accent" />
             <p className="mt-3.5 text-body-sm text-on-accent-body">{title}</p>
           </Card>
 
@@ -741,7 +743,7 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
               {overCap
                 ? `The demo wallet caps one payment at S$${max}`
                 : estimate
-                  ? `≈ ${estimate} USDC at the demo rate`
+                  ? `≈ ${estimate} ${sendToken} at the demo rate`
                   : valid
                     ? "Rate locks when you continue"
                     : "Enter an amount"}
@@ -749,7 +751,6 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
             {/* Only once the amount parses — the keypad is mid-edit the rest of
                 the time, and a reference figure that flickers per keystroke is
                 noise rather than help. */}
-            {valid ? <PriceReference xsgdUnits={parseSgd(amount)} className="mt-0" /> : null}
             {lookupFailed ? (
               <p className="mt-3 max-w-[34ch] px-8 text-center text-fine text-faint">
                 We couldn&apos;t look this shop up ({lookupFailed}).{" "}

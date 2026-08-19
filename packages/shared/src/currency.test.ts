@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DISPLAY_CURRENCIES,
+  PAYABLE_CURRENCY_CODES,
+  SEND_CURRENCY_OPTIONS,
   DISPLAY_CURRENCY_CODES,
   currencyToken,
   isDisplayCurrencyCode,
@@ -50,14 +52,16 @@ test("indicative conversion is the round rate, applied exactly", () => {
   assert.equal(referenceAmount(1_000_000n, INR, null), 65_000_000n); // S$1 → ₹65
   assert.equal(referenceAmount(1_500_000n, INR, null), 97_500_000n); // S$1.50 → ₹97.50
   assert.equal(referenceAmount(4_500_000n, INR, null), 292_500_000n); // the agent basket
-  assert.equal(referenceAmount(1_000_000n, EUR, null), 700_000n); // S$1 → €0.70
 });
 
 test("rounds half-up rather than truncating", () => {
-  // 3 XSGD units at 0.70 = 2.1 units. Truncation gives 2; half-up gives 2.
-  assert.equal(referenceAmount(3n, EUR, null), 2n);
-  // 5 units at 0.70 = 3.5 → 4 under half-up, 3 under truncation.
-  assert.equal(referenceAmount(5n, EUR, null), 4n);
+  // INR at 65.00 per XSGD, the last indicative currency. 1 unit = 65; the
+  // interesting cases are the halves.
+  // 1 XSGD unit at 65 = 65 exactly.
+  assert.equal(referenceAmount(1n, INR, null), 65n);
+  // A half lands up rather than being truncated away.
+  assert.equal(referenceAmount(1n, { ...INR, source: { kind: "indicative", perSgd: 1_500_000n } }, null), 2n);
+  assert.equal(referenceAmount(1n, { ...INR, source: { kind: "indicative", perSgd: 400_000n } }, null), 0n);
 });
 
 test("zero is representable; negative input is refused", () => {
@@ -71,10 +75,11 @@ test("provenance is derivable and honest for every currency", () => {
   // and exactly the on-chain ones name a token.
   assert.equal(isExact(SGD), true);
   assert.equal(isExact(USD), true);
-  assert.equal(isExact(EUR), false);
+  assert.equal(isExact(EUR), true, "EUR is on-chain since EURC was listed");
   assert.equal(isExact(INR), false);
 
   assert.equal(currencyToken(USD), "USDC");
+  assert.equal(currencyToken(EUR), "EURC");
   assert.equal(currencyToken(SGD), null);
   assert.equal(currencyToken(INR), null);
 });
@@ -101,12 +106,15 @@ test("the code table is self-consistent", () => {
   assert.equal(isDisplayCurrencyCode(""), false);
 });
 
-test("exactly one currency is settleable today, and it is USD", () => {
-  // The fact every "you will send X" line on the payer app depends on. If a
-  // second token is ever listed this test fails, which is the point: the copy
-  // promising USDC has to be revisited in the same change.
+test("the settleable set is USD and EUR, and every entry is a real token", () => {
+  // Every "you will send X" line on the payer app depends on this. It is pinned
+  // as an explicit list rather than a count so that listing a third token is a
+  // deliberate edit here, in the same change as the copy it invalidates.
   const settleable = DISPLAY_CURRENCY_CODES.filter((c) => DISPLAY_CURRENCIES[c].settleable);
-  assert.deepEqual(settleable, ["USD"]);
+  assert.deepEqual(settleable, ["USD", "EUR"]);
+  // Neither is a mock. MockXSGD stays the only mocked token in the system, and
+  // that sentence is load-bearing in the project's honest-labels list.
+  assert.deepEqual(settleable.map((c) => currencyToken(DISPLAY_CURRENCIES[c])), ["USDC", "EURC"]);
 });
 
 test("a settleable currency must name a payable token", () => {
@@ -126,14 +134,14 @@ test("SGD is never settleable — the settlement token has an open mint", () => 
   assert.equal(TOKENS.MockXSGD.payable, false);
 });
 
-test("the send token is USDC for every currency until another is listed", () => {
-  for (const code of DISPLAY_CURRENCY_CODES) {
-    assert.equal(
-      settlementSendToken(DISPLAY_CURRENCIES[code]),
-      "USDC",
-      `${code} promised a send token other than USDC`,
-    );
-  }
+test("the send token follows the currency, and falls back for a preview", () => {
+  // The feature in one assertion: choosing euros changes the token on the
+  // signature. A currency that cannot be sent must still leave the payer able
+  // to pay, so it falls back rather than resolving to nothing.
+  assert.equal(settlementSendToken(USD), "USDC");
+  assert.equal(settlementSendToken(EUR), "EURC");
+  assert.equal(settlementSendToken(INR), "USDC", "a preview still sends the default");
+  assert.equal(settlementSendToken(SGD), "USDC", "the output currency is not a way to pay");
 });
 
 test("SGD is the only settlement currency", () => {
@@ -143,4 +151,35 @@ test("SGD is the only settlement currency", () => {
     (c) => DISPLAY_CURRENCIES[c].source.kind === "settlement",
   );
   assert.deepEqual(settlement, ["SGD"]);
+});
+
+test("the picker offers what can be sent, and locks the rest rather than hiding it", () => {
+  // "Any currency in" is the claim, so a reader deserves to see which
+  // currencies that is true of today AND which are coming. Hiding the locked
+  // ones would be tidier and would quietly imply the set is closed.
+  assert.deepEqual(
+    SEND_CURRENCY_OPTIONS.map((o) => `${o.code}${o.locked ? " (locked)" : ""}`),
+    ["USD", "EUR", "INR (locked)"],
+  );
+});
+
+test("SGD is never offered as a way to pay", () => {
+  // It is the OUTPUT. GantryCore.XSGD is immutable and the settlement token is
+  // non-payable, so offering it would be a button that cannot work.
+  assert.ok(!SEND_CURRENCY_OPTIONS.some((o) => o.code === "SGD"));
+  assert.ok(!PAYABLE_CURRENCY_CODES.includes("SGD"));
+});
+
+test("every offered live option is genuinely settleable", () => {
+  // The picker's unlocked entries and the settleable flag cannot drift: an
+  // unlocked currency that is not settleable would take a payer to a signing
+  // screen for a token no swap will accept.
+  for (const option of SEND_CURRENCY_OPTIONS) {
+    assert.equal(
+      DISPLAY_CURRENCIES[option.code].settleable,
+      !option.locked,
+      `${option.code} is offered as ${option.locked ? "locked" : "live"} but settleable says otherwise`,
+    );
+  }
+  assert.deepEqual([...PAYABLE_CURRENCY_CODES], ["USD", "EUR"]);
 });

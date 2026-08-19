@@ -6,12 +6,12 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
   BASE_SEPOLIA_ADDRESSES,
   DISPLAY_CURRENCIES,
-  DISPLAY_CURRENCY_CODES,
+  SEND_CURRENCY_OPTIONS,
   basescanAddress,
   settlementSendToken,
   shortAddress,
 } from "@gantry/shared";
-import { Card, KeyValue, KeyValueList, Mono } from "@/components/primitives";
+import { Card, KeyValue, KeyValueList, Mono, useToast } from "@/components/primitives";
 import { switchSigner, type SignerPreference } from "@/lib/payer-signer";
 import { cn } from "@/lib/utils";
 import { formatRate } from "./format";
@@ -25,7 +25,8 @@ import { usePayer } from "./payer-context";
  * on no testnet at all. Both facts belong on the screen that explains the wallet.
  */
 export function SettingsScreen() {
-  const { identity, rate, displayCurrency, setDisplayCurrency } = usePayer();
+  const { identity, rate, payCurrency, setPayCurrency, sendToken } = usePayer();
+  const toast = useToast();
   /** `switchSigner` throws only when storage is blocked, in which case the
    * reload never happens and this is the only thing that would say so. */
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -115,66 +116,60 @@ export function SettingsScreen() {
       <Card radius="card-m" pad="m" className="mt-3">
         <div className="text-card-title-xs">Currency you pay in</div>
         <p className="mt-2 text-fine text-faint">
-          Every price in the app switches to this.
+          Changes the token you sign for and the balance below. The shop is paid in Singapore
+          dollars either way.
         </p>
         <div className="mt-3.5 flex flex-wrap gap-2">
-          {DISPLAY_CURRENCY_CODES.map((code) => {
+          {SEND_CURRENCY_OPTIONS.map(({ code, locked }) => {
             const option = DISPLAY_CURRENCIES[code];
-            const active = option.code === displayCurrency.code;
-            /* Each option carries its own state, because they are genuinely
-               different things and a row of identical buttons would imply they
-               are not. USD is the one you can actually send; SGD is the shop's
-               own price; the rest restate a price you still pay in USDC. */
-            const status = option.settleable
-              ? "live"
-              : option.source.kind === "settlement"
-                ? "shop price"
-                : "preview";
+            const active = !locked && code === payCurrency.code;
             return (
               <button
                 key={code}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setDisplayCurrency(code)}
+                // Locked options stay in the tab order and announce themselves
+                // rather than being `disabled`: a disabled control tells a
+                // screen reader nothing about WHY, and "coming soon" is the
+                // whole message. The toast is the answer to the tap.
+                aria-disabled={locked}
+                onClick={() =>
+                  locked
+                    ? toast.info(`Paying in ${option.label} is coming soon.`)
+                    : setPayCurrency(code)
+                }
                 className={cn(
                   "focus-ring flex h-13 min-w-22 flex-col items-start justify-center rounded-control px-3.5 transition-colors",
-                  active
-                    ? "bg-ink text-paper"
-                    : "bg-fill-subtle text-muted hover:bg-fill-hover hover:text-ink",
+                  locked
+                    ? "cursor-not-allowed bg-fill-subtle text-faint"
+                    : active
+                      ? "bg-ink text-paper"
+                      : "bg-fill-subtle text-muted hover:bg-fill-hover hover:text-ink",
                 )}
               >
                 <span className="text-btn-sm font-medium">
                   {option.symbol} {code}
                 </span>
                 <span className={cn("text-fine", active ? "text-paper/70" : "text-faint")}>
-                  {status}
+                  {locked ? "coming soon" : `sends ${settlementSendToken(option)}`}
                 </span>
               </button>
             );
           })}
         </div>
         <p className="mt-3.5 text-fine text-faint">
-          {/* The one sentence that has to survive any rewrite of this card: a
-              preview currency changes the reading and not the payment. */}
-          {displayCurrency.settleable ? (
-            <>You send {settlementSendToken(displayCurrency)} — the rate is the on-chain swap rate.</>
-          ) : displayCurrency.source.kind === "settlement" ? (
-            <>Singapore dollars is what the shop charges and receives.</>
-          ) : (
-            <>
-              Paying in {displayCurrency.label.toLowerCase()} is{" "}
-              <strong className="font-medium text-muted">coming soon</strong>. Prices show in{" "}
-              {displayCurrency.code} at an indicative rate; you still send{" "}
-              {settlementSendToken(displayCurrency)} today.
-            </>
-          )}
+          {/* Names the real contract, because that is the claim: a payer signing
+              in euros is authorising Circle's own EURC, not a Gantry mock. */}
+          You sign an authorization for {settlementSendToken(payCurrency)} — Circle&apos;s own
+          token — and the swap converts it to XSGD inside the settlement transaction, at the
+          owner-set rate.
         </p>
       </Card>
 
       <Card radius="card-m" pad="none" className="mt-3 px-5 py-2">
         <KeyValueList>
           <KeyValue label="Network">Base Sepolia</KeyValue>
-          <KeyValue label="You pay in">USDC</KeyValue>
+          <KeyValue label="You pay in">{sendToken}</KeyValue>
           <KeyValue label="Shop is paid in">
             <span className="inline-flex items-center gap-2">
               XSGD
@@ -183,7 +178,9 @@ export function SettingsScreen() {
               </Mono>
             </span>
           </KeyValue>
-          <KeyValue label="Rate">{rate ? `1 USDC = ${formatRate(rate)}` : "unavailable"}</KeyValue>
+          <KeyValue label="Rate">
+            {rate ? `1 ${sendToken} = ${formatRate(rate)} XSGD` : "unavailable"}
+          </KeyValue>
           <KeyValue label="Receipts">On-chain</KeyValue>
           <KeyValue label="Settlement" divider={false}>
             <a
@@ -199,8 +196,9 @@ export function SettingsScreen() {
       </Card>
 
       <p className="mt-5 px-1 text-fine text-faint">
-        Payments settle in real Circle USDC on Base Sepolia: you sign an EIP-3009 authorization
-        against Circle&apos;s own contract. The payout is in XSGD, which here is a testnet mock
+        Payments settle in real Circle stablecoins on Base Sepolia — USDC or EURC, whichever you
+        chose — and you sign an EIP-3009 authorization against Circle&apos;s own contract either
+        way. Neither is a mock. The payout is in XSGD, which here is a testnet mock
         because XSGD exists on no testnet. The FX rate is set by the swap&apos;s owner, not sourced
         from a market. The shop&apos;s currency is marked fixed rather than unbuilt: the settlement
         token is immutable on the contract, so it cannot differ by shop, by payer or by screen.

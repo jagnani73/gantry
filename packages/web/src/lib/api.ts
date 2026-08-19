@@ -1,4 +1,5 @@
 import type {
+  TokenId,
   AgentListResponse,
   AgentSummary,
   ApiErrorBody,
@@ -111,8 +112,13 @@ export const api = {
     }),
   requote: (intentId: string) =>
     call<IntentResponse>(`/api/intents/${intentId}/requote`, { method: "POST", body: "{}" }),
-  faucet: (address: string) =>
-    call<FaucetResponse>("/api/faucet", { method: "POST", body: JSON.stringify({ address }) }),
+  /** `token` funds the currency the payer actually pays in — omitting it would
+   * hand someone paying in euros a USDC balance they cannot spend. */
+  faucet: (address: string, token?: TokenId) =>
+    call<FaucetResponse>("/api/faucet", {
+      method: "POST",
+      body: JSON.stringify({ address, token }),
+    }),
 
   /**
    * Gas only. Use this — never `faucet()` — when the caller needs to SEND a

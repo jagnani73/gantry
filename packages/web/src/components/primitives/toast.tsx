@@ -30,7 +30,7 @@ import { cn } from "./cn";
  * `MerchantShell`'s content column both do.
  */
 
-export type ToastTone = "success" | "danger";
+export type ToastTone = "success" | "danger" | "info";
 
 interface ToastItem {
   id: number;
@@ -42,12 +42,21 @@ interface ToastApi {
   success(message: string): void;
   /** Errors also belong somewhere permanent — see the note above. */
   error(message: string): void;
+  /**
+   * Neither a success nor a failure: the answer to an action that was
+   * understood and cannot be taken yet — a locked option explaining itself.
+   *
+   * Deliberately its own tone rather than borrowing one.  would claim
+   * something happened and  would paint an ordinary tap red, and both
+   * are the kind of small dishonesty this app avoids elsewhere.
+   */
+  info(message: string): void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
 
 /** Success is a confirmation you may miss; an error is one you must not. */
-const DISMISS_MS: Record<ToastTone, number> = { success: 4_000, danger: 7_000 };
+const DISMISS_MS: Record<ToastTone, number> = { success: 4_000, danger: 7_000, info: 4_000 };
 
 /** Older toasts drop off the top rather than growing a wall over the screen.
  * Sized for the narrowest mount: the payer app is 402px wide with a tab bar
@@ -99,6 +108,7 @@ export function ToastProvider({
     () => ({
       success: (message) => push("success", message),
       error: (message) => push("danger", message),
+      info: (message) => push("info", message),
     }),
     [push],
   );
@@ -118,6 +128,8 @@ export function ToastProvider({
 const TONE: Record<ToastTone, string> = {
   success: "bg-ink text-paper",
   danger: "bg-danger text-paper",
+  // Quieter than both: it is telling, not confirming or warning.
+  info: "bg-fill-hover-strong text-ink",
 };
 
 /**

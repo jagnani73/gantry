@@ -13,6 +13,7 @@ export interface GantryAddresses {
   fixedRateSwap: Address;
   mockXsgd: Address;
   realUsdc: Address;
+  realEurc: Address;
   agentPbmFactory: Address;
 }
 
@@ -25,7 +26,11 @@ export interface GantryAddresses {
  * means anything if nothing here predates it. Change any contract and they all
  * ship again; there is no partial redeploy of this table.
  *
- * `realUsdc` is the exception and is not ours: Circle's testnet USDC, fixed.
+ * `realUsdc` and `realEurc` are the exceptions and are not ours: Circle's own
+ * testnet tokens, fixed. Neither is redeployed by `contracts:fresh`, and both
+ * are real FiatToken v2 with EIP-3009 — a payer signs against Circle's own
+ * contract, not against anything we wrote. That is what lets "pay in euros" be
+ * a real payment rather than a second mock.
  *
  * No wallet address belongs here. Agent wallets are minted per payer by the
  * permissionless factory, so any one of them is a sample rather than a constant
@@ -36,6 +41,7 @@ export const BASE_SEPOLIA_ADDRESSES: GantryAddresses = {
   fixedRateSwap: "0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d",
   mockXsgd: "0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503",
   realUsdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  realEurc: "0x808456652fdb597867f38412077A9182bf77359F",
   agentPbmFactory: "0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1",
 };
 
