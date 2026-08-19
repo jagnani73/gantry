@@ -51,14 +51,37 @@ async function newestCancelTx(): Promise<Hex> {
   // could: the payer of an agent-door settlement IS the wallet contract.
   const res = await fetch(`${args.api}/api/settlements?limit=50`);
   if (!res.ok) throw new Error(`could not reach ${args.api} (${res.status}); pass --tx instead`);
-  const { rows } = (await res.json()) as { rows: { payer: Address; door: string }[] };
-  const wallet = rows.find((r) => r.door === "agent")?.payer;
-  if (!wallet) throw new Error("no agent-door payment found to locate a wallet; pass --tx");
-  const denials = await fetch(`${args.api}/api/denials?wallet=${wallet}`);
-  const body = (await denials.json()) as { rows: { cancelTxHash: Hex | null }[] };
-  const withCancel = body.rows.find((r) => r.cancelTxHash);
-  if (!withCancel?.cancelTxHash) throw new Error("no denial with a cancel transaction; pass --tx");
-  return withCancel.cancelTxHash;
+  const { rows } = (await res.json()) as {
+    rows: { payer: Address; door: string; bridged?: boolean }[];
+  };
+
+  // NOT bridged. "Agent door" is not the same question as "paid by a wallet":
+  // an `exact` payment hops through the relayer, so its on-chain payer is the
+  // relayer and never a PBM wallet. `bridged` exists on the wire to say exactly
+  // that, and this used to ignore it — which was survivable only while bridged
+  // settlements were rare. They are not: --link, --discover and every vanilla
+  // interop run produces one, so the newest agent-door rows are now routinely
+  // all bridged and this resolved to the relayer, an address with no denials.
+  //
+  // Every candidate is tried rather than just the newest, because a wallet
+  // having settled recently says nothing about whether it was ever refused.
+  const candidates = rows.filter((r) => r.door === "agent" && !r.bridged).map((r) => r.payer);
+  const seen = new Set<string>();
+  for (const wallet of candidates) {
+    const key = wallet.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const denials = await fetch(`${args.api}/api/denials?wallet=${wallet}`);
+    if (!denials.ok) continue;
+    const body = (await denials.json()) as { rows: { cancelTxHash: Hex | null }[] };
+    const withCancel = body.rows.find((r) => r.cancelTxHash);
+    if (withCancel?.cancelTxHash) return withCancel.cancelTxHash;
+  }
+  throw new Error(
+    candidates.length === 0
+      ? "no non-bridged agent-door payment found to locate a wallet; pass --tx"
+      : `checked ${seen.size} wallet(s) and none has a denial with a cancel transaction; pass --tx`,
+  );
 }
 
 function line(label: string, value: string) {

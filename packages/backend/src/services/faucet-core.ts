@@ -236,7 +236,8 @@ export function createFaucetLeg(
 }
 
 export interface FaucetLegs {
-  /** The payment spine: a flat 4 USDC grant. */
+  /** The payment spine. Named `usdc` for the ceiling it meters, which is shared
+   * across tokens; the GRANT it hands out is per token (see `grantFor`). */
   usdc: FaucetLeg;
   /** Gas for the transactions the payer OWNS (`createWallet`, `setPolicy`,
    * `revoke`). Paying a merchant is still gasless. */

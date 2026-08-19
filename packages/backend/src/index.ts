@@ -87,7 +87,7 @@ async function main() {
     console.log(
       config.hostClass === "demo"
         ? "demo host: payer faucet unmetered on both legs, self-service onboarding ON"
-        : `public host: payer faucet capped at ${config.faucetDailyBudget} USDC units and ` +
+        : `public host: payer faucet capped at ${config.faucetDailyBudget} token units and ` +
             `${config.faucetEthDailyBudget} wei/24h across all addresses; self-service ` +
             "onboarding OFF — only merchants already on-chain are served",
     );

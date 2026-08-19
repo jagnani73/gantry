@@ -197,8 +197,8 @@ function usdcRefusalError(refusal: LegRefusal): ApiError {
     429,
     "FaucetBudgetExhausted",
     `the demo faucet's daily allowance is spent (${refusal.remaining} units left, ` +
-      `resets in ~${mins} min). Pay from a wallet that already holds Base Sepolia USDC, ` +
-      "or run a local backend, where funding is unmetered.",
+      `resets in ~${mins} min). Pay from a wallet that already holds the token you ` +
+      "chose, or run a local backend, where funding is unmetered.",
   );
 }
 
