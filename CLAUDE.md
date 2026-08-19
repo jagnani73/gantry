@@ -30,14 +30,18 @@ All five milestones are done and review-hardened: contracts + Sepolia deploy, th
 - **That same guard made the suite FLAKY, and the fix is in the handler's bounds — never in the guard.** A run could reach zero admitted spends honestly: `rearm` was free to draw a policy admitting nothing (zero per-tx cap, zero daily cap, empty bitmap), and a steered spend was bounded by the per-tx cap while ignoring how much of the daily cap the run had already used. Measured: **5 failed suites in 20 runs**, i.e. a red CI one push in four, on a public repo, for a contract that was never wrong. Now `rearm` always arms something spendable (which costs no coverage — a policy admitting nothing is what `revoke()` produces, and `revokeNow()` is already a fuzz target), and a spend is fully steered until the run lands its first success, aiming at whichever of the per-tx cap and the remaining daily headroom actually binds. Re-measured: **0 in 100**.
 - **A single green run proves nothing about a fuzz suite.** This was invisible for a whole session and surfaced only by running the suite in a loop. Any change to the handler, the bounds or `foundry.toml`'s invariant budget gets re-measured the same way — `for i in $(seq 1 30)` with `rm -rf cache/invariant/failures` between runs, because Foundry replays a cached failure and makes a flake look deterministic.
 
-**The sign-off gate is four chain-touching regressions, and no offline suite covers them.** Re-run against a live backend before declaring anything done:
+**The sign-off gate is EIGHT chain-touching regressions, and no offline suite covers them.** Re-run against a live backend before declaring anything done — and **check the exit code**, never the output: piping these to `tail` masks a failure, which is how a red run once read as green.
 
 ```bash
-pnpm --filter @gantry/backend e2e:pay          # human QR door
-pnpm --filter @gantry/backend x402:buy         # vanilla x402 `exact` interop
-pnpm --filter @gantry/agent   e2e:pbm          # agent door, happy path
-pnpm --filter @gantry/agent   e2e:pbm --expect-denial   # CategoryNotAllowed + the /api/denials row
-pnpm demo:reset                                # must finish under 30s
+pnpm --filter @gantry/backend e2e:pay                      # human QR door
+pnpm --filter @gantry/backend e2e:pay -- --token EURC      # the same door, paid in euros
+pnpm --filter @gantry/backend x402:buy                     # vanilla x402 `exact` interop
+pnpm --filter @gantry/backend x402:buy -- --link           # the dual-door pay link
+pnpm --filter @gantry/backend x402:buy -- --discover       # find a shop, then pay its listing
+pnpm --filter @gantry/agent   e2e:pbm                      # agent door, happy path
+pnpm --filter @gantry/agent   e2e:pbm --expect-denial      # CategoryNotAllowed + the /api/denials row
+pnpm --filter @gantry/backend verify:denial                # that refusal re-derived from public state
+pnpm demo:reset                                            # must finish under 30s
 ```
 
 **Browser-signed writes are NOT in that gate and must be exercised by hand:** create agent → arm policy → rotate the session key → revoke → withdraw, plus rotate a merchant payout from a connected wallet. That last one is the least exercised — it is the only merchant-side browser write, it is gated on `msg.sender == merchant.payout` so it cannot be rehearsed with the demo key.
@@ -341,6 +345,8 @@ Relayer/owner = deployer `0x82513007C7eB93b54dC555Bdb74341b3084FC47B`; fee 50 bp
 ## Paying in more than one currency — what is real
 
 **A payer chooses the currency they PAY IN, and it changes the money, not the labels.** `/app/settings` offers USD and EUR live and INR locked; picking one sets the token on the EIP-3009 authorization, the balance the wallet reads, the rate every S$ figure converts at, and the asset the intent is quoted in. The shop is paid XSGD either way — `GantryCore.XSGD` is `immutable`, so the output cannot vary by screen, by payer or by currency. That is the whole claim: **any currency in, Singapore dollars out.**
+
+**PROVEN END TO END, 19 Aug 2026** — tx `0x0d2c5eaf…`, the first euro payment on this rail. A payer signed an EIP-3009 authorization against Circle EURC, 0.993378 EURC moved payer → core → swap, 1.500000 XSGD came back, and the merchant was paid 1.492500 XSGD after the 0.5% fee. `pnpm --filter @gantry/backend e2e:pay -- --token EURC` repeats it and belongs in the gate beside the USDC run: the flag changes the asset and NOTHING else, which is the claim — if paying in euros needed a second code path it would not be the same door.
 
 **EURC is REAL, and that is the point.** Circle's own EURC on Base Sepolia (`0x808456652fdb597867f38412077A9182bf77359F`) — 6dp, `version "2"`, and a `TRANSFER_WITH_AUTHORIZATION_TYPEHASH` byte-identical to USDC's, which is why the signing path needed no second branch. **No mock was added: MockXSGD is still the only mocked token**, and that sentence stays load-bearing. Listing it took ONE owner transaction — `FixedRateSwap.setRate(EURC, 1_510_000)`, i.e. 1.510000 XSGD per EURC, tx `0x6aded10d…`, 19 Aug 2026 — and no redeploy, because `rateOf` is an open mapping and `GantryCore` holds no token allowlist. The seam the design claimed turned out to be real.
 

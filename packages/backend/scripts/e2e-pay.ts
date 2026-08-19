@@ -15,6 +15,7 @@ import {
   parseSgd,
   reviveTypedData,
   formatUnits6,
+  type TokenId,
   type ApiErrorBody,
   type IntentResponse,
   type SettleResponse,
@@ -27,10 +28,16 @@ const { values: args } = parseArgs({
   options: {
     sgd: { type: "string", default: "1.50" },
     handle: { type: "string", default: "ah-hock-chicken-rice" },
+    /** Which of Circle real tokens the payer signs against. The whole point of
+     * the flag is that NOTHING else in this script changes: same faucet, same
+     * intent call, same EIP-3009 signature, same settle — only the asset. If
+     * paying in euros needed a second code path it would not be the same door. */
+    token: { type: "string", default: "USDC" },
   },
 });
 
 const api = process.env.GANTRY_API ?? "http://localhost:4000";
+const token = args.token as TokenId;
 const payerKey = (process.env.E2E_PAYER_KEY as `0x${string}` | undefined) ?? generatePrivateKey();
 const payer = privateKeyToAccount(payerKey);
 
@@ -52,14 +59,14 @@ async function main() {
 
   const faucet = await call<{ txHash: string; funded: string }>("/api/faucet", {
     method: "POST",
-    body: JSON.stringify({ address: payer.address }),
+    body: JSON.stringify({ address: payer.address, token }),
   });
-  console.log(`funder: sent ${formatUnits6(BigInt(faucet.funded))} USDC (${faucet.txHash})`);
+  console.log(`funder: sent ${formatUnits6(BigInt(faucet.funded))} ${token} (${faucet.txHash})`);
 
   const xsgdAmount = parseSgd(args.sgd!).toString();
   const intent = await call<IntentResponse>("/api/intents", {
     method: "POST",
-    body: JSON.stringify({ handle: args.handle, xsgdAmount, token: "USDC" }),
+    body: JSON.stringify({ handle: args.handle, xsgdAmount, token }),
   });
   console.log(
     `intent ${intent.intentId}\n  S$${formatUnits6(BigInt(intent.xsgdAmount))} → ${formatUnits6(BigInt(intent.amountIn), 6)} ${intent.tokenSymbol} @ ${formatUnits6(BigInt(intent.rate), 4)}`,
