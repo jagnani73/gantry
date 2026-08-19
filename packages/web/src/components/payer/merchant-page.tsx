@@ -6,6 +6,7 @@ import { Card, Chip, Mono } from "@/components/primitives";
 import { placesPaid } from "./activity";
 import { categoryLabels } from "./agent-rules";
 import { calendarDate } from "./format";
+import { MachineDoor } from "./machine-door";
 import { MerchantTile } from "./merchant-tile";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
@@ -77,6 +78,8 @@ export function MerchantPage({ handle }: { handle: string }) {
             </div>
           </Card>
         ) : null}
+
+        <MachineDoor handle={handle} />
 
         <button
           type="button"

@@ -1,6 +1,7 @@
 import { networkInterfaces } from "node:os";
 import express from "express";
 import cors from "cors";
+import { PAYMENT_REQUIRED_HEADER, PAYMENT_RESPONSE_HEADER } from "@gantry/shared";
 import { config } from "./config";
 import { assertTokenDomains, relayerAccount } from "./chain";
 import { errorMiddleware } from "./errors";
@@ -31,7 +32,16 @@ const app = express();
 // Behind Railway/Fly TLS termination the 402's resource.url must say https —
 // clients echo and pin that URL.
 app.set("trust proxy", 1);
-app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin }));
+app.use(
+  cors({
+    origin: config.corsOrigin === "*" ? true : config.corsOrigin,
+    // The whole x402 conversation rides in two custom headers, and CORS hides
+    // those from browser JS unless they are named here: without this a page can
+    // see the 402 status and cannot read the bill, which is every field that
+    // matters. Any browser-based x402 client needs this, not just ours.
+    exposedHeaders: [PAYMENT_REQUIRED_HEADER, PAYMENT_RESPONSE_HEADER],
+  }),
+);
 app.use(express.json());
 
 app.use(healthRouter);
