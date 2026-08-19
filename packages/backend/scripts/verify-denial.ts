@@ -21,9 +21,11 @@
  *        (no --tx: reads the newest denial from a running backend, for the demo)
  */
 import { parseArgs } from "node:util";
-import { decodeEventLog, erc20Abi, type Address, type Hex } from "viem";
+import { createPublicClient, decodeEventLog, erc20Abi, fallback, http, type Address, type Hex } from "viem";
+import { baseSepolia } from "viem/chains";
 import {
   BASESCAN_BASE_URL,
+  BASE_SEPOLIA_ADDRESSES,
   CATEGORY_LABELS,
   SIGNATURE_IS_NOT_CHECKED,
   agentPbmWalletAbi,
@@ -35,8 +37,47 @@ import {
   type DecodedGantryError,
   type PolicyVerdict,
 } from "@gantry/shared";
-import { publicClient } from "../src/chain";
-import { config } from "../src/config";
+import { installLogRedaction, registerSecrets, safeMessage } from "../src/redact";
+
+/**
+ * Deliberately NOT `../src/chain` or `../src/config`.
+ *
+ * Both parse the backend's whole environment at module load, so importing
+ * either made this script demand `RELAYER_PRIVATE_KEY` and `ADMIN_TOKEN` — a
+ * signing key and an operator secret — to perform five read-only `eth_call`s.
+ * That contradicts the one claim the script exists to support, and it is the
+ * claim the demo script invites a judge to check: "a stranger with an RPC URL
+ * gets the same answer". Everything below needs exactly two things, an RPC URL
+ * and the published addresses, and `BASE_SEPOLIA_ADDRESSES` is a committed
+ * constant in shared rather than configuration.
+ */
+const PUBLIC_BASE_SEPOLIA_RPC = "https://sepolia.base.org";
+
+const rpcUrls = (() => {
+  const urls = (process.env.BASE_SEPOLIA_RPC_URL ?? "")
+    .split(",")
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0);
+  // The public node is appended, not required, so this runs with no env at all.
+  if (!urls.includes(PUBLIC_BASE_SEPOLIA_RPC)) urls.push(PUBLIC_BASE_SEPOLIA_RPC);
+  return urls;
+})();
+
+// The RPC credential rides in the URL PATH, so the URL IS the secret, and viem
+// puts it in `metaMessages` on any transport failure. This script makes five
+// ARCHIVE reads — the calls most likely to fail — and its output is meant to be
+// pasted into a writeup or an issue on a public repo, so redaction has to be
+// installed HERE: it is registered per-process, and unregistered it is the
+// identity. `sepolia.base.org` carries no credential and is never registered.
+registerSecrets(rpcUrls.filter((url) => url !== PUBLIC_BASE_SEPOLIA_RPC));
+installLogRedaction();
+
+const publicClient = createPublicClient({
+  chain: baseSepolia,
+  transport: fallback(rpcUrls.map((url) => http(url))),
+});
+
+const addresses = BASE_SEPOLIA_ADDRESSES;
 
 const { values: args } = parseArgs({
   args: process.argv.slice(2).filter((a) => a !== "--"),
@@ -67,19 +108,33 @@ async function newestCancelTx(): Promise<Hex> {
   // having settled recently says nothing about whether it was ever refused.
   const candidates = rows.filter((r) => r.door === "agent" && !r.bridged).map((r) => r.payer);
   const seen = new Set<string>();
+  // A lookup that FAILED is not a wallet that has never been refused. Skipping
+  // it silently let "checked 4 wallet(s) and none has a denial" be printed over
+  // four 503s from a cold host mid-backfill — a confident negative about the
+  // very record this script exists to confirm.
+  const unanswered: string[] = [];
   for (const wallet of candidates) {
     const key = wallet.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     const denials = await fetch(`${args.api}/api/denials?wallet=${wallet}`);
-    if (!denials.ok) continue;
+    if (!denials.ok) {
+      unanswered.push(`${wallet} (${denials.status})`);
+      continue;
+    }
     const body = (await denials.json()) as { rows: { cancelTxHash: Hex | null }[] };
     const withCancel = body.rows.find((r) => r.cancelTxHash);
     if (withCancel?.cancelTxHash) return withCancel.cancelTxHash;
   }
+  if (candidates.length === 0) {
+    throw new Error("no non-bridged agent-door payment found to locate a wallet; pass --tx");
+  }
+  const answered = seen.size - unanswered.length;
   throw new Error(
-    candidates.length === 0
-      ? "no non-bridged agent-door payment found to locate a wallet; pass --tx"
+    unanswered.length > 0
+      ? `checked ${answered} of ${seen.size} wallet(s) with no denial found; ` +
+        `${unanswered.length} lookup(s) FAILED and are not an answer: ${unanswered.join(", ")}. ` +
+        `Pass --tx to skip the API entirely.`
       : `checked ${seen.size} wallet(s) and none has a denial with a cancel transaction; pass --tx`,
   );
 }
@@ -120,14 +175,14 @@ async function main() {
   // a different question — the demo re-arms its policy between runs, so current
   // state routinely disagrees with the state that decided this refusal.
   const intent = await publicClient.readContract({
-    address: config.addresses.gantryCore,
+    address: addresses.gantryCore,
     abi: gantryCoreAbi,
     functionName: "getIntent",
     args: [denied.intentId],
     blockNumber: block,
   });
   const merchant = await publicClient.readContract({
-    address: config.addresses.gantryCore,
+    address: addresses.gantryCore,
     abi: gantryCoreAbi,
     functionName: "merchants",
     args: [intent.merchantId],
@@ -215,6 +270,10 @@ function claimedErrorName(decoded: DecodedGantryError | null): string {
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
+  // `safeMessage`, never `err.message`: viem's message is shortMessage PLUS
+  // metaMessages, and a transport failure's metaMessages carry `URL: <rpc url>`.
+  console.error(safeMessage(err));
+  // exitCode rather than exit(), so a piped stderr is flushed before we go —
+  // process.exit() truncates pending async stdio writes.
+  process.exitCode = 1;
 });
