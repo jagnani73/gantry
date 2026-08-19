@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import type { HTTPRequestContext, RoutesConfig } from "@x402/core/server";
 import {
   OFFER_TOKEN_IDS,
@@ -246,7 +246,14 @@ function paidToken(header: string | undefined): TokenId | null {
   try {
     const asset = decodePaymentSignatureHeader(header).accepted?.asset;
     return asset ? tokenIdByAddress(config.addresses, asset) : null;
-  } catch {
+  } catch (err) {
+    // Absent beats wrong, but not absent AND silent. By the time this runs the
+    // middleware has verified the header and subset-matched it against the
+    // server-built entry, so a throw here means the CODEC is broken, not the
+    // caller — and @x402 version churn is a known risk this repo already keeps
+    // insurance against. Unlogged, every confirmation would quietly lose its
+    // `token` field and every test would still pass.
+    console.warn("order: could not read the paid asset from PAYMENT-SIGNATURE", err);
     return null;
   }
 }
@@ -272,11 +279,18 @@ async function orderConfirmation(handle: string, sgd: string, token: TokenId | n
   };
 }
 
+/** These bodies are per-payment and reached only with a valid payment header;
+ * nothing about them may sit in a shared cache. */
+function noStore(res: Response): void {
+  res.set("Cache-Control", "no-store");
+}
+
 function requestedSgd(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
 ordersRouter.post("/api/order/:handle", async (req, res) => {
+  noStore(res);
   res.json(
     await orderConfirmation(
       String(req.params.handle),
@@ -287,6 +301,13 @@ ordersRouter.post("/api/order/:handle", async (req, res) => {
 });
 
 ordersRouter.get("/pay/:handle", async (req, res) => {
+  // A 200 here is a PAID order confirmation, reached only with a valid
+  // PAYMENT-SIGNATURE. It is a GET, so a 200 is heuristically cacheable, and
+  // `Vary` covers `Accept` but nothing varies on the payment header — a shared
+  // cache could therefore serve one payer's confirmation to the next request
+  // for the same URL. Discovery reasons this through for a weaker case and sets
+  // the same header.
+  noStore(res);
   res.json(
     await orderConfirmation(
       String(req.params.handle),

@@ -46,6 +46,10 @@ export interface DiscoveryOfferToken {
   /** The EIP-712 token name — the same key the 402's `extra` carries, so a
    * client selects a currency the same way in a listing and in a challenge. */
   name: string;
+  /** The EIP-712 domain version, carried for the same reason as `name`: a
+   * client building a signing domain from a listing needs both, and omitting it
+   * left the two `extra`s differing in more than the server-issued pin. */
+  version: string;
   asset: string;
   /** XSGD 6dp out per 1e6 token units, from FixedRateSwap. Per token, because
    * the quote differs and a listing must carry the real one. */
@@ -135,7 +139,9 @@ export function buildDiscoveryListing(inputs: DiscoveryInputs): DiscoveryListing
       amount: quoteAmountIn(SAMPLE_SGD_UNITS, token.rate).toString(),
       payTo,
       maxTimeoutSeconds: 600,
-      extra: { handle: merchant.handle, sgd: SAMPLE_SGD, name: token.name },
+      // Mirrors the 402's `extra` apart from the pin, which is issued per
+      // challenge and cannot be published in a listing.
+      extra: { handle: merchant.handle, sgd: SAMPLE_SGD, name: token.name, version: token.version },
     });
     return {
       // Carries the amount it is listed at, so an agent can pay this string

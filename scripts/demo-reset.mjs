@@ -326,8 +326,14 @@ async function payerBalances() {
   return { eth, usdc };
 }
 
-/** Enough for one euro-denominated payment at the demo cap. */
-const PAYER_EURC_FLOOR = 3_000_000n;
+/**
+ * Enough for one euro payment at the payer page's S$5 demo cap.
+ *
+ * That cap ceil-quotes to 3_311_259 at 1.51, so a 3_000_000 floor passed a
+ * payer who then could not sign the largest amount the page offers. Matched to
+ * the faucet's own EURC grant (3_400_000), which is sized from the same cap.
+ */
+const PAYER_EURC_FLOOR = 3_311_259n;
 
 const eurcBalanceOf = (address) =>
   publicClient.readContract({
@@ -390,17 +396,32 @@ let eurcLine;
       eurcBalanceOf(BASE_SEPOLIA_RELAYER),
     ]);
     let topped = null;
+    let refusal = null;
     if (payerEurc < PAYER_EURC_FLOOR && relayerEurc >= PAYER_EURC_FLOOR) {
       const { res, body } = await post("/api/faucet", { address: payer.address, token: "EURC" });
-      topped = res?.ok && body ? `faucet +${eur(body.funded)}` : `faucet ${why(res, body)}`;
+      if (res?.ok && body) {
+        topped = `faucet +${eur(body.funded)}`;
+      } else {
+        // KEPT, not discarded. Step 2 already granted this address USDC seconds
+        // ago and the token leg's per-address cooldown is 60s regardless of host
+        // class, so the ordinary refusal here is our OWN cooldown — and the
+        // shortfall line used to drop this and blame Circle instead, sending an
+        // operator to an external faucet while the relayer was full.
+        refusal = why(res, body);
+        topped = `faucet ${refusal}`;
+      }
     }
     const after = await eurcBalanceOf(payer.address);
+    const remedy =
+      refusal === null
+        ? `Relayer holds ${eur(relayerEurc)}; top it up at https://faucet.circle.com.`
+        : `The grant was refused (${refusal}) — relayer holds ${eur(relayerEurc)}, so if that is a ` +
+          `cooldown from step 2's USDC grant, wait a minute and re-run.`;
     eurcLine =
       after >= PAYER_EURC_FLOOR
         ? `payer    ${eur(after)} for the euro beat${topped === null ? "" : ` (${topped})`}`
         : `⚠ payer   ${eur(after)} — the euro beat needs ${eur(PAYER_EURC_FLOOR)}. ` +
-          `Relayer holds ${eur(relayerEurc)}; top it up at https://faucet.circle.com. ` +
-          `The USDC path is unaffected.`;
+          `${remedy} The USDC path is unaffected.`;
   } catch (err) {
     eurcLine = `⚠ payer   EURC balance unreadable (${brief(err instanceof Error ? err.message : String(err))})`;
   }

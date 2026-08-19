@@ -40,8 +40,8 @@ const inputs = {
   chainId: BASE_SEPOLIA_CHAIN_ID,
   // Mirrors OFFER_TOKEN_IDS: default currency first, every payable one present.
   tokens: [
-    { name: "USDC", asset: BASE_SEPOLIA_ADDRESSES.realUsdc, rate: DEMO_RATE },
-    { name: "EURC", asset: BASE_SEPOLIA_ADDRESSES.realEurc, rate: DEMO_RATE_EURC },
+    { name: "USDC", version: "2", asset: BASE_SEPOLIA_ADDRESSES.realUsdc, rate: DEMO_RATE },
+    { name: "EURC", version: "2", asset: BASE_SEPOLIA_ADDRESSES.realEurc, rate: DEMO_RATE_EURC },
   ],
   relayer: "0x82513007C7eB93b54dC555Bdb74341b3084FC47B",
   core: BASE_SEPOLIA_ADDRESSES.gantryCore,

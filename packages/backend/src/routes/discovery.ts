@@ -39,6 +39,7 @@ discoveryRouter.get("/discovery/resources", async (req, res) => {
     tokens = await Promise.all(
       OFFER_TOKEN_IDS.map(async (id) => ({
         name: TOKENS[id].eip712.name,
+        version: TOKENS[id].eip712.version,
         asset: tokenAddress(config.addresses, id),
         rate: await readRate(id),
       })),

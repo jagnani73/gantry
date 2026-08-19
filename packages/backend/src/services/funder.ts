@@ -300,8 +300,34 @@ export async function topUpFunder(): Promise<FunderStatus> {
  * payer-owner, so the address that matters is whichever one the caller just
  * provisioned. See routes/admin.ts for why there is no fallback.
  */
-const WALLET_FLOOR = 8_000_000n; // 8 USDC
-const WALLET_TARGET = 10_000_000n; // 10 USDC
+const WALLET_FLOOR = 8_000_000n; // 8 USDC ~ S$10.74 at 1.3421
+const WALLET_TARGET = 10_000_000n; // 10 USDC ~ S$13.42
+
+/**
+ * The same two figures in each other currency, sized by VALUE rather than by
+ * raw units.
+ *
+ * These are token units, so applying the USDC numbers to a euro wallet tops it
+ * up to S$15.10 instead of S$13.42 — ~13% more, in the one token that cannot be
+ * replaced. `services/funder.ts` swaps ETH for more USDC; Base Sepolia has no
+ * EURC market at all, so Circle's faucet is the only tap and anything parked in
+ * a demo wallet beyond what it will spend is out of circulation.
+ *
+ * Constants rather than a rate-derived calculation, matching `grantFor` in
+ * faucet-core for the same reason: the figures are demo policy, and a live rate
+ * read here would make the top-up depend on a call that can fail.
+ */
+const WALLET_OVERRIDES: Partial<Record<TokenId, { floor: bigint; target: bigint }>> = {
+  // S$10.74 and S$13.42 at 1.51.
+  EURC: { floor: 7_110_000n, target: 8_890_000n },
+};
+
+/** The floor and target for the token this wallet actually holds. Falls back to
+ * the USDC figures, so a newly payable token is over-funded rather than left
+ * unfundable — the same direction `grantFor` errs in. */
+function walletBand(token: TokenId): { floor: bigint; target: bigint } {
+  return WALLET_OVERRIDES[token] ?? { floor: WALLET_FLOOR, target: WALLET_TARGET };
+}
 
 /** Replica lag after a confirmed transfer, bounded — see topUpPbmWallet. */
 const BALANCE_LAG_RETRIES = 5;
@@ -353,12 +379,13 @@ export async function topUpPbmWallet(
   const token = currency.token;
   const asset = tokenAddress(config.addresses, token);
 
+  const band = walletBand(token);
   const balance = await readWalletBalance(wallet, token);
-  if (balance >= WALLET_FLOOR) {
+  if (balance >= band.floor) {
     return { wallet, usdc: formatUnits(balance, 6), sent: "0", token };
   }
 
-  const send = WALLET_TARGET - balance;
+  const send = band.target - balance;
   const funderBalance = await publicClient.readContract({
     address: asset,
     abi: erc20Abi,
@@ -394,9 +421,9 @@ export async function topUpPbmWallet(
     await new Promise((r) => setTimeout(r, BALANCE_LAG_DELAY_MS));
     after = await readWalletBalance(wallet, token);
   }
-  if (after < WALLET_FLOOR) {
+  if (after < band.floor) {
     console.error(
-      `funder CRITICAL: the PBM wallet is still below the ${formatUnits(WALLET_FLOOR, 6)} floor ` +
+      `funder CRITICAL: the PBM wallet is still below the ${formatUnits(band.floor, 6)} ${token} floor ` +
         `(${formatUnits(after, 6)} ${token}) after a CONFIRMED transfer in ${receipt.transactionHash} — ` +
         `concurrent outflow? The rejection beat will fail as insufficient_funds.`,
     );
