@@ -35,6 +35,7 @@ const { values: args } = parseArgs({
     sgd: { type: "string", default: "4.50" },
     handle: { type: "string", default: "ah-hock-chicken-rice" },
     link: { type: "boolean", default: false },
+    discover: { type: "boolean", default: false },
   },
 });
 
@@ -49,11 +50,37 @@ const orderUrl = args.link
   : `${api}/api/order/${args.handle}?sgd=${args.sgd}`;
 const method = args.link ? "GET" : "POST";
 
+/**
+ * Find a shop the way a machine with no human would: ask for the list.
+ *
+ * The resource string is paid VERBATIM — not parsed for a handle and rebuilt —
+ * because that is the claim being tested. If a listing is not payable exactly as
+ * published, discovery is decoration.
+ */
+async function discoverResource(): Promise<{ url: string; name: string }> {
+  const res = await fetch(`${api}/discovery/resources`);
+  if (!res.ok) throw new Error(`discovery returned ${res.status}`);
+  const listing = (await res.json()) as {
+    items: { resource: string; serviceName: string; accepts: { scheme: string }[] }[];
+    pagination: { total: number };
+  };
+  console.log(`discovered ${listing.items.length} of ${listing.pagination.total} shops`);
+  const pick =
+    listing.items.find((i) => i.resource.includes(`/pay/${args.handle}?`)) ?? listing.items[0];
+  if (!pick) throw new Error("the rail listed no shops");
+  console.log(`  chose ${pick.serviceName} — ${pick.accepts.map((a) => a.scheme).join(", ")}`);
+  return { url: pick.resource, name: pick.serviceName };
+}
+
 async function main() {
   console.log(`agent payer: ${payer.address}${process.env.X402_PAYER_KEY ? "" : " (fresh burner)"}`);
 
+  // Discovery replaces the hardcoded URL entirely: nothing below knows a handle.
+  const target = args.discover ? (await discoverResource()).url : orderUrl;
+  const verb = args.discover ? "GET" : method;
+
   // 1. Bare request — expect the 402 challenge and decode it with OUR codec.
-  const challenge = await fetch(orderUrl, { method });
+  const challenge = await fetch(target, { method: verb });
   const header = challenge.headers.get(PAYMENT_REQUIRED_HEADER);
   if (challenge.status !== 402 || !header) {
     throw new Error(`expected 402 + ${PAYMENT_REQUIRED_HEADER}, got ${challenge.status}`);
@@ -89,7 +116,7 @@ async function main() {
   const client = new x402Client().register(offer.network, new ExactEvmScheme(toClientEvmSigner(payer)));
   const payFetch = wrapFetchWithPayment(fetch, client);
   console.log(`paying via unmodified @x402/fetch…`);
-  const paid = await payFetch(orderUrl, { method });
+  const paid = await payFetch(target, { method: verb });
   console.log(`response: ${paid.status}`);
   if (!paid.ok) {
     // Surface the decoded failure: a rejected retry carries the reason in the

@@ -1,0 +1,142 @@
+import { caip2, quoteAmountIn, type MerchantSummary } from "@gantry/shared";
+
+/**
+ * Every registered shop, as resources a machine can find and pay.
+ *
+ * The rest of this product assumes a human already knows which shop they want:
+ * they scanned its code, or tapped it in a list. An agent has no counter to
+ * stand at. This is the missing step — enumerate the rail, get back payable
+ * endpoints, pay one — and it is only available to us because we hold both a
+ * merchant registry and a machine door. There is no human anywhere in that loop.
+ *
+ * Shaped as the x402 Bazaar's `DiscoveryResourcesResponse` (`@x402/extensions`,
+ * pinned at the same 2.21.0 as the rest of the SDK) rather than as something of
+ * our own. That is the whole point of a discovery format: a client that already
+ * speaks it needs no Gantry-specific code.
+ *
+ * **We are not a Bazaar registry and must never say we are.** This serves the
+ * shape from our own index; it does not publish to, mirror, or belong to anyone
+ * else's catalog. Say "a discovery endpoint in the Bazaar's shape".
+ *
+ * Pure and config-free so the shape is unit-testable without a chain or a
+ * server — the facilitator-core precedent.
+ */
+
+/** The listed price. Every entry is payable EXACTLY as written, so this has to
+ * be a real quote rather than a placeholder; a caller wanting another amount
+ * changes `sgd` and the endpoint prices that instead. One round number, because
+ * it appears in every listing and a hawker-scale figure keeps the demo honest. */
+export const SAMPLE_SGD_UNITS = 1_000_000n;
+
+export interface DiscoveryInputs {
+  merchants: MerchantSummary[];
+  /** Absolute origin this server is reachable at — the listing must be payable
+   * by whoever reads it, so a relative path would be useless to an agent. */
+  origin: string;
+  chainId: number;
+  /** XSGD 6dp out per 1e6 token units, from FixedRateSwap. */
+  rate: bigint;
+  asset: string;
+  /** `exact` collects to the relayer (the custodial hop); `gantry-pbm` pushes
+   * straight into the core. Both are offered on every shop, in that order. */
+  relayer: string;
+  core: string;
+  limit: number;
+  offset: number;
+}
+
+export interface DiscoveryListing {
+  x402Version: number;
+  items: DiscoveryItem[];
+  pagination: { limit: number; offset: number; total: number };
+}
+
+export interface DiscoveryItem {
+  resource: string;
+  type: "http";
+  x402Version: number;
+  accepts: {
+    scheme: string;
+    network: string;
+    asset: string;
+    amount: string;
+    payTo: string;
+    maxTimeoutSeconds: number;
+    extra: Record<string, unknown>;
+  }[];
+  lastUpdated: string;
+  description: string;
+  mimeType: "application/json";
+  serviceName: string;
+  tags: string[];
+}
+
+/**
+ * Build the listing.
+ *
+ * `lastUpdated` is the shop's REGISTRATION time, not the moment this response
+ * was built. A timestamp that moved on every request would tell a caching
+ * client that every shop had changed, on a list that changes only when someone
+ * registers.
+ */
+export function buildDiscoveryListing(inputs: DiscoveryInputs): DiscoveryListing {
+  const { merchants, origin, chainId, rate, asset, relayer, core, limit, offset } = inputs;
+  const amount = quoteAmountIn(SAMPLE_SGD_UNITS, rate).toString();
+  const network = caip2(chainId);
+  const base = origin.replace(/\/+$/, "");
+
+  const items = merchants.slice(offset, offset + limit).map((merchant): DiscoveryItem => {
+    const shop = merchant.displayName ?? merchant.handle;
+    const accept = (scheme: string, payTo: string) => ({
+      scheme,
+      network,
+      asset,
+      amount,
+      payTo,
+      maxTimeoutSeconds: 600,
+      extra: { handle: merchant.handle, sgd: "1.00" },
+    });
+    return {
+      // Carries the amount it is listed at, so an agent can pay this string
+      // verbatim. The endpoint prices whatever `sgd` asks for.
+      resource: `${base}/pay/${merchant.handle}?sgd=1.00`,
+      type: "http",
+      x402Version: 2,
+      // `exact` first, matching the order the pay link itself offers — a vanilla
+      // client takes the first entry, and a discovery listing that reversed them
+      // would hand it a scheme only our agent implements.
+      accepts: [accept("exact", relayer), accept("gantry-pbm", core)],
+      lastUpdated: new Date(merchant.registeredAt * 1000).toISOString(),
+      description: `Pay ${shop} in stablecoins. Any amount: change the sgd query parameter. Settles to the merchant in XSGD.`,
+      mimeType: "application/json",
+      serviceName: shop,
+      // Category first so a client filtering by kind of shop has something to
+      // match; the rest describe the rail rather than the merchant.
+      tags: [merchant.categoryName, "gantry", "hawker", "singapore"],
+    };
+  });
+
+  return {
+    x402Version: 2,
+    items,
+    // `total` is the whole registry, not the page — a client cannot tell a
+    // capped response from the end of the list without it.
+    pagination: { limit, offset, total: merchants.length },
+  };
+}
+
+/** Clamp paging so a caller cannot ask for the entire registry in one response
+ * or walk off the end of it. Non-numeric input falls back rather than throwing:
+ * this is a discovery endpoint, and refusing to list anything because a query
+ * param was junk helps nobody. */
+export function parsePaging(
+  rawLimit: unknown,
+  rawOffset: unknown,
+  max = 100,
+): { limit: number; offset: number } {
+  const asInt = (value: unknown, fallback: number) => {
+    const n = typeof value === "string" ? Number.parseInt(value, 10) : NaN;
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+  return { limit: Math.min(asInt(rawLimit, max), max), offset: asInt(rawOffset, 0) };
+}
