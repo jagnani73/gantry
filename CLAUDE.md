@@ -19,7 +19,7 @@ Both settle through `GantryCore._settle()`: pull funds → swap to XSGD if neede
 
 All five milestones are done and review-hardened: contracts + Sepolia deploy, the QR spine (the demo spine — everything after is additive), the x402 door with vanilla `@x402/fetch` interop, PBM + LLM agent + on-chain denial, and self-service onboarding. Both surfaces ship on a token-based design system; every on-chain capability has a UI door.
 
-**Test counts (quote these):** **548 total — 201 forge · 174 shared · 169 backend · 4 agent.** Of the forge tests, 196 run in CI: the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs those 5 and the deck must not imply otherwise. `packages/web` has no test suite.
+**Test counts (quote these):** **550 total — 201 forge · 174 shared · 171 backend · 4 agent.** Of the forge tests, 196 run in CI: the real-USDC and PBM **fork** tests `vm.skip` themselves without a fork RPC URL, so CI never runs those 5 and the deck must not imply otherwise. `packages/web` has no test suite.
 
 **Counted once, by re-running all four suites, 19 Aug — and that is the only way to count them.** Every branch that adds tests writes an ABSOLUTE number here, so each is correct alone and wrong together; three separate branches each claimed a different forge total and no conflict resolution could have produced 201. Re-run the four suites and rewrite this line whenever tests land; never adjust it by arithmetic. The Devpost writeup still says 446 (191/126/129) and is stale.
 
@@ -390,7 +390,7 @@ Not bugs and not gaps — jobs that need a dashboard, a device or an account nob
 
 - **Rotate the Gemini key.** It transited a chat and the repo is public.
 - **Walk through passkey onboarding once** on a device with biometrics. Never completed by a human — the button is verified only to render and resolve its connector.
-- **Devpost is stale**: it says 446 tests (it is 538 — count them by re-running the four suites, never by arithmetic) and still describes Gemini rather than AIsa. `docs/deck/` slide 8 says 446 too and is frozen on purpose — see the deck note above.
+- **Devpost is stale**: it says 446 tests (it is 550 — count them by re-running the four suites, never by arithmetic) and still describes Gemini rather than AIsa. `docs/deck/` slide 8 says 446 too and is frozen on purpose — see the deck note above.
 
 ## Known gaps & deliberate absences
 

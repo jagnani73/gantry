@@ -366,7 +366,7 @@ gaps list in `CLAUDE.md`, not hidden.
   key, and we will not leave an unauthenticated ETH spend on the public
   internet. Nothing in Gantry reviews or verifies a merchant. Categories are
   self-attested and there is no KYC anywhere in the system.
-- *How many tests?* 548 — 201 Foundry, 174 shared, 169 backend, 4 agent. Five of
+- *How many tests?* 550 — 201 Foundry, 174 shared, 171 backend, 4 agent. Five of
   the Foundry ones are fork tests that skip without a fork RPC, so CI runs 196 of
   the 201; don't let a slide imply otherwise. Four are invariants, not unit
   tests. `packages/web` has no suite at all.
