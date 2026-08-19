@@ -14,7 +14,9 @@ import {
   faucetCeilings,
   funderCanSend,
   gasTopUpAmount,
+  grantFor,
 } from "../src/services/faucet-core";
+import { DEMO_RATE, DEMO_RATE_EURC, PAYABLE_TOKEN_IDS, quoteAmountIn } from "@gantry/shared";
 
 /**
  * Every number here is IMPORTED. The previous version of this file re-declared
@@ -292,4 +294,46 @@ test("an unmetered demo host refuses nothing on either ceiling", () => {
     assert.equal(legs.usdc.claim(payer(i), GRANT, T0), null);
     assert.equal(legs.gas.claim(payer(i), ETH_TARGET, T0), null);
   }
+});
+
+// --------------------------------------------------- what one grant has to buy
+
+/**
+ * The payer page funds ONCE and then signs, so a grant that does not cover the
+ * largest payment that page permits strands someone mid-demo with a balance they
+ * cannot spend. That ceiling is the S$5 demo-account cap, and it is a S$ figure —
+ * so the token amount it implies differs per currency, which is the whole reason
+ * the grants are no longer one number.
+ *
+ * Pinned against `quoteAmountIn`, the same ceiling-quote the relayer uses, rather
+ * than against a hand-multiplied literal: a grant that clears a rounding rule
+ * different from the one the intent is priced by clears nothing.
+ */
+const DEMO_ACCOUNT_CAP_SGD = 5_000_000n; // S$5, the payer page's cap for the demo key
+
+test("every payable token's grant covers the biggest payment the demo cap allows", () => {
+  const rates: Record<string, bigint> = { USDC: DEMO_RATE, EURC: DEMO_RATE_EURC };
+  for (const token of PAYABLE_TOKEN_IDS) {
+    const rate = rates[token];
+    assert.ok(rate, `${token} is payable but this test knows no rate for it — add one`);
+    const needed = quoteAmountIn(DEMO_ACCOUNT_CAP_SGD, rate);
+    assert.ok(
+      grantFor(token) >= needed,
+      `${token} grant ${grantFor(token)} does not cover S$5 (${needed} at rate ${rate})`,
+    );
+  }
+});
+
+test("a token with no override still gets funded rather than refused", () => {
+  // The fallback is what keeps a newly payable token working before anyone
+  // remembers to size it — over-funding is recoverable, a zero grant is a payer
+  // staring at an empty wallet.
+  assert.equal(grantFor("MockXSGD"), GRANT);
+  assert.equal(grantFor("USDC"), GRANT);
+});
+
+test("the euro grant is smaller than the dollar one, which is the point", () => {
+  // Not cosmetic: EURC has no market on this testnet, so every unit handed to a
+  // throwaway burner is gone. If this ever flips, the saving has been undone.
+  assert.ok(grantFor("EURC") < grantFor("USDC"));
 });

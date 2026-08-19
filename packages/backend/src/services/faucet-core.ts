@@ -1,3 +1,4 @@
+import type { TokenId } from "@gantry/shared";
 import { emptyBudget, msUntilReset, release, reserve, type BudgetState } from "./faucet-budget";
 
 /**
@@ -19,8 +20,40 @@ import { emptyBudget, msUntilReset, release, reserve, type BudgetState } from ".
 /** Must cover the LARGEST single payment a funded payer makes, because the
  * payer page funds once and then signs: the agent-door order is S$4.50 ≈ 3.35
  * USDC, and the payer page's S$5 demo-account cap (≈ 3.73 USDC) is deliberately
- * set just under this grant so one grant always suffices. */
+ * set just under this grant so one grant always suffices.
+ *
+ * Also the DEFAULT for any token without an override below, so a newly payable
+ * token is over-funded rather than refused. */
 export const GRANT = 4_000_000n; // 4 USDC
+
+/**
+ * Where a token needs a different grant, and why any token does.
+ *
+ * The binding figure is the same for every currency — the payer page's S$5
+ * demo-account cap, converted at that token's owner-set rate — so a flat number
+ * is simply the USDC answer applied to everything. In euros S$5 is 3.31 at 1.51,
+ * so a 4 EURC grant hands a throwaway burner ~0.7 it will never spend.
+ *
+ * That waste is not symmetrical with USDC's, which is the actual argument for
+ * splitting them: USDC is REPLACEABLE — `services/funder.ts` swaps ETH for more
+ * — and EURC is not. Base Sepolia has no EURC market (no pool on Uniswap v2, none
+ * on v3 at any fee tier, and the one WETH/EURC pool is uninitialised with zero
+ * liquidity), so Circle's faucet is the only tap and every unit stranded in a
+ * fresh burner is gone for good.
+ *
+ * Constants rather than a rate-derived calculation, deliberately: this module is
+ * pure and chain-free, which is exactly what lets a unit test check the
+ * arithmetic. The test pins each grant against the demo cap at that token's
+ * rate, so a rate that moves far enough to invalidate one fails there.
+ */
+const GRANT_OVERRIDES: Partial<Record<TokenId, bigint>> = {
+  EURC: 3_400_000n, // S$5 at 1.51 is 3.311; this is that with a little room
+};
+
+/** What one grant of `token` is worth. */
+export function grantFor(token: TokenId): bigint {
+  return GRANT_OVERRIDES[token] ?? GRANT;
+}
 
 /**
  * Where the payer's ETH balance is topped up to. Enough for the owner

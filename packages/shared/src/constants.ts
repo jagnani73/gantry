@@ -1,6 +1,18 @@
 /** Seeded FixedRateSwap rate: XSGD (6dp) out per 1e6 base units in → 1.3421 SGD/USDC. */
 export const DEMO_RATE = 1_342_100n;
 
+/**
+ * The same thing for EURC → 1.51 SGD/EURC, listed on the live swap by one owner
+ * transaction rather than seeded at deploy.
+ *
+ * Here for the same reason `DEMO_RATE` is: several places need to say what S$5
+ * or S$50 is worth in a token, and until now this figure existed only inside a
+ * transaction and in prose, where it can rot silently. It is a MIRROR of chain
+ * state, never the source — anything settling money reads `rateOf` — so if the
+ * owner re-rates EURC, this is a thing to update, not a thing to trust.
+ */
+export const DEMO_RATE_EURC = 1_510_000n;
+
 /** Protocol fee (skimmed in _settle) and the card-fee comparison used in the dashboard. */
 export const GANTRY_FEE_BPS = 50;
 export const CARD_FEE_BPS = 280;

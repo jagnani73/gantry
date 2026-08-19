@@ -9,7 +9,7 @@ import { isDefiniteFailure } from "./bridge";
 import {
   ETH_TARGET,
   FUNDER_ETH_RESERVE,
-  GRANT,
+  grantFor,
   createFaucetLegs,
   funderCanSend,
   gasTopUpAmount,
@@ -114,7 +114,10 @@ export function fundPayerGas(address: Address): Promise<GasTopUpResult> {
 
 async function grantToken(address: Address, token: TokenId): Promise<FaucetResponse> {
   const key = address.toLowerCase();
-  const refusal = legs.usdc.claim(key, GRANT, Date.now());
+  // Sized per token: the binding figure is the payer page’s S$5 cap converted at
+  // that token’s rate, and EURC cannot be bought back. See faucet-core.
+  const grant = grantFor(token);
+  const refusal = legs.usdc.claim(key, grant, Date.now());
   if (refusal) throw usdcRefusalError(refusal);
 
   // Everything from the reservation to a confirmed transfer lives in one try, so
@@ -133,13 +136,13 @@ async function grantToken(address: Address, token: TokenId): Promise<FaucetRespo
       functionName: "balanceOf",
       args: [relayerAccount.address],
     });
-    if (funderBalance < GRANT) {
+    if (funderBalance < grant) {
       // Say what actually happened: a bare transfer revert reads like a bug.
       // ApiError is a definite failure, so the catch below releases the grant.
       throw new ApiError(
         503,
         "FunderExhausted",
-        `the demo funder is out of ${token} (holds ${funderBalance}, needs ${GRANT}). Top up ${relayerAccount.address}`,
+        `the demo funder is out of ${token} (holds ${funderBalance}, needs ${grant}). Top up ${relayerAccount.address}`,
       );
     }
 
@@ -147,17 +150,17 @@ async function grantToken(address: Address, token: TokenId): Promise<FaucetRespo
       address: usdc,
       abi: erc20Abi,
       functionName: "transfer",
-      args: [address, GRANT],
+      args: [address, grant],
     });
     // Cooldown only after a successful transfer — a failed one must surface its
     // real error on retry, not a bogus 429.
     legs.usdc.armCooldown(key, Date.now());
-    return { txHash: receipt.transactionHash, funded: GRANT.toString() };
+    return { txHash: receipt.transactionHash, funded: grant.toString() };
   } catch (err) {
     if (isDefiniteFailure(err)) {
       // Proven that nothing moved: a pre-broadcast ApiError, a decoded revert, or
       // a mined-but-reverted receipt. Safe to hand the allowance back.
-      legs.usdc.release(GRANT);
+      legs.usdc.release(grant);
       throw err;
     }
     // Ambiguous — a receipt timeout or a transport failure after broadcast. The
@@ -172,7 +175,7 @@ async function grantToken(address: Address, token: TokenId): Promise<FaucetRespo
     // manual check below possible.
     legs.usdc.armCooldown(key, Date.now());
     console.error(
-      `faucet CRITICAL: grant of ${GRANT} to ${address} has an UNRESOLVED outcome — ` +
+      `faucet CRITICAL: grant of ${grant} ${token} to ${address} has an UNRESOLVED outcome — ` +
         `reservation kept and cooldown armed. Check the address on-chain before re-granting.`,
       err,
     );
