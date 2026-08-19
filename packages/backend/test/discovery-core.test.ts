@@ -6,9 +6,11 @@ import {
   DEMO_RATE,
   DEMO_RATE_EURC,
   OFFER_TOKEN_IDS,
+  parseSgd,
+  quoteAmountIn,
   type MerchantSummary,
 } from "@gantry/shared";
-import { buildDiscoveryListing, parsePaging } from "../src/services/discovery-core";
+import { SAMPLE_SGD, buildDiscoveryListing, parsePaging } from "../src/services/discovery-core";
 
 const merchants: MerchantSummary[] = [
   {
@@ -45,6 +47,7 @@ const inputs = {
   core: BASE_SEPOLIA_ADDRESSES.gantryCore,
   limit: 100,
   offset: 0,
+  total: merchants.length,
 };
 
 test("every listing is payable exactly as written", () => {
@@ -119,6 +122,36 @@ test("total counts the whole registry, so a capped page announces itself", () =>
   const second = buildDiscoveryListing({ ...inputs, limit: 1, offset: 1 });
   assert.equal(second.items[0]!.serviceName, "GadgetHub SG");
   assert.equal(buildDiscoveryListing({ ...inputs, offset: 99 }).items.length, 0);
+});
+
+test("total is the registry's count, not the length of the rows handed in", () => {
+  // `merchants` is itself a capped read, so measuring it made `total` describe
+  // the page while claiming to describe the rail — a client paging by `offset`
+  // would stop at the cap believing it had enumerated everything.
+  const capped = buildDiscoveryListing({ ...inputs, total: 500 });
+  assert.equal(capped.items.length, 2, "the page is what was handed in");
+  assert.equal(capped.pagination.total, 500, "the total is what the caller counted");
+});
+
+test("the listed price is spelled once — quote, extra.sgd and the URL agree", () => {
+  // These three used to be a derived amount and two "1.00" literals. Moving the
+  // constant moved only the amount, publishing a quote for one figure against a
+  // URL naming another; a vanilla client paying the listing verbatim is then
+  // refused at settle for quoting wrong, which makes discovery decoration.
+  const { items } = buildDiscoveryListing(inputs);
+  for (const item of items) {
+    const sgd = new URL(item.resource).searchParams.get("sgd");
+    assert.equal(sgd, SAMPLE_SGD, "the URL names the listed price");
+    for (const accept of item.accepts) {
+      assert.equal(accept.extra["sgd"], sgd, "extra.sgd restates the same price");
+      const token = inputs.tokens.find((t) => t.name === accept.extra["name"])!;
+      assert.equal(
+        accept.amount,
+        quoteAmountIn(parseSgd(sgd!), token.rate).toString(),
+        "the quote prices exactly the amount the URL asks for",
+      );
+    }
+  }
 });
 
 test("a shop with no display name still lists under something", () => {

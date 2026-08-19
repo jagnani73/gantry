@@ -1,4 +1,4 @@
-import { caip2, quoteAmountIn, type MerchantSummary } from "@gantry/shared";
+import { caip2, formatUnits6, quoteAmountIn, type MerchantSummary } from "@gantry/shared";
 
 /**
  * Every registered shop, as resources a machine can find and pay.
@@ -27,6 +27,19 @@ import { caip2, quoteAmountIn, type MerchantSummary } from "@gantry/shared";
  * changes `sgd` and the endpoint prices that instead. One round number, because
  * it appears in every listing and a hawker-scale figure keeps the demo honest. */
 export const SAMPLE_SGD_UNITS = 1_000_000n;
+
+/**
+ * The same figure as the string a caller pays against.
+ *
+ * The listed price used to be spelled three times — once derived
+ * (`quoteAmountIn(SAMPLE_SGD_UNITS, …)`) and twice as the literal `"1.00"`, in
+ * `extra.sgd` and in the `?sgd=` of the resource URL. Changing the constant
+ * moved only the first, so every listing would have advertised a quote for one
+ * amount against a URL naming another, and a vanilla client paying the listing
+ * verbatim would be refused at settle for quoting wrong. Deriving it makes the
+ * "payable exactly as written" property structural rather than remembered.
+ */
+export const SAMPLE_SGD = formatUnits6(SAMPLE_SGD_UNITS);
 
 /** One currency a listing can be paid in, priced. */
 export interface DiscoveryOfferToken {
@@ -60,6 +73,15 @@ export interface DiscoveryInputs {
   core: string;
   limit: number;
   offset: number;
+  /**
+   * How many merchants are on the rail ALTOGETHER — not `merchants.length`.
+   *
+   * Passed in rather than measured, because `merchants` is itself a capped read
+   * (`listMerchants` stops at MERCHANT_LIST_LIMIT) and measuring it made `total`
+   * describe the page while claiming to describe the registry. A client paging
+   * by `offset` would then believe it had enumerated the whole rail at the cap.
+   */
+  total: number;
 }
 
 export interface DiscoveryListing {
@@ -97,7 +119,7 @@ export interface DiscoveryItem {
  * registers.
  */
 export function buildDiscoveryListing(inputs: DiscoveryInputs): DiscoveryListing {
-  const { merchants, origin, chainId, tokens, relayer, core, limit, offset } = inputs;
+  const { merchants, origin, chainId, tokens, relayer, core, limit, offset, total } = inputs;
   const network = caip2(chainId);
   const base = origin.replace(/\/+$/, "");
 
@@ -113,12 +135,12 @@ export function buildDiscoveryListing(inputs: DiscoveryInputs): DiscoveryListing
       amount: quoteAmountIn(SAMPLE_SGD_UNITS, token.rate).toString(),
       payTo,
       maxTimeoutSeconds: 600,
-      extra: { handle: merchant.handle, sgd: "1.00", name: token.name },
+      extra: { handle: merchant.handle, sgd: SAMPLE_SGD, name: token.name },
     });
     return {
       // Carries the amount it is listed at, so an agent can pay this string
       // verbatim. The endpoint prices whatever `sgd` asks for.
-      resource: `${base}/pay/${merchant.handle}?sgd=1.00`,
+      resource: `${base}/pay/${merchant.handle}?sgd=${SAMPLE_SGD}`,
       type: "http",
       x402Version: 2,
       // Scheme-major, then currency — byte-for-byte the order the pay link's own
@@ -144,8 +166,9 @@ export function buildDiscoveryListing(inputs: DiscoveryInputs): DiscoveryListing
     x402Version: 2,
     items,
     // `total` is the whole registry, not the page — a client cannot tell a
-    // capped response from the end of the list without it.
-    pagination: { limit, offset, total: merchants.length },
+    // capped response from the end of the list without it. It comes from the
+    // caller's own count for that reason; see the field's note on `DiscoveryInputs`.
+    pagination: { limit, offset, total },
   };
 }
 

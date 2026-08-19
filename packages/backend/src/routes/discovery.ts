@@ -43,7 +43,15 @@ discoveryRouter.get("/discovery/resources", async (req, res) => {
         rate: await readRate(id),
       })),
     );
-  } catch {
+  } catch (err) {
+    // Same shape as `priceIn` in routes/order.ts, and for the same reason: a
+    // bare catch here reported a PERMANENT fault as a transient one. `readRate`
+    // throws ApiError(400, TokenUnsupported) when the swap has no rate listed
+    // for a token — a config error that will never clear — and collapsing that
+    // into "retry shortly" leaves a machine retrying forever while the operator
+    // sees neither the reason nor the cause.
+    if (err instanceof ApiError) throw err; // TokenUnsupported stays a 400
+    console.error("discovery: rate read failed", err);
     throw new ApiError(503, "QuoteUnavailable", "rate source unreachable; retry shortly");
   }
 
@@ -64,8 +72,21 @@ discoveryRouter.get("/discovery/resources", async (req, res) => {
     core: config.addresses.gantryCore,
     limit,
     offset,
+    // The registry's own count, not the length of the (capped) page above.
+    total: index.total,
   });
 
   res.set("Cache-Control", "no-store");
-  res.json(listing);
+  // The same caveat `/api/merchants` carries, and it matters MORE here.
+  //
+  // A bare local read cannot tell "the rail is empty" from "this host has not
+  // indexed it yet", and every deploy wipes SQLite and starts a ~35-minute cold
+  // backfill — during which this answers 200 with an empty `items`. The reason a
+  // caveat was enough on the human directory ("nobody acts on this list") is
+  // inverted here: acting on the list is the whole point of the endpoint, and
+  // there is no human to notice it looked thin.
+  //
+  // Additive and outside the Bazaar shape's required fields, so a client that
+  // does not know about it is unaffected.
+  res.json({ ...listing, indexer: index.indexer });
 });
