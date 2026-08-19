@@ -40,6 +40,8 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 PayNow works well if you hold a Singapore bank account. Roughly 16 million people visit Singapore each year without one, and they fall back to cards at 2–3% merchant fees, or to cash.
 
+Those visitors do not arrive holding Singapore dollars, so the payer chooses what to pay **in** — dollars or euros today, and the hawker is paid in Singapore dollars either way. That is one contract call, not two integrations: `GantryCore.XSGD` is `immutable`, so the output cannot vary by screen, by payer or by currency.
+
 AI agents have it worse, because they cannot open a bank account at all. [x402](https://github.com/x402-foundation/x402) launched in May 2025 and went to the Linux Foundation, with the x402 Foundation operational by July 2026, so agents finally have a standard way to pay. What they still lacked was anywhere to spend. That gap is what Gantry fills.
 
 Agent money also needs rules rather than trust. Every spend here runs inside an on-chain allowance: a daily cap, a per-transaction cap, a merchant-category allowlist, and an expiry date. That is [MAS Project Orchid's Purpose-Bound Money](https://www.mas.gov.sg/schemes-and-initiatives/project-orchid) idea pointed at software instead of vouchers.
@@ -47,8 +49,8 @@ Agent money also needs rules rather than trust. Every spend here runs inside an 
 ## How it works
 
 1. A payment is an **intent**: _merchant M requests S$X_.
-2. A QR code and an HTTP `402 Payment Required` response are **two encodings of the same intent**.
-3. One settlement contract consumes both, atomically swapping whatever stablecoin arrived into XSGD.
+2. A QR code and an HTTP `402 Payment Required` response are **two encodings of the same intent** — and since they are, one URL can be both. `GET /pay/<handle>?sgd=4.50` redirects a browser into the payment page and answers everything else with the 402.
+3. One settlement contract consumes both, atomically swapping whatever stablecoin arrived into XSGD. Pay in dollars or in euros; the hawker is paid in Singapore dollars either way, because `GantryCore.XSGD` is `immutable`.
 
 ```mermaid
 flowchart LR
@@ -108,14 +110,22 @@ The EIP-3009 nonce _is_ the `intentId`. That binding is what stops a signature b
 
 ## The agent door
 
-The same order endpoint answers a machine with `402 Payment Required` and an x402 v2 `PAYMENT-REQUIRED` header. Its `accepts[]` offers two ways to pay:
+The same order endpoint answers a machine with `402 Payment Required` and an x402 v2 `PAYMENT-REQUIRED` header. Its `accepts[]` offers two schemes:
 
 | Scheme       | Who it's for                         | On-chain payer             | Custody                                                                                                                          |
 | ------------ | ------------------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `exact`      | Any vanilla x402 client, unmodified  | The relayer                | One hop, PSP-style. Spec clients generate their own EIP-3009 nonce, so a facilitator bridge collects the payment and re-signs it |
 | `gantry-pbm` | Agents with an on-chain spend policy | The agent's own PBM wallet | None. The wallet pays the merchant directly                                                                                      |
 
+Each scheme is offered **once per payable currency**, so a single challenge carries four entries — `exact/USDC`, `exact/EURC`, `gantry-pbm/USDC`, `gantry-pbm/EURC` — priced by one function against one merchant. `exact/USDC` is first, because an unmodified client takes the first entry without choosing.
+
 An unmodified [`@x402/fetch`](https://github.com/x402-foundation/x402) client pays this endpoint end to end, which is the interop proof. The second path is the more interesting one.
+
+### An agent can find the shop, too
+
+Every other surface here assumes a human already picked the merchant — they scanned its code or tapped it in a list. An agent has no counter to stand at, so `GET /discovery/resources` lists every registered shop as a payable resource, in the [x402 Bazaar's](https://github.com/x402-foundation/x402) `DiscoveryResourcesResponse` shape. Each listing carries its own price and is payable **verbatim**; a placeholder amount would be refused at settle, which would make discovery decoration.
+
+That closes the loop: list the shops, pick one, pay it, with no human at any point. It is not a Bazaar registry — the shape is theirs, the index is ours, and nothing publishes to or mirrors anyone else's catalog.
 
 ### Spend policies that are contracts, not config
 
@@ -153,7 +163,7 @@ Every refusal there is a contract revert, not a backend `if`. In the demo an age
 
 Deploying them together is what lets the indexer sweep settlements, denials, merchant registrations and agent-wallet creations in a single `getLogs` pass over both addresses. Six event types in one topic filter cost what one would.
 
-Payments settle in Circle's real testnet USDC ([`0x036CbD53…8f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)), signed against Circle's own contract and fork-tested. Demo merchants `ah-hock-chicken-rice` and `gadgethub-sg` are registered on-chain.
+Payments settle in Circle's real testnet stablecoins — USDC ([`0x036CbD53…8f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)) or EURC ([`0x80845665…77359F`](https://sepolia.basescan.org/address/0x808456652fdb597867f38412077A9182bf77359F)), whichever the payer chooses — signed against Circle's own contracts and fork-tested. No mock was added for the euro: both are FiatToken v2 with a byte-identical EIP-3009 typehash, so there is no second signing path, and `MockXSGD` remains the only mocked token in the system. Demo merchants `ah-hock-chicken-rice` and `gadgethub-sg` are registered on-chain.
 
 > **Prototype scope.** The FX rate is owner-set rather than market-derived; the `IGantrySwap` interface is the part meant to survive, with real XSGD liquidity behind it in production. One relayer key pays all gas. Merchant registration is permissionless and self-attested, and nothing here reviews or verifies a merchant, which is why every badge reads _"Registered on-chain"_ and never _"Verified"_. A production deployment would operate under a licensed PSP within Singapore's Payment Services Act.
 
@@ -251,8 +261,8 @@ A pnpm monorepo, five packages:
 | Package              | Role                                                                                                                                                                             |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/contracts` | Foundry. `GantryCore`, `AgentPBMWallet` and its factory, `FixedRateSwap` behind `IGantrySwap`, EIP-3009 mocks. 201 tests, including policy fuzzing, four invariants and real-USDC fork tests. |
-| `packages/shared`    | The single source of truth both halves import: generated ABIs, contract addresses, ceil quote math, EIP-712 typed-data builders, structural error decoding, x402 wire types.     |
-| `packages/backend`   | Express and viem. Merchant API, the relayer (the only gas key), the SSE indexer, paged history, and a self-hosted x402 facilitator serving both schemes.                         |
+| `packages/shared`    | The single source of truth both halves import: generated ABIs, contract addresses, ceil quote math, EIP-712 typed-data builders, structural error decoding, x402 wire types, and the one policy checker that a declined receipt and the refusal verifier both run, so a prediction and an audit cannot disagree. |
+| `packages/backend`   | Express and viem. Merchant API, the relayer (the only gas key), the SSE indexer, paged history, machine-readable discovery, and a self-hosted x402 facilitator serving both schemes. |
 | `packages/web`       | Next.js 15. Landing page, merchant directory, onboarding, the merchant back-office, the payer app, the payer page and the printable standee.                                     |
 | `packages/agent`     | The LLM agent CLI, running Gemini or the AIsa gateway through the Vercel AI SDK with a visually identical scripted fallback. Tools do the HTTP and the signing; the model only decides and narrates. |
 
@@ -275,10 +285,14 @@ Every variable is documented inline in the `.env.example` files, which are the o
 Nothing needs deploying, because the contracts are live and their addresses ship in `@gantry/shared`. The relayer address does need Base Sepolia ETH and USDC: it is the only gas key in the system, and it doubles as the funder that tops up demo payers and agent wallets.
 
 ```bash
-pnpm demo:reset                            # provision a rehearsal: funds, merchants, agent policy
-pnpm --filter @gantry/backend e2e:pay      # human door, end to end
-pnpm --filter @gantry/backend x402:buy     # vanilla @x402/fetch pays the agent door
-pnpm --filter @gantry/agent   e2e:pbm      # the LLM agent pays through its policy
+pnpm demo:reset                                        # provision a rehearsal: funds, merchants, agent policy
+pnpm --filter @gantry/backend e2e:pay                  # human door, end to end
+pnpm --filter @gantry/backend e2e:pay -- --token EURC  # the same door, paid in euros
+pnpm --filter @gantry/backend x402:buy                 # vanilla @x402/fetch pays the agent door
+pnpm --filter @gantry/backend x402:buy -- --link       # …through the dual-door pay link
+pnpm --filter @gantry/backend x402:buy -- --discover   # …after finding the shop itself
+pnpm --filter @gantry/agent   e2e:pbm                  # the LLM agent pays through its policy
+pnpm --filter @gantry/backend verify:denial            # re-derive a refusal from public state
 ```
 
 For the phone demo, put the phone on the same Wi-Fi, set `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_BACKEND_URL` to `http://<laptop-LAN-IP>:<port>`, then open `/qr/ah-hock-chicken-rice` and scan. Setting `NEXT_PUBLIC_DEMO_KEY` to a private key offers an in-browser demo account that the backend auto-funds, so a payer needs no wallet at all. Leave it unset and visitors connect their own.

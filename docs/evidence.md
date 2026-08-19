@@ -1,6 +1,7 @@
 # Evidence
 
-Four transactions on Base Sepolia, and what each one is and is not proof of.
+Five claims on Base Sepolia, each with the transactions behind it, and what each
+one is and is not proof of.
 
 `docs/measurements.md` answers *what a payment costs*. This file answers *what
 you may conclude from one*. Every row below was read back off-chain with
@@ -168,6 +169,32 @@ the relayer's word, bounded only by the guard that refuses to author a denial
 against a human-door intent. **The refusal is real. The record does not prove
 it.** We would rather write that sentence than let a judge find it.
 
+**You do not have to do that arithmetic by hand, and you do not have to ask us.**
+
+```bash
+pnpm --filter @gantry/backend verify:denial -- --tx <cancelTxHash>
+```
+
+It takes one cancel transaction — the Basescan link a declined receipt already
+shows — reads the policy, `spentToday()`, the wallet balance and the merchant's
+`categoryId` **at that block**, recomputes `authorizeSpend`'s decision through
+the same `checkSpend` the product uses, and compares it to the reason we emitted.
+Every input is a public getter or a log, so a stranger with any RPC URL gets the
+same answer; it asks no Gantry API for an opinion.
+
+Three things about it matter more than that it exists:
+
+- **It can contradict us.** The verdict is `consistent` / `contradicted` /
+  `unprovable`, and the fabricated-claim case is unit-tested rather than
+  asserted. A checker that can only agree proves nothing.
+- **It reads history, not head.** Run against a 1.4-day-old denial it returns a
+  *different* expiry than that wallet has now, which is how we know the block
+  pinning works.
+- **It still does not check the signature**, so it proves the wallet *would have
+  refused* and never that the agent *asked*. That limit is exported as a constant
+  and printed on every run. The wording stays "re-derivable from public state" —
+  not "reproducible", and not "chain-proven".
+
 ---
 
 ## 4 · An unmodified x402 client pays, through the bridge
@@ -194,6 +221,61 @@ first log here is `AuthorizationUsed` with `authorizer` = the relayer, which is
 the custodial hop made legible. **One hop, PSP-shaped, and on the honest-labels
 list.** `docs/measurements.md` prices it: 267,416 gas against 181,582 direct,
 about 47% more.
+
+---
+
+## 5 · The same three doors, paid in euros
+
+The claim is *any currency in, Singapore dollars out*. Three receipts, one per
+door, all settling to XSGD — and a fourth that shows the custodial hop again.
+
+| Door | Transaction | In | Out |
+|---|---|---|---|
+| Human QR | [`0x0d2c5eaf…`](https://sepolia.basescan.org/tx/0x0d2c5eaf7b5a6010ad03b28155b80fb814967c674583601d48f9cac0824b373f) · block 45,671,552 · 19 Aug 11:49:52 SGT · 197,356 gas | 0.993378 EURC | 1,500,000 XSGD · 7,500 fee · 1,492,500 to the merchant |
+| Agent PBM | [`0x00132981…`](https://sepolia.basescan.org/tx/0x0013298126ebea3136db415559bf43299ec9f78dbac16ea25a48dbf837536f7f) · block 45,674,352 · 19 Aug 13:23:12 SGT · 181,582 gas | 2.980133 EURC | 4,500,000 XSGD · 22,500 fee · 4,477,500 to the merchant |
+| x402 `exact` | [`0x26db5566…`](https://sepolia.basescan.org/tx/0x26db556614fef6ea9f2d91a809c77a2bae26cf955d6821b8a668965e51e130c3) · block 45,677,314 · 19 Aug 15:01:56 SGT · 181,676 gas | 2.980133 EURC | 4,500,000 XSGD · 22,500 fee · 4,477,500 to the merchant |
+
+**What this proves.** The euro is not a label on a dollar payment. Each receipt's
+first token movement is Circle's own EURC
+([`0x80845665…77359F`](https://sepolia.basescan.org/address/0x808456652fdb597867f38412077A9182bf77359F)),
+leaving the payer, entering `GantryCore`, passing through `FixedRateSwap`, and
+coming back as XSGD before the fee split — the same five-transfer shape as every
+dollar payment in §1–§4, because it is the same `_settle`.
+
+**No mock was added to do this.** EURC is a real Circle FiatToken v2 with a
+`TRANSFER_WITH_AUTHORIZATION` typehash byte-identical to USDC's, which is why the
+signing path needed no second branch. `MockXSGD` is still the only mocked token
+in the system, and that sentence is load-bearing.
+
+**Listing it cost one owner transaction and no redeploy.**
+[`0x6aded10d…`](https://sepolia.basescan.org/tx/0x6aded10d2859de33d5aa243ad651b8d2b825cc4ea6295042c37598a3e473700a)
+set `rateOf(EURC) = 1_510_000`. `rateOf` is an open mapping and `GantryCore`
+holds no token allowlist, so the `IGantrySwap` seam the design claimed turned out
+to be real rather than aspirational.
+
+**The `exact` row has a second transaction, and it is where the buyer is.**
+[`0xc3b43203…`](https://sepolia.basescan.org/tx/0xc3b4320394daa6c2ff8fa777abeb77415fa5afdaf939e3059721c9a52b8a5df0)
+· 85,732 gas · the collect leg, in the **same block** as the settle. Its
+`AuthorizationUsed.authorizer` is `0x681ecfd5…63bc9`, the actual payer; the
+settle's is the relayer. Same custodial hop as §4, same honest label — the
+currency changed and the trust model did not.
+
+**What this does not prove.**
+
+- **Not that 1.51 is a market rate.** It is owner-set, exactly as 1.3421 is. Two
+  owner-set rates are not an FX engine.
+- **Not that the agent door is multi-currency.** It is one currency *per agent*:
+  `Policy` holds a single `dailyCap`, a single `perTxCap` and a single
+  `spentToday`, all in one token's units, so a wallet spending both would count
+  €1 as $1 — about 13% adrift at these rates, and silent. The rule is enforced
+  off-chain at the PBM door (`agent_currency_mismatch`), which means it is a
+  door check and **not a contract guarantee**.
+- **Not that euros cost more.** The 197,356 on the human row is the first euro
+  payment ever made here and is cold storage; repeated warm it is 183,692, within
+  21 gas of the dollar equivalent. See `docs/measurements.md`.
+- **Not that INR works.** It is visibly locked in the payer's picker because no
+  INR stablecoin exists on Base Sepolia. Shown rather than hidden, so the set
+  does not read as closed.
 
 ---
 
@@ -279,6 +361,26 @@ curl https://gantry-backend.onrender.com/api/agents/0xd99C11b07854704225e7F01356
 **`/api/denials` requires the `wallet` parameter** and answers `400
 MissingWallet` without it — the endpoint declines to build the aggregate of
 every refusal the permissionless factory ever produced.
+
+Two surfaces you can check without any key at all, and they are the shortest
+proof of the thesis in this file:
+
+```bash
+# ONE URL. A machine is quoted; a browser is redirected into the payer app.
+curl -i 'https://gantry-backend.onrender.com/pay/ah-hock-chicken-rice?sgd=4.50'
+# -> 402 Payment Required + a PAYMENT-REQUIRED header
+curl -i -H 'Accept: text/html' \
+  'https://gantry-backend.onrender.com/pay/ah-hock-chicken-rice?sgd=4.50'
+# -> 302 to https://gantry-innovatex.vercel.app/pay/ah-hock-chicken-rice?sgd=4.50
+
+# the rail, enumerable by a machine that knows no handle
+curl https://gantry-backend.onrender.com/discovery/resources
+```
+
+Decode that 402 and you get four ways to pay the same order —
+`exact/USDC`, `exact/EURC`, `gantry-pbm/USDC`, `gantry-pbm/EURC` — priced by one
+function against one merchant. `exact/USDC` is first because an unmodified client
+takes the first entry without choosing.
 
 Two shapes of the wire data worth knowing before you go looking: a denial row
 carries `at` but **no block number**, and the `IntentSettled` figures are gross —
