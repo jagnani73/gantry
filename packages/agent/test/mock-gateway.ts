@@ -8,7 +8,7 @@ import type { AddressInfo } from "node:net";
  * no real provider will reproduce on demand: a gateway that answers a tool call
  * as prose in `message.content` while `tool_calls` stays empty. Gemini calls
  * tools even when a prompt tells it not to, so without this there is no way to
- * reach `refuseSilentRun` at all.
+ * reach the `silent` refusal at all.
  *
  * Deliberately hand-rolled rather than recorded: the point is the SHAPE of the
  * response, and a fixture captured from a real gateway would pin that gateway's

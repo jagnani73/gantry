@@ -22,14 +22,14 @@ fuzz = { runs = 256 }
 # For a real campaign before a milestone: FOUNDRY_PROFILE=deep forge test --match-path "test/*.invariants.t.sol"
 invariant = { runs = 48, depth = 96 }
 
-# Fork tests self-skip when BASE_SEPOLIA_RPC_URL is unset; this profile just
-# lowers fuzz patience for remote runs:
-# FOUNDRY_PROFILE=fork forge test --match-path "test/fork/*" -vvv
 [profile.deep]
 # The campaign the CI numbers are a sample of. Slow on purpose; run it by hand when the
 # policy contract changes, not on every push.
 invariant = { runs = 256, depth = 500 }
 
+# Fork tests self-skip when BASE_SEPOLIA_RPC_URL is unset; this profile just
+# lowers fuzz patience for remote runs:
+# FOUNDRY_PROFILE=fork forge test --match-path "test/fork/*" -vvv
 [profile.fork]
 fuzz = { runs = 16 }
 

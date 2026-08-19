@@ -76,10 +76,16 @@ async function main(): Promise<void> {
   const outcome = await runAgent(prompt, (label) => {
     console.error(`[agent] narrating with ${label}`);
   });
-  process.exit(report(outcome));
+  // `exitCode`, not `exit()`. stdout/stderr are ASYNC when piped, and
+  // process.exit() truncates whatever has not flushed — which is exactly the
+  // operator-facing `[agent]` lines above, including the `silent` refusal and
+  // the scripted-fallback notice. This repo has already been bitten once by a
+  // pipe hiding an outcome; the exit code is the thing to gate on, and it
+  // survives either way.
+  process.exitCode = report(outcome);
 }
 
 main().catch((err) => {
   console.error("agent failed:", err);
-  process.exit(1);
+  process.exitCode = 1;
 });

@@ -46,8 +46,8 @@ interface ToastApi {
    * Neither a success nor a failure: the answer to an action that was
    * understood and cannot be taken yet — a locked option explaining itself.
    *
-   * Deliberately its own tone rather than borrowing one.  would claim
-   * something happened and  would paint an ordinary tap red, and both
+   * Deliberately its own tone rather than borrowing one. `success` would claim
+   * something happened and `error` would paint an ordinary tap red, and both
    * are the kind of small dishonesty this app avoids elsewhere.
    */
   info(message: string): void;

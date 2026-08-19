@@ -80,7 +80,7 @@ export const env = {
    * absent one fails at startup with a sentence saying so.
    *
    * Whatever is chosen MUST be a model with native tool calling. See the note
-   * on `selectProvider` in index.ts: a gateway that answers tool calls as prose
+   * on `selectProvider` in run.ts: a gateway that answers tool calls as prose
    * does not error, it just never pays.
    */
   aisaModel: process.env.AISA_MODEL,

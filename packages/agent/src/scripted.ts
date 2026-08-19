@@ -11,7 +11,7 @@ import type { MerchantListEntry, PayResult } from "./pay-flow";
  *
  * NOT reached when a live run finishes having called no tools: this engine pays,
  * and a model that only talked gave no evidence a payment was wanted. See
- * `refuseSilentRun` in index.ts.
+ * the `silent` outcome in run.ts.
  */
 
 const DRINKS = { handle: "ah-hock-chicken-rice", sgd: "4.50" };

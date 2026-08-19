@@ -32,8 +32,8 @@ contract MultiTokenTest is GantryTestBase {
     }
 
     // The ceil quote from the shared quote module, restated here so the two
-    // cannot drift: a FLOORED quote swaps to less than `xsgdAmount` and the
-    // settle reverts `InsufficientXsgdOut`.
+    // cannot drift: a FLOORED quote swaps to less than `xsgdAmount`, and the
+    // swap's own min-out then refuses the settle.
     function _quote(uint128 xsgdAmount, uint256 rate) internal pure returns (uint128) {
         return uint128((uint256(xsgdAmount) * 1e6 + rate - 1) / rate);
     }
@@ -56,8 +56,18 @@ contract MultiTokenTest is GantryTestBase {
         assertEq(inr.balanceOf(address(core)), 0, "core retained payer token");
     }
 
-    /// The guard that makes an owner-set rate safe to add: the core measures its
-    /// OWN XSGD delta, so a swap that under-delivers cannot be talked past.
+    /// A settle quoted against a better rate than the swap lists cannot pay the
+    /// merchant, and the refusal comes from the SWAP.
+    ///
+    /// The core passes `intent.xsgdAmount` down as `minOut`, so `swapExactIn`
+    /// reverts `InsufficientOutput` before the core's own balance-delta guard
+    /// (`InsufficientXsgdOut`) is ever reached. Two layers, and this is the
+    /// outer one; the core's is exercised directly in
+    /// `GantryCore.settleAuth.t.sol` against a deliberately short swap.
+    ///
+    /// Worth pinning the selector rather than accepting any revert: this test
+    /// asserted the CORE's guard for as long as it used a bare `expectRevert`,
+    /// and would have passed on a build where that guard had been deleted.
     function test_minOutHoldsForTheNewToken() public {
         // Quote against a better rate than the swap is actually listing, so the
         // swap returns less XSGD than the intent promises.
@@ -66,7 +76,12 @@ contract MultiTokenTest is GantryTestBase {
 
         (uint8 v, bytes32 r, bytes32 s) =
             _signAuth(address(inr), underQuoted, block.timestamp + 1 hours, intentId);
-        vm.expectRevert();
+        // `expectPartialRevert`, so the SELECTOR is pinned and its two amounts
+        // are not: `got` falls out of the ceil quote and the rate, and asserting
+        // it would turn this into a rounding check. Which guard fired is the
+        // fact worth holding. (`expectRevert(bytes4)` compares the whole revert
+        // payload here, so it would demand an argument-less error.)
+        vm.expectPartialRevert(FixedRateSwap.InsufficientOutput.selector);
         core.settleWithAuthorization(intentId, payer, 0, block.timestamp + 1 hours, v, r, s);
 
         assertEq(xsgd.balanceOf(payout), 0, "merchant was paid despite an under-delivering swap");
