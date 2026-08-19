@@ -311,6 +311,7 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
       // token here is what would relabel a euro agent’s caps in dollars.
       balance: held[currency.token] ?? 0n,
       token: currency.token,
+      heldTokens: currency.held,
       rate: rateOf.get(currency.token)!,
       // `uint40`, so viem hands back a number rather than a bigint.
       policyUpdatedAt: stamps[i]?.status === "success" ? (stamps[i]!.result as number) : 0,

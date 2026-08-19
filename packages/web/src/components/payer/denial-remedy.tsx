@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  BASE_SEPOLIA_ADDRESSES,
   CATEGORY_LABELS,
   DIMENSION_ERROR,
   checkSpend,
   formatUnits6,
+  tokenAddress,
   type AgentSummary,
   type DenialEvent,
   type MerchantResponse,
@@ -50,6 +52,21 @@ export function DenialRemedy({
   // from factory logs and the merchant may still be loading. Silence beats a
   // half-answer about someone's spending rules.
   if (!agent || !record) return null;
+
+  // The caps and the amount must be denominated in the SAME token or the
+  // comparison below is arithmetic across two currencies.
+  //
+  // `denial.amountIn` is historical and in `denial.tokenIn`; every field of the
+  // policy is current and in whatever token the wallet holds NOW, which is
+  // derived rather than fixed. A wallet refunded or refunded-into a different
+  // currency since the refusal would have euros checked against dollar caps —
+  // ~13% at the demo rates, enough to flip the verdict either way — and the
+  // output is not a number but a sentence: "nothing in this agent's current
+  // rules would stop this payment", over a payment that would still revert.
+  // No answer is the honest one; the receipt above still states what happened.
+  if (tokenAddress(BASE_SEPOLIA_ADDRESSES, agent.token).toLowerCase() !== denial.tokenIn.toLowerCase()) {
+    return null;
+  }
 
   const verdict: PolicyVerdict = checkSpend(
     {

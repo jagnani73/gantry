@@ -596,10 +596,26 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
             </KeyValue>
           </KeyValueList>
         </Card>
-        <p className="px-1 text-fine text-faint">
-          Caps are stored in {agent.token}. The S$ figures convert at the swap&apos;s owner-set
-          rate of 1 {agent.token} = {formatUnits6(rate, 4)} XSGD.
-        </p>
+        {agent.ambiguous ? (
+          /* The caps above describe ONE of the tokens this wallet holds, and the
+             wallet's single daily counter is genuinely adding them together —
+             so every spend through it is refused (`agent_currency_mismatch`)
+             while the meter above looks healthy. Said here because this is the
+             only screen its owner sees, and the refusal reaches the agent's
+             operator instead. Anyone can cause it: wallet addresses are public
+             and an ERC-20 transfer needs no cooperation. */
+          <p className="px-1 text-fine text-faint">
+            <span className="text-ink">This wallet holds {agent.heldTokens.join(" and ")}.</span> Its
+            policy has one daily counter and one set of caps, so it cannot tell the two apart — the
+            figures above are in {agent.token} only, and payments through this agent are refused
+            until it holds just one. Withdrawing returns everything to you.
+          </p>
+        ) : (
+          <p className="px-1 text-fine text-faint">
+            Caps are stored in {agent.token}. The S$ figures convert at the swap&apos;s owner-set
+            rate of 1 {agent.token} = {formatUnits6(rate, 4)} XSGD.
+          </p>
+        )}
         {/* Two limits stated together, because each one alone misleads. The
             turned-away list is the four kinds of shop this build knows, not a
             complete account of a 256-bit map; and a category is what KIND of
@@ -629,6 +645,12 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
             This is your money, parked where the agent can reach it under the rules above. Revoking
             stops it spending. It does not send anything back. Withdrawing returns the balance to{" "}
             {shortAddress(agent.owner)}, the address that owns this wallet.
+            {/* `withdraw(address token, …)` moves ONE token, so on a wallet
+                holding two the sentence above would be read as emptying it and
+                would leave the other behind with no hint that it existed. */}
+            {agent.ambiguous
+              ? ` One token at a time — this withdraws the ${agent.token}; repeat for the rest.`
+              : ""}
           </p>
           {balance > 0n ? (
             <button

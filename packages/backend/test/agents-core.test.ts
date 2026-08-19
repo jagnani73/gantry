@@ -21,6 +21,7 @@ function raw(over: Partial<RawAgentState> = {}): RawAgentState {
     spentToday: 3_352_955n,
     balance: 10_000_000n,
     token: "USDC",
+    heldTokens: ["USDC"],
     rate: 1_342_100n,
     ...over,
   };
@@ -93,4 +94,16 @@ test("expiry is the LAST allowed second, matching authorizeSpend", () => {
 test("address comparison ignores case, because only chain reads are checksummed", () => {
   assert.equal(sameAddress(OWNER, OWNER.toLowerCase() as `0x${string}`), true);
   assert.equal(sameAddress(OWNER, WALLET), false);
+});
+
+test("a wallet holding two payable tokens crosses the wire as ambiguous", () => {
+  // The flag used to be computed by resolveAgentCurrency and dropped before it
+  // reached AgentSummary, so the payer's own screen rendered a healthy cap meter
+  // in one currency over a wallet the PBM door refused every spend from.
+  const both = toAgentSummary(raw({ token: "USDC", heldTokens: ["USDC", "EURC"] }));
+  assert.equal(both.ambiguous, true);
+  assert.deepEqual(both.heldTokens, ["USDC", "EURC"]);
+  // And the ordinary case stays unflagged, including an unfunded wallet.
+  assert.equal(toAgentSummary(raw()).ambiguous, false);
+  assert.equal(toAgentSummary(raw({ heldTokens: [], balance: 0n })).ambiguous, false);
 });

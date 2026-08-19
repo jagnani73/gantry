@@ -322,9 +322,32 @@ export interface AgentSummary {
   /** Decoded names for the set bits; an id the registry does not know renders
    * as `category_<id>` rather than disappearing. */
   categories: string[];
-  /** The token whose balance is reported — what a top-up must TRANSFER (it is
-   * real Circle USDC and cannot be minted). */
+  /**
+   * The token whose balance is reported, and the unit every cap above is in.
+   *
+   * DERIVED from what the wallet holds (`resolveAgentCurrency`) — the contract
+   * has no field for it. A top-up must TRANSFER this token: both payable tokens
+   * are real Circle stablecoins and neither can be minted. Do not assume USDC;
+   * that assumption is what would relabel a euro agent's caps in dollars.
+   */
   token: TokenId;
+  /**
+   * The wallet holds MORE THAN ONE payable token, so `token`, `balance`, `rate`
+   * and every cap above describe only one of them.
+   *
+   * A screen must say so rather than render them plainly: the policy has one
+   * `_spentToday` counter, so the wallet really is counting €1 as $1, and the
+   * PBM door refuses every spend through it with `agent_currency_mismatch`.
+   * Without this the owner saw a healthy cap meter over a wallet that could not
+   * pay, and a Withdraw button that empties only half of it.
+   *
+   * Externally triggerable: wallet addresses are public and an ERC-20 transfer
+   * needs no cooperation, so anyone can send one unit of the other token.
+   */
+  ambiguous: boolean;
+  /** Every payable token held, when `ambiguous` — so a screen can name them
+   * instead of saying only that something is wrong. */
+  heldTokens: TokenId[];
   balance: string;
   /** XSGD 6dp out per 1e6 token units — the OWNER-SET display conversion. */
   rate: string;

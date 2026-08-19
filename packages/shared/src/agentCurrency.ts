@@ -1,4 +1,4 @@
-import { PAYABLE_TOKEN_IDS, type TokenId } from "./tokens";
+import { PAYABLE_TOKEN_IDS, VANILLA_DEFAULT_TOKEN, type TokenId } from "./tokens";
 
 /**
  * Which currency an agent spends — derived from what it HOLDS, not stored.
@@ -32,6 +32,10 @@ export type AgentCurrency = {
    * that is wrong for the other.
    */
   ambiguous: boolean;
+  /** Every payable token this wallet actually holds a non-zero balance of, in
+   * `PAYABLE_TOKEN_IDS` order. Empty for an unfunded wallet — which is why
+   * `token` above is a DEFAULT there and not an observation. */
+  held: readonly TokenId[];
 };
 
 /**
@@ -44,8 +48,13 @@ export function resolveAgentCurrency(balances: Partial<Record<TokenId, bigint>>)
   // An unfunded wallet is the common case — freshly created, or drained by the
   // demo. It is not ambiguous, it simply has no evidence yet, and defaulting
   // keeps every screen and every quote on the same token until it is funded.
-  if (held.length === 0) return { token: PAYABLE_TOKEN_IDS[0], ambiguous: false };
-  return { token: held[0]!, ambiguous: held.length > 1 };
+  // VANILLA_DEFAULT_TOKEN, not PAYABLE_TOKEN_IDS[0]: that order comes from the
+  // key order of the TOKENS object, so tidying the registry would silently move
+  // every unfunded wallet onto a different currency — relabelling its caps and
+  // sending topUpPbmWallet after the wrong token — with nobody touching this
+  // file. tokens.ts states the rule for exactly this reason.
+  if (held.length === 0) return { token: VANILLA_DEFAULT_TOKEN, ambiguous: false, held: [] };
+  return { token: held[0]!, ambiguous: held.length > 1, held };
 }
 
 /**

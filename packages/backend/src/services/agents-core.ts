@@ -19,6 +19,10 @@ export interface RawAgentState {
   spentToday: bigint;
   balance: bigint;
   token: TokenId;
+  /** Every payable token this wallet holds a non-zero balance of, from
+   * `resolveAgentCurrency`. More than one means the caps above describe only
+   * one of them and the PBM door refuses every spend. */
+  heldTokens: readonly TokenId[];
   /** XSGD 6dp out per 1e6 token units — the OWNER-SET rate, not a market one. */
   rate: bigint;
   /** Unix seconds of the last `setPolicy`/`revoke`; 0 = never armed. */
@@ -61,6 +65,12 @@ export function toAgentSummary(raw: RawAgentState): AgentSummary {
     categoryBitmap: categoryBitmap.toString(),
     categories: decodeCategories(categoryBitmap),
     token: raw.token,
+    // Computed here rather than at the read site, so the flag cannot be derived
+    // once and then dropped before it reaches the wire — which is what happened:
+    // `resolveAgentCurrency` returned it, `agents.ts` used only `.token`, and no
+    // screen could tell an owner why their wallet was refusing everything.
+    ambiguous: raw.heldTokens.length > 1,
+    heldTokens: [...raw.heldTokens],
     balance: raw.balance.toString(),
     rate: raw.rate.toString(),
     // Derived, and never a second source of truth: the contract has no revoked

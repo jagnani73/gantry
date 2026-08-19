@@ -1,11 +1,13 @@
 import type { Address } from "viem";
 import {
+  BASE_SEPOLIA_ADDRESSES,
   CATEGORY_LABELS,
   CATEGORY_OPTIONS,
   categoryName,
   formatUnits6,
   parseSgd,
   quoteAmountIn,
+  tokenAddress,
   type AgentSummary,
   type DenialEvent,
 } from "@gantry/shared";
@@ -212,7 +214,18 @@ export function readDenial(
   // Nothing describing what happened may be read off it: this is a historical
   // record and the agent is current state, and the two diverge the moment the
   // owner uses the remedy loop on the very receipt they are reading.
-  const rate = agent ? BigInt(agent.rate) : null;
+  //
+  // And only when it is a rate for the RIGHT currency. `agent.rate` became
+  // per-wallet when a wallet's currency started being derived from what it
+  // holds, so a wallet funded in a different token since this refusal reports a
+  // rate that never applied to it — converting a cap denominated in one
+  // currency at another's rate, ~13% adrift at the demo rates, printed as a
+  // definite figure like "dailyCap · S$50.00 a day". The cap's own units are
+  // the denial's `tokenIn`; with no matching rate the figure is omitted, which
+  // the callers below already handle.
+  const sameCurrency =
+    agent !== undefined && tokenAddress(BASE_SEPOLIA_ADDRESSES, agent.token).toLowerCase() === denial.tokenIn.toLowerCase();
+  const rate = sameCurrency ? BigInt(agent.rate) : null;
   const sgd = (units: string | undefined): string | undefined =>
     units === undefined || rate === null ? undefined : `S$${sgdFromCapUnits(units, rate)}`;
 
