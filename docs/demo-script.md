@@ -34,8 +34,9 @@ orchestration path to maintain.
 
 **Before every run:** `pnpm demo:reset` — it provisions/tops up and re-arms the
 demo agent wallet, registers the demo shops on-chain if they are missing, checks
-`gadgethub-sg` is still registered, and prints the funder's ETH, **USDC and
-EURC** balances, swapping ETH→USDC if the USDC has run low. Check all three.
+`gadgethub-sg` is still registered, and prints the funder's ETH and **USDC**
+balances — swapping ETH→USDC if the USDC has run low — plus the demo payer's
+**EURC**, which is the balance the euro beat actually spends. Check all three.
 Every register and every settle spends ETH; every payer grant and wallet top-up
 spends stablecoin, and **EURC cannot be bought** — Base Sepolia has no EURC
 market at all, so Circle's faucet is the only tap and `demo:reset` will warn
@@ -75,12 +76,12 @@ basket — during testing it once spent its entire remaining S$30.50 budget.
 | 0:00–0:12 | **Hook** | Title slide, dashboard behind | "Every payment system ever built assumes the payer is a human. That assumption is about to break." |
 | 0:12–0:22 | **Scene** | Printed QR standee held up | "This is Ah Hock, Maxwell Food Centre. One printed sticker. He set it up in about two minutes and he has never heard of a blockchain." |
 | 0:22–0:45 | **Tourist pays, in euros** | Phone mirrored: scan → S$1.50 → Confirm | "A tourist lands at Changi with no Singapore bank account — and no Singapore dollars either. She holds euros. She scans, and she signs one authorization: no ETH, no transaction of her own. Our relayer pays the gas." |
-| 0:45–1:00 | **WOW 1 — any currency in** | Dashboard: chime, row slides in — 0.99 EURC in, S$1.50 XSGD out, net and fee inline | "Under two seconds. Ninety-nine cents of **euros** came in — Circle's real EURC, not a mock — and one-fifty in Singapore dollars went out, swapped atomically inside the settlement contract. Ah Hock never sees a euro. He cannot: the output token is `immutable` in the contract." |
+| 0:45–1:00 | **WOW 1 — any currency in** | Dashboard: chime, row slides in — 0.993378 EURC in, S$1.50 XSGD out, net and fee inline | "Under two seconds. Ninety-nine cents of **euros** came in — Circle's real EURC, not a mock — and one-fifty in Singapore dollars went out, swapped atomically inside the settlement contract. Ah Hock never sees a euro. He cannot: the output token is `immutable` in the contract." |
 | 1:00–1:08 | **Pivot** | Dashboard stays up | "That's the easy customer. My next customer has no hands." |
 | 1:08–1:40 | **Agent lunch — the same URL** | Terminal: prompt → 402 → reasoning → 200 OK | "I tell an AI agent to buy the team lunch, and I give it **the same link the tourist just opened**. A browser gets a payment page. A machine gets HTTP 402 Payment Required — that's x402, a Linux Foundation standard with clients shipping today. It reads the price, checks its own on-chain policy, and pays. S$4.50, in dollars this time." |
 | 1:40–1:48 | **Convergence** | Dashboard: second row, 🤖 Agent badge | "Same URL, same contract, same feed — one paid in euros, one in dollars, both landed as Singapore dollars. Ah Hock does not know or care that one of these customers is software." |
 | 1:48–2:12 | **WOW 2 — the refusal** | Terminal only — the agent narrates the revert | "Now watch it get told no. I ask it for a S$4 phone cable from an electronics shop — well inside its budget. Its wallet allows food and beverage only — and that's not a rule in my backend, it's a **contract revert**. `CategoryNotAllowed`. The money physically cannot move." |
-| 2:12–2:30 | **Revoke, and the way back** | Payer app `/app/agents`: cap meter → declined receipt → *Allow Electronics* → back → tap Revoke | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a cap, an allowlist, an expiry, and a kill switch the human holds. And *holds* is literal: this wallet is mine on-chain, so this is my signature, not a Gantry API call. The refusal isn't a dead end either — one tap widens the rule. And one tap stops the agent dead." |
+| 2:12–2:30 | **Revoke, and the way back** | Payer app `/app/agents`: cap meter → declined receipt → *Allow Electronics* → back → tap Revoke | "MAS explored Purpose-Bound Money in Project Orchid. This is that idea pointed at AI agents — a cap, an allowlist, an expiry, and a kill switch the human holds. And *holds* is literal: this wallet is mine on-chain, so this is my signature, not a Gantry API call. The refusal isn't a dead end either — it opens the rule that stopped it, already ticked, so widening it is a signature away. And one tap stops the agent dead." |
 | 2:30–2:46 | **Fee tiles** | Back to the merchant Overview screen | "Two payments. Ah Hock keeps five ninety-seven of six dollars — the third tile is what we saved him versus cards. Three cents is our cut. Scale it: a hawker doing two thousand a month pays us ten dollars, and cards fifty-six." |
 | 2:46–3:00 | **Close** | Title slide + Basescan address | "x402 standardized how machines pay. Gantry is the rail that lets one merchant accept payments from machines and humans alike — in whatever currency they hold. Every contract is verified on Base Sepolia; the address is on the slide." |
 
@@ -128,7 +129,9 @@ add it. If not, it lives in the clip and the deck only.
 ### Let them poke it — the three best answers we do not perform
 
 None of these fit the three minutes. All are stronger *because* the judge runs
-them rather than watching them, and all work on the deployed host with no key.
+them rather than watching them. The two curls need nothing at all; the third is
+a repo script, so it needs a clone and an `RPC` URL — it reads no secret of ours
+and asks no Gantry API for an opinion.
 
 **"Prove the machine door is real."** One curl, on stage or on their laptop:
 
@@ -159,6 +162,10 @@ the honest framing is the point:
 pnpm --filter @gantry/backend verify:denial -- --tx <cancelTxHash>
 ```
 
+It runs with **no environment set at all** — no relayer key, no admin token, not
+even an RPC URL (it falls back to the public Base Sepolia node). Set
+`BASE_SEPOLIA_RPC_URL` if the public node rate-limits the five archive reads.
+
 It reads the policy, the spend counter, the balance and the merchant's category
 **at the denial's block**, recomputes the wallet's decision and compares it to
 what we recorded. Every input is a public getter. **It can return
@@ -184,7 +191,7 @@ that the agent *asked*. Say "re-derivable from public state". Never
 | **The phone shows a USDC balance when you expected euros** | The currency is a per-browser preference and you set it on the laptop. Settings → *Currency you pay in* → **€ EUR** on the phone. Harmless: the beat still settles, just in dollars |
 | **`demo:reset` prints an EURC warning** | The relayer is low and EURC cannot be swapped for — no pool exists on this testnet at any fee tier. Circle's faucet is the only tap. Run the tourist beat in **USD** tonight and top up after; nothing else in the demo touches EURC |
 | **`demo:reset` exits DEGRADED with `Missing or invalid parameters`** | Almost certainly an RPC blip, not your code — the public fallback node answers `no backend is currently healthy` under load and that is what surfaces. **Re-run it first.** If it repeats, check three things: relayer `latest` vs `pending` nonce (equal = nothing stuck), `eth_getCode` on the relayer (`0x` = no 7702 delegation), and its ETH |
-| **The agent refuses with `agent_currency_mismatch`** | It was told to pay in a currency its wallet does not hold. One currency per agent, enforced at the door — `AGENT_PAY_TOKEN` in `packages/agent/.env` must match what the pinned wallet actually holds. "Kopi Runner" holds USDC; "Euro Runner" holds EURC |
+| **The agent refuses with `agent_currency_mismatch`** | It was told to pay in a currency its wallet does not hold. One currency per agent, enforced at the door — `AGENT_PAY_TOKEN` in `packages/agent/.env` must match what the pinned wallet actually holds. `demo-reset` provisions exactly one agent, "Kopi Runner", holding USDC — a euro agent is a second wallet you create and fund yourself, and `AGENT_WALLET` should pin whichever one you mean |
 
 ---
 
@@ -204,7 +211,7 @@ audio take, not one screen take. Each screen action shot twice.
 | 2 | 10s | `/onboard`: type a handle, availability flips green, register → success card with the Basescan link |
 | 3 | 8s | Real hand, real phone, scanning the printed standee |
 | 4 | 10s | Payer page: S$1.50, tap "Confirm & pay — no gas needed" |
-| 5 | 10s | Dashboard: chime, row lands — 1.12 USDC in, S$1.50 XSGD out, net and fee inline on the row |
+| 5 | 10s | Dashboard: chime, row lands — 1.117652 USDC in, S$1.50 XSGD out, net and fee inline on the row |
 | 6 | 14s | Terminal: the 402 challenge scrolling, the agent's reasoning, `200 OK` |
 | 7 | 10s | Dashboard: both rows side by side, Human badge and Agent badge |
 | 8 | 8s | The phone-cable attempt → red `CategoryNotAllowed` row |
@@ -359,7 +366,7 @@ gaps list in `CLAUDE.md`, not hidden.
   key, and we will not leave an unauthenticated ETH spend on the public
   internet. Nothing in Gantry reviews or verifies a merchant. Categories are
   self-attested and there is no KYC anywhere in the system.
-- *How many tests?* 538 — 201 Foundry, 170 shared, 163 backend, 4 agent. Five of
+- *How many tests?* 548 — 201 Foundry, 174 shared, 169 backend, 4 agent. Five of
   the Foundry ones are fork tests that skip without a fork RPC, so CI runs 196 of
   the 201; don't let a slide imply otherwise. Four are invariants, not unit
   tests. `packages/web` has no suite at all.

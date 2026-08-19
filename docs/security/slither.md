@@ -116,4 +116,4 @@ expiry + 120s, so the drift is orders of magnitude inside the margin.
 Slither is a static analyser, not an audit. It found nothing it considered a
 bug that survived reading, which is a statement about this tool's detectors and
 not about the contracts being correct. The stronger evidence in this repo is the
-195-test Foundry suite and the four policy invariants beside it.
+201-test Foundry suite and the four policy invariants beside it.

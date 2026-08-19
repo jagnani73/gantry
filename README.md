@@ -163,7 +163,7 @@ Every refusal there is a contract revert, not a backend `if`. In the demo an age
 
 Deploying them together is what lets the indexer sweep settlements, denials, merchant registrations and agent-wallet creations in a single `getLogs` pass over both addresses. Six event types in one topic filter cost what one would.
 
-Payments settle in Circle's real testnet stablecoins — USDC ([`0x036CbD53…8f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)) or EURC ([`0x80845665…77359F`](https://sepolia.basescan.org/address/0x808456652fdb597867f38412077A9182bf77359F)), whichever the payer chooses — signed against Circle's own contracts and fork-tested. No mock was added for the euro: both are FiatToken v2 with a byte-identical EIP-3009 typehash, so there is no second signing path, and `MockXSGD` remains the only mocked token in the system. Demo merchants `ah-hock-chicken-rice` and `gadgethub-sg` are registered on-chain.
+Payments settle in Circle's real testnet stablecoins — USDC ([`0x036CbD53…8f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)) or EURC ([`0x80845665…77359F`](https://sepolia.basescan.org/address/0x808456652fdb597867f38412077A9182bf77359F)), whichever the payer chooses — signed against Circle's own contracts. USDC is fork-tested against the live token; EURC is proven by a real settlement on Base Sepolia rather than by a fork test. No mock was added for the euro: both are FiatToken v2 with a byte-identical EIP-3009 typehash, so there is no second signing path, and `MockXSGD` remains the only mocked token in the system. Demo merchants `ah-hock-chicken-rice` and `gadgethub-sg` are registered on-chain.
 
 > **Prototype scope.** The FX rate is owner-set rather than market-derived; the `IGantrySwap` interface is the part meant to survive, with real XSGD liquidity behind it in production. One relayer key pays all gas. Merchant registration is permissionless and self-attested, and nothing here reviews or verifies a merchant, which is why every badge reads _"Registered on-chain"_ and never _"Verified"_. A production deployment would operate under a licensed PSP within Singapore's Payment Services Act.
 
@@ -193,7 +193,7 @@ The attacker gets exactly what the policy allows: up to S$50 a day, at food merc
 <details>
 <summary><strong>Where does the FX rate come from?</strong></summary>
 
-On testnet, from us. It is an owner-set fixed rate at 1.3421, labelled as such everywhere, because XSGD exists on no testnet. That is why settlement talks to an `IGantrySwap` interface rather than to a pool: production swaps in real XSGD liquidity through an aggregator or an RFQ quote. `GantryCore` enforces its own minimum-out by measuring its balance delta, so that guarantee does not depend on trusting whatever sits behind the interface.
+On testnet, from us. They are owner-set fixed rates — 1.3421 XSGD per USDC and 1.5100 per EURC — labelled as such everywhere, because XSGD exists on no testnet. That is why settlement talks to an `IGantrySwap` interface rather than to a pool: production swaps in real XSGD liquidity through an aggregator or an RFQ quote. `GantryCore` enforces its own minimum-out by measuring its balance delta, so that guarantee does not depend on trusting whatever sits behind the interface.
 
 </details>
 

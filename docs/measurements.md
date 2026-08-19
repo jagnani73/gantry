@@ -87,8 +87,15 @@ listed token is not a sample of what that token costs.**
 
 ## Gas, from the Foundry suite
 
-`forge test --gas-report`, 201 tests. Deterministic, so these are the numbers
-that move when the contracts change.
+`forge test --gas-report`, 201 tests.
+
+**The `min`/`max` columns are stable; `avg` and `calls` are NOT.** `foundry.toml`
+pins no fuzz `seed`, so the invariant campaign draws a different sequence every
+run and the call counts move with it — and the fork tests contribute calls when
+`BASE_SEPOLIA_RPC_URL` is set and skip when it is not, which changes them again.
+Re-running this with no contract change shifts `authorizeSpend` by a few hundred
+calls and its average by a few hundred gas. Treat `min` and `max` as the figures
+that mean something and the rest as a sample of one run.
 
 | Contract | Function | min | avg | max | calls |
 |---|---|---|---|---|---|
@@ -112,12 +119,11 @@ per-call gas figures are unchanged; only how often each is exercised is.
 
 **Read the `min` column as revert cost, not as a cheap happy path.** Every
 number near 24k is a policy refusal or a validation revert — the suite tests
-refusals heavily, and `authorizeSpend`'s 1,595 calls are mostly the invariant
-campaign hammering caps and categories. The happy path is the `max` column.
+refusals heavily, and `authorizeSpend`'s calls are mostly the invariant campaign
+hammering caps and categories. The happy path is the `max` column.
 
 `registerMerchant`'s 976,511 max is a first-write to a cold merchant slot with
-full profile strings; its median is ~25k because most of those 363 calls are
-reverts.
+full profile strings; its median is ~25k because most of its calls are reverts.
 
 ## Latency
 
@@ -180,11 +186,19 @@ gas; it measures **180,649 on a plain run and 204,923 under the reporter**, so
 following the first command above produces `1 failed` and a red exit code. The
 reporter instruments every call and that overhead lands inside the `gasleft()`
 delta the test takes, which is a property of the measurement and not of the
-contract. Verified deterministic — 208,604 reported, twice, and 180,649 plain.
+contract.
+
+Three numbers, and they are three different quantities — do not compare them
+carelessly. **204,923** is the `gasleft()` delta the assertion itself compares
+against its 200,000 ceiling, and is what appears in the failure message.
+**208,604** is Foundry's total for the whole test case under the reporter.
+**180,649** is that same test-case total on a plain run. So the honest statement
+is that the assertion's own measurement moves from under the ceiling to over it;
+the "24k" is not a difference between any two of these.
 
 So: **read the table from the `--gas-report` run and the verdict from the plain
 one.** Anyone grading the suite by the command in this file alone would conclude
-`registerMerchant` had regressed by 24k when nothing had changed.
+`registerMerchant` had regressed past its ceiling when nothing had changed.
 
 Receipts were read straight from `https://sepolia.base.org` with
 `eth_getTransactionReceipt`. Note that node **403s a default urllib
