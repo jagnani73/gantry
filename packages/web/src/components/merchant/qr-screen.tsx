@@ -23,6 +23,10 @@ export function QrScreen({
   const { handle, merchant } = useMerchantContext();
   const [copied, setCopied] = useState<CopyState>("idle");
   const [downloading, setDownloading] = useState(false);
+  /** A failed PNG export. Without this a chunk that will not load left an
+   * unhandled rejection and a button that merely stopped spinning — the
+   * merchant taps it again, and again, with nothing to read. */
+  const [downloadFailed, setDownloadFailed] = useState(false);
 
   async function copy() {
     try {
@@ -38,6 +42,7 @@ export function QrScreen({
 
   async function downloadPng() {
     setDownloading(true);
+    setDownloadFailed(false);
     try {
       // Loaded on demand: the QR on screen is server-rendered geometry, so the
       // library is only needed by the one button that wants a raster file.
@@ -47,6 +52,12 @@ export function QrScreen({
       anchor.href = url;
       anchor.download = `gantry-${handle}-qr.png`;
       anchor.click();
+    } catch (err) {
+      // The library loads on demand, so this is a network or stale-chunk
+      // failure rather than a bad input. The printed code on screen is
+      // unaffected and remains the thing the merchant actually needs.
+      console.warn("gantry: QR PNG export failed", err);
+      setDownloadFailed(true);
     } finally {
       setDownloading(false);
     }
@@ -85,9 +96,15 @@ export function QrScreen({
                 onClick={() => void downloadPng()}
                 disabled={downloading}
               >
-                {downloading ? "Preparing…" : "Download PNG"}
+                {downloading ? "Preparing…" : downloadFailed ? "Try again" : "Download PNG"}
               </Button>
             </div>
+            {downloadFailed ? (
+              <p className="mt-3 text-meta text-danger">
+                The image could not be generated on this device. Printing this page still works —
+                it is the same code.
+              </p>
+            ) : null}
           </Card>
 
           <Card radius="card" pad="md">

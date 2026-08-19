@@ -37,7 +37,10 @@ type CopyState = "idle" | "copied" | "failed";
  */
 export function ChargeCard({ handle, backendOrigin }: { handle: string; backendOrigin: string }) {
   const [amount, setAmount] = useState("");
-  const [qr, setQr] = useState<QrMatrix | null>(null);
+  /** null = still loading, "failed" = the renderer chunk did not load. The two
+   * must be distinguishable: both paint no code, and only one is worth telling
+   * the merchant about. */
+  const [qr, setQr] = useState<QrMatrix | "failed" | null>(null);
   const [copied, setCopied] = useState<CopyState>("idle");
 
   const valid = isAmountShape(amount);
@@ -50,10 +53,20 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
     }
     let cancelled = false;
     void (async () => {
-      const { qrMatrix } = await import("./qr-matrix");
-      // The amount can change while the import resolves; a late write would
-      // paint a code for a price the merchant has already edited away.
-      if (!cancelled) setQr(qrMatrix(link));
+      try {
+        const { qrMatrix } = await import("./qr-matrix");
+        // The amount can change while the import resolves; a late write would
+        // paint a code for a price the merchant has already edited away.
+        if (!cancelled) setQr(qrMatrix(link));
+      } catch (err) {
+        // A chunk that fails to load leaves `qr` null, and the SVG below then
+        // renders at opacity-0 — a blank box indistinguishable from "still
+        // loading", on the screen a merchant opens behind a venue hotspot.
+        // This app has been bitten by stale chunks before, so it must say so
+        // rather than show an empty square beside a link that looks fine.
+        console.warn("gantry: QR renderer failed to load", err);
+        if (!cancelled) setQr("failed");
+      }
     })();
     return () => {
       cancelled = true;
@@ -74,7 +87,8 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
     }
   }
 
-  const span = qr ? qr.size + QR_QUIET_ZONE * 2 : 0;
+  const matrix = qr === "failed" ? null : qr;
+  const span = matrix ? matrix.size + QR_QUIET_ZONE * 2 : 0;
 
   return (
     <Card radius="card" pad="md">
@@ -101,9 +115,16 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
       </label>
 
       {amount !== "" && !valid ? (
+        /* Shape only, because that is all `isAmountShape` checks — and
+           deliberately: it passes `Infinity` as the ceiling, since the ceiling
+           on a merchant's charge link is the PAYER's wallet and not the shop's.
+           This used to promise "under S$10,000 — the same amounts the payer's
+           keypad accepts", and neither half was true: nothing here refused a
+           larger number, and the payer's pad stops at S$9,999. A payer handed
+           an over-cap link is told so on their own screen, where the limit
+           actually lives. */
         <p className="mt-2 text-fine text-danger">
-          Up to two decimals and under S$10,000 — the same amounts the payer&apos;s keypad
-          accepts.
+          Enter an amount in dollars and cents — digits, and at most two decimal places.
         </p>
       ) : null}
 
@@ -118,9 +139,9 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
               aria-label={`QR code for ${link}`}
               viewBox={`${-QR_QUIET_ZONE} ${-QR_QUIET_ZONE} ${span} ${span}`}
               shapeRendering="crispEdges"
-              className={cn("block h-40 w-40 shrink-0 rounded-control", qr ? "" : "opacity-0")}
+              className={cn("block h-40 w-40 shrink-0 rounded-control", matrix ? "" : "opacity-0")}
             >
-              {qr ? (
+              {matrix ? (
                 <>
                   <rect
                     x={-QR_QUIET_ZONE}
@@ -129,7 +150,7 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
                     height={span}
                     className="fill-surface"
                   />
-                  <path d={qr.path} className="fill-ink" />
+                  <path d={matrix.path} className="fill-ink" />
                 </>
               ) : null}
             </svg>
@@ -153,6 +174,12 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
                 machine and it answers <Mono size="sm">402 Payment Required</Mono> for the same
                 S${amount}. One link, both doors, one settlement.
               </p>
+              {qr === "failed" ? (
+                <p className="mt-2 text-meta text-danger">
+                  The QR code could not be drawn on this device — the link above still works;
+                  copy it, or reload the page to try again.
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

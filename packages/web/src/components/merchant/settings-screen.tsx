@@ -5,7 +5,7 @@ import {
   BASE_SEPOLIA_ADDRESSES,
   CATEGORY_LABELS,
   DISPLAY_CURRENCIES,
-  DISPLAY_CURRENCY_CODES,
+  PAYABLE_CURRENCY_CODES,
   PROFILE_LIMITS,
   basescanAddress,
   normalizeProfile,
@@ -354,41 +354,40 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
         </Card>
 
         <Card radius="card" pad="none" className="p-5.5">
-          <Label>Receive in</Label>
-          {/* Every option is shown and only one is selectable, because a single
-              locked row reads as a limitation while a disabled set reads as a
-              roadmap. `disabled` on the buttons, not just a style — the others
-              genuinely cannot be chosen. */}
+          <Label>What your customers can pay in</Label>
+          {/* NOT a "Receive in" picker with the other currencies greyed out as
+              "soon". That framed the shop's currency as unbuilt, and it is not:
+              `GantryCore.XSGD` is immutable, set in the constructor, so the
+              settlement asset cannot vary by screen, by payer or by currency and
+              no roadmap can change it without a redeploy. The payer's own
+              settings screen already says "fixed rather than unbuilt", and two
+              surfaces of one product must not contradict each other.
+
+              The honest version of the same card is the half that IS a list: the
+              currencies a payer may send. Static text rather than buttons,
+              because nothing here was ever selectable — the old tiles carried no
+              onClick, and the SGD one was enabled and focusable while doing
+              nothing at all. */}
           <div className="mt-3.5 flex flex-wrap gap-2">
-            {DISPLAY_CURRENCY_CODES.map((code) => {
+            {PAYABLE_CURRENCY_CODES.map((code) => {
               const option = DISPLAY_CURRENCIES[code];
-              const settles = option.source.kind === "settlement";
               return (
-                <button
+                <span
                   key={code}
-                  type="button"
-                  disabled={!settles}
-                  aria-pressed={settles}
-                  className={cn(
-                    "flex h-13 min-w-24 flex-col items-start justify-center rounded-control px-3.5",
-                    settles
-                      ? "bg-ink text-paper"
-                      : "cursor-not-allowed bg-fill-subtle text-faint opacity-70",
-                  )}
+                  className="flex h-13 min-w-24 flex-col items-start justify-center rounded-control bg-ink px-3.5 text-paper"
                 >
                   <span className="text-btn-sm font-medium">
                     {option.symbol} {code}
                   </span>
-                  <span className={cn("text-fine", settles ? "text-paper/70" : "text-faint")}>
-                    {settles ? "active" : "soon"}
-                  </span>
-                </button>
+                  <span className="text-fine text-paper/70">{option.label}</span>
+                </span>
               );
             })}
           </div>
           <p className="mt-3.5 text-fine text-faint">
-            Receiving in multiple currencies is coming soon. Today every payment reaches you in
-            XSGD whatever the payer sent.
+            Whichever they send, you are paid in XSGD — the settlement token is fixed in the
+            contract and cannot be changed per shop. XSGD is mocked on this testnet; real XSGD
+            exists only on mainnet, via StraitsX.
           </p>
         </Card>
 
