@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Card, Label, Mono } from "@/components/primitives";
+import { formatUnits } from "@/components/primitives/units";
+import { parseSgd } from "@gantry/shared";
 import { cn } from "@/lib/utils";
 // The payer's own rule, imported rather than restated. An amount this accepts
 // but the pay pad does not would produce a link that silently refuses to
@@ -87,6 +89,21 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
     }
   }
 
+  /**
+   * The typed amount as a PRICE, not as the characters someone typed.
+   *
+   * The sentence below used to interpolate `amount` raw, so a merchant typing
+   * `1.5` read "the payment page for S$1.5" and `50000` read "S$50000". The
+   * link and the QR were always right — only the prose looked unpolished — but
+   * `Money`'s rule is that a quantity is never hand-formatted at a call site,
+   * and this was the one place doing it. Routed through the same
+   * `formatUnits` every primitive uses, so it cannot drift from them.
+   *
+   * Guarded on `valid`, which is what makes `parseSgd` safe here: it throws on
+   * anything that is not a decimal amount, and nothing below renders otherwise.
+   */
+  const price = valid ? formatUnits(parseSgd(amount)) : "";
+
   const matrix = qr === "failed" ? null : qr;
   const span = matrix ? matrix.size + QR_QUIET_ZONE * 2 : 0;
 
@@ -170,9 +187,9 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
                 </button>
               </div>
               <p className="mt-3.5 text-meta text-faint">
-                Open it on a phone and it is the payment page for S${amount}. Fetch it as a
+                Open it on a phone and it is the payment page for S${price}. Fetch it as a
                 machine and it answers <Mono size="sm">402 Payment Required</Mono> for the same
-                S${amount}. One link, both doors, one settlement.
+                S${price}. One link, both doors, one settlement.
               </p>
               {qr === "failed" ? (
                 <p className="mt-2 text-meta text-danger">

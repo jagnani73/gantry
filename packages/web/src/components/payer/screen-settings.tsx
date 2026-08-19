@@ -61,53 +61,65 @@ export function SettingsScreen() {
             committed render — and without this gate a demo build painted the
             connected branch (a Connect button plus "Go back to the demo
             account") for one frame, with a layout shift, on the one screen
-            whose job is to state which account signs. */}
-        {!identity.ready ? null : identity.demo ? (
-          <>
-            <p className="mt-3 text-meta text-muted">
-              A shared demo account this build is configured with, funded for you. It is not
-              yours and it is not private: everyone running this demo signs with the same key,
-              so treat the payments and agents here as a public sandbox.
-            </p>
-            {/*
-             * The button that used to sit here was inert and said "Coming soon".
-             * What made it hard was never the switch — it was the assumption
-             * that history had to come with it. It does not, and it must not: an
-             * activity feed is every settlement whose on-chain payer is this
-             * address, and an agent is a wallet this address owns on-chain.
-             * Neither is ours to move, and claiming to move them would mean
-             * showing one account's payments under another's name.
-             *
-             * So the switch is exactly a switch, and the copy says what stays
-             * behind. `switchSigner` reloads, which is what stops two screens
-             * from holding different answers to "who am I".
-             */}
-            <button
-              type="button"
-              onClick={() => void choose("connected")}
-              className="focus-ring mt-4 h-12 w-full rounded-tile bg-ink text-btn-sm font-medium text-paper transition-colors hover:bg-ink-hover"
-            >
-              Use my own wallet instead
-            </button>
-            <p className="mt-2 text-center text-fine text-faint">
-              The demo account&apos;s payments and agents stay with the demo account: they belong
-              to its address on-chain, not to this app. You can switch back here.
-            </p>
-          </>
-        ) : (
-          <div className="mt-4 flex flex-col gap-3">
-            <ConnectButton showBalance={false} />
-            {identity.demoConfigured ? (
+            whose job is to state which account signs.
+
+            The gate fixed that shift and introduced a smaller one: rendering
+            NOTHING while unready, then swapping in ~150px of content, pushed
+            everything below it down — including the currency picker, which is
+            the control that decides which token the payer signs for. A tap
+            aimed at it landed elsewhere. So the space is reserved rather than
+            collapsed, and the placeholder says what is happening instead of
+            leaving a blank box. */}
+        <div className="min-h-[9.5rem]">
+          {!identity.ready ? (
+            <p className="mt-3 text-meta text-faint">Checking which account signs…</p>
+          ) : identity.demo ? (
+            <>
+              <p className="mt-3 text-meta text-muted">
+                A shared demo account this build is configured with, funded for you. It is not
+                yours and it is not private: everyone running this demo signs with the same key,
+                so treat the payments and agents here as a public sandbox.
+              </p>
+              {/*
+               * The button that used to sit here was inert and said "Coming soon".
+               * What made it hard was never the switch — it was the assumption
+               * that history had to come with it. It does not, and it must not: an
+               * activity feed is every settlement whose on-chain payer is this
+               * address, and an agent is a wallet this address owns on-chain.
+               * Neither is ours to move, and claiming to move them would mean
+               * showing one account's payments under another's name.
+               *
+               * So the switch is exactly a switch, and the copy says what stays
+               * behind. `switchSigner` reloads, which is what stops two screens
+               * from holding different answers to "who am I".
+               */}
               <button
                 type="button"
-                onClick={() => void choose("demo")}
-                className="focus-ring h-11 w-full rounded-tile bg-fill-hover text-btn-sm font-medium text-ink transition-colors hover:bg-fill-hover-strong"
+                onClick={() => void choose("connected")}
+                className="focus-ring mt-4 h-12 w-full rounded-tile bg-ink text-btn-sm font-medium text-paper transition-colors hover:bg-ink-hover"
               >
-                Go back to the demo account
+                Use my own wallet instead
               </button>
-            ) : null}
-          </div>
-        )}
+              <p className="mt-2 text-center text-fine text-faint">
+                The demo account&apos;s payments and agents stay with the demo account: they belong
+                to its address on-chain, not to this app. You can switch back here.
+              </p>
+            </>
+          ) : (
+            <div className="mt-4 flex flex-col gap-3">
+              <ConnectButton showBalance={false} />
+              {identity.demoConfigured ? (
+                <button
+                  type="button"
+                  onClick={() => void choose("demo")}
+                  className="focus-ring h-11 w-full rounded-tile bg-fill-hover text-btn-sm font-medium text-ink transition-colors hover:bg-fill-hover-strong"
+                >
+                  Go back to the demo account
+                </button>
+              ) : null}
+            </div>
+          )}
+        </div>
         {switchError ? (
           <p className="mt-3 text-meta text-danger break-words">{switchError}</p>
         ) : null}
