@@ -589,7 +589,7 @@ export function PayerProvider({
         setBalanceError(null);
       } catch (err) {
         if (cancelled) return;
-        console.warn("gantry: USDC balance read failed", err);
+        console.warn(`gantry: ${sendToken} balance read failed`, err);
         setBalanceError(messageOf(err));
       }
     })();
@@ -599,7 +599,11 @@ export function PayerProvider({
   // sendTokenAddress is load-bearing here, not incidental: without it a payer
   // who switches to euros keeps reading their USDC balance, and the figure on
   // the wallet screen would describe a token they are no longer paying in.
-  }, [address, publicClient, balanceNonce, nonce, sendTokenAddress, payCurrencyReady]);
+  // `sendToken` alongside `sendTokenAddress`: they derive from the same
+  // currency and always move together, but the warning is worth keeping honest
+  // — exhaustive-deps is what caught the original bug where these reads did not
+  // follow the token at all.
+  }, [address, publicClient, balanceNonce, nonce, sendToken, sendTokenAddress, payCurrencyReady]);
 
   /* ── The rate and the chain's clock ─────────────────────────────────────
      The rate is read live rather than taken from the seeded constant: it is

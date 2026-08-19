@@ -46,15 +46,35 @@ export function SettingsScreen() {
 
       <Card radius="card-m" pad="m" className="mt-4.5">
         <div className="text-card-title-xs">This wallet</div>
-        {identity.address ? (
-          <Mono size="md" tone="quiet" breakAll className="mt-3 block">
-            {identity.address}
-          </Mono>
-        ) : (
-          <p className="mt-3 text-body-sm text-muted">
-            {identity.ready ? "No wallet connected yet." : "Looking for your wallet…"}
-          </p>
-        )}
+        {/* Reserved the same way as the block below, and for the same measured
+            reason. "Looking for your wallet…" is one short line; the address
+            that replaces it is 42 mono characters, which wraps to TWO lines
+            below about a 395px viewport. That swap moved everything under it by
+            17.5px on a phone and −1.25px on a desktop — the whole residual once
+            the block below stopped moving.
+
+            The spacer is an address-SHAPED string rather than a height: same
+            length, same font, so it wraps exactly as the real one will at any
+            width. A fixed height cannot, which is the lesson from the first
+            attempt at the block below. */}
+        <div className="relative mt-3">
+          {identity.address ? (
+            <Mono size="md" tone="quiet" breakAll className="block">
+              {identity.address}
+            </Mono>
+          ) : identity.ready ? (
+            <p className="text-body-sm text-muted">No wallet connected yet.</p>
+          ) : (
+            <>
+              <Mono size="md" tone="quiet" breakAll aria-hidden inert className="invisible block">
+                0x0000000000000000000000000000000000000000
+              </Mono>
+              <p className="absolute inset-x-0 top-0 text-body-sm text-muted">
+                Looking for your wallet…
+              </p>
+            </>
+          )}
+        </div>
 
         {/* Gated on `ready`, like every other payer screen. The stored signer
             preference resolves in an effect, so `demo` is false on the first
@@ -63,61 +83,51 @@ export function SettingsScreen() {
             account") for one frame, with a layout shift, on the one screen
             whose job is to state which account signs.
 
-            The gate fixed that shift and introduced a smaller one: rendering
-            NOTHING while unready, then swapping in ~150px of content, pushed
+            That gate fixed one shift and caused another: rendering NOTHING
+            while unready, then swapping in the resolved block, pushed
             everything below it down — including the currency picker, which is
-            the control that decides which token the payer signs for. A tap
-            aimed at it landed elsewhere. So the space is reserved rather than
-            collapsed, and the placeholder says what is happening instead of
-            leaving a blank box. */}
-        <div className="min-h-[9.5rem]">
-          {!identity.ready ? (
-            <p className="mt-3 text-meta text-faint">Checking which account signs…</p>
-          ) : identity.demo ? (
+            the control deciding which token the payer signs for, so a tap
+            aimed at it landed elsewhere.
+
+            The space is therefore reserved by rendering the REAL block,
+            invisibly. A `min-height` was tried first and is the wrong
+            mechanism: the block's height depends on how the shared-account
+            paragraph wraps, so one number cannot be right at two widths.
+            Measured, 9.5rem left 49px of jump on a desktop frame and 87px at
+            375px — worst on a phone, which is exactly where the mis-tap it
+            exists to prevent happens. An invisible copy wraps identically at
+            every width by construction, and cannot drift from the visible one
+            because it is the same component. */}
+        <div className="relative">
+          {identity.ready ? (
+            identity.demo ? (
+              <DemoAccount onSwitch={() => void choose("connected")} />
+            ) : (
+              <div className="mt-4 flex flex-col gap-3">
+                <ConnectButton showBalance={false} />
+                {identity.demoConfigured ? (
+                  <button
+                    type="button"
+                    onClick={() => void choose("demo")}
+                    className="focus-ring h-11 w-full rounded-tile bg-fill-hover text-btn-sm font-medium text-ink transition-colors hover:bg-fill-hover-strong"
+                  >
+                    Go back to the demo account
+                  </button>
+                ) : null}
+              </div>
+            )
+          ) : (
             <>
-              <p className="mt-3 text-meta text-muted">
-                A shared demo account this build is configured with, funded for you. It is not
-                yours and it is not private: everyone running this demo signs with the same key,
-                so treat the payments and agents here as a public sandbox.
-              </p>
-              {/*
-               * The button that used to sit here was inert and said "Coming soon".
-               * What made it hard was never the switch — it was the assumption
-               * that history had to come with it. It does not, and it must not: an
-               * activity feed is every settlement whose on-chain payer is this
-               * address, and an agent is a wallet this address owns on-chain.
-               * Neither is ours to move, and claiming to move them would mean
-               * showing one account's payments under another's name.
-               *
-               * So the switch is exactly a switch, and the copy says what stays
-               * behind. `switchSigner` reloads, which is what stops two screens
-               * from holding different answers to "who am I".
-               */}
-              <button
-                type="button"
-                onClick={() => void choose("connected")}
-                className="focus-ring mt-4 h-12 w-full rounded-tile bg-ink text-btn-sm font-medium text-paper transition-colors hover:bg-ink-hover"
-              >
-                Use my own wallet instead
-              </button>
-              <p className="mt-2 text-center text-fine text-faint">
-                The demo account&apos;s payments and agents stay with the demo account: they belong
-                to its address on-chain, not to this app. You can switch back here.
+              {/* `invisible`, not `hidden`: it must still take up space. Inert
+                  to a screen reader and to the tab order, so the only thing a
+                  payer perceives is the line below it. */}
+              <div aria-hidden className="invisible" inert>
+                <DemoAccount onSwitch={() => undefined} />
+              </div>
+              <p className="absolute inset-x-0 top-3 text-meta text-faint">
+                Checking which account signs…
               </p>
             </>
-          ) : (
-            <div className="mt-4 flex flex-col gap-3">
-              <ConnectButton showBalance={false} />
-              {identity.demoConfigured ? (
-                <button
-                  type="button"
-                  onClick={() => void choose("demo")}
-                  className="focus-ring h-11 w-full rounded-tile bg-fill-hover text-btn-sm font-medium text-ink transition-colors hover:bg-fill-hover-strong"
-                >
-                  Go back to the demo account
-                </button>
-              ) : null}
-            </div>
           )}
         </div>
         {switchError ? (
@@ -219,6 +229,45 @@ export function SettingsScreen() {
         ← Overview
       </Link>
       <div className="h-3" />
+    </>
+  );
+}
+
+/**
+ * The shared-demo-account block, extracted for ONE reason: the loading state
+ * renders it invisibly to reserve its exact height, and a copy-pasted spacer
+ * would drift from it the first time this copy changed.
+ *
+ * The button it carries used to be inert and said "Coming soon". What made the
+ * switch hard was never the switch — it was the assumption that history had to
+ * come with it. It does not, and it must not: an activity feed is every
+ * settlement whose on-chain payer is this address, and an agent is a wallet
+ * this address owns on-chain. Neither is ours to move, and claiming to move
+ * them would mean showing one account's payments under another's name.
+ *
+ * So the switch is exactly a switch, and the copy says what stays behind.
+ * `switchSigner` reloads, which is what stops two screens from holding
+ * different answers to "who am I".
+ */
+function DemoAccount({ onSwitch }: { onSwitch: () => void }) {
+  return (
+    <>
+      <p className="mt-3 text-meta text-muted">
+        A shared demo account this build is configured with, funded for you. It is not yours and
+        it is not private: everyone running this demo signs with the same key, so treat the
+        payments and agents here as a public sandbox.
+      </p>
+      <button
+        type="button"
+        onClick={onSwitch}
+        className="focus-ring mt-4 h-12 w-full rounded-tile bg-ink text-btn-sm font-medium text-paper transition-colors hover:bg-ink-hover"
+      >
+        Use my own wallet instead
+      </button>
+      <p className="mt-2 text-center text-fine text-faint">
+        The demo account&apos;s payments and agents stay with the demo account: they belong to its
+        address on-chain, not to this app. You can switch back here.
+      </p>
     </>
   );
 }
