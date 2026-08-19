@@ -143,6 +143,7 @@ function AgentFormFields({
   const {
     expectAgentPolicy,
     rate: chainRate,
+    sendToken,
     chainNow: clock,
     refresh,
     popOverlay,
@@ -151,6 +152,20 @@ function AgentFormFields({
   const { createWallet, setPolicy, setLabel, setAgentSigner, chainNow } = useAgentWrites();
   const toast = useToast();
 
+  /**
+   * The unit these caps are STORED in, and the rate that converts S$ into it.
+   *
+   * They must come from the same place or the form writes one number and states
+   * another. An existing wallet reports both. A new one has neither — it holds
+   * nothing, so it HAS no currency yet — and the honest stand-in is the currency
+   * the payer is working in, because `chainRate` is already `rateOf(sendToken)`
+   * and the top-up that funds this wallet grants the same token.
+   *
+   * Pinning the label to USDC while `chainRate` followed the payer's choice is
+   * what wrote a S$50 cap as 33.11e6 units — S$44.44 once read back at the USDC
+   * rate — under a line reading "the contract stores USDC".
+   */
+  const capToken: TokenId = existing?.token ?? sendToken;
   const rate = existing ? BigInt(existing.rate) : chainRate;
 
   // Chain seconds as of the moment this form opened. Frozen so the prefilled
@@ -221,9 +236,6 @@ function AgentFormFields({
    * see `UnknownOutcomeError`. */
   const [unresolved, setUnresolved] = useState<{ text: string; txHash: Hex } | null>(null);
 
-  // The unit these caps are STORED in. An existing wallet reports its own; a
-  // new one has no balance yet, so it resolves to the default until funded.
-  const capToken: TokenId = existing?.token ?? "USDC";
   const problem = validate({ wallet, signer, name, dailyCap, perTxCap, categories, days, rate, capToken });
 
   const expiryUnchanged = preservedExpiry !== null && days === initialDays;
