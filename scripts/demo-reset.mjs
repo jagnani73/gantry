@@ -15,7 +15,11 @@
 //   4. finds or CREATES the payer's agent wallet (a real contract deployment)
 //   5. tops that wallet up (a real USDC transfer)
 //   6. re-arms its policy on-chain (setPolicy, resets spentToday)
+//  6c. restores the wallet's label when it differs (setLabel, usually a no-op)
 //  6b. confirms the agent CLI would resolve the SAME wallet this run armed
+//      (the letters do not sort: 6b is cross-referenced BY NAME from
+//      services/agents.ts and from CLAUDE.md, so it could not be renumbered
+//      when 6c was added in front of it)
 //   7. checks gadgethub-sg, then prints the cheat sheet
 // Chain state (merchants, contracts, listed swap rate) is reused — Sepolia
 // redeploys are not needed per rehearsal. Exits non-zero if any step degraded.
@@ -502,10 +506,26 @@ let profileLine;
 //    and creating a second is cheaper than debugging that on stage.
 let wallet = null;
 let walletCreated = false;
+/** The name the wallet carries RIGHT NOW, read from the CHAIN in step 6c — never
+ * taken from `/api/agents`. See the note there: the API's `label` is `""` both
+ * for a wallet nobody named and for a wallet whose `label()` call failed, and
+ * this decides an on-chain write. Null means we have no reading. */
+let walletLabel = null;
 /** Everything that went wrong across steps 4-6, so the agent line can be one
  * line that either wears a checkmark or does not. Appending a "⚠ top-up FAILED"
  * fragment to an otherwise healthy line would put a warning under a checkmark. */
 const walletProblems = [];
+/** Things worth SAYING about a run that is otherwise fine — currently only a
+ * rename that happened. Separate from `walletProblems` because that list drives
+ * the non-zero exit, and a wallet's NAME cannot fail a rehearsal: it still
+ * settles, denies and meters correctly whatever it is called. */
+const walletNotes = [];
+/** Went wrong, but must not fail the run — a rename that did not land, or a name
+ * we could not read. THREE levels rather than two, because `mark()` prefixes a
+ * checkmark to any line not starting with `⚠` and its own docstring says a
+ * warning must never wear one. Folding these into `walletNotes` rendered
+ * `✓ agent … · renamed from "Foo" FAILED`, which is exactly that. */
+const walletWarnings = [];
 /** What the chain says AFTER the arm — never a restatement of what was sent. */
 let armed = null;
 {
@@ -523,8 +543,11 @@ let armed = null;
     // and armed the OLDEST while 6b blessed the newest, so the script armed one
     // wallet, reported another, and the agent spent from a third state.
     const now = Math.floor(Date.now() / 1000);
-    wallet = selectAgentWallet(body.agents, DEMO_AGENT_TOKEN, (agent) => isActive(agent, now))
-      .wallet;
+    const chosen = selectAgentWallet(body.agents, DEMO_AGENT_TOKEN, (agent) =>
+      isActive(agent, now),
+    );
+    wallet = chosen.wallet;
+    // `chosen.label` is deliberately NOT read here — step 6c reads the chain.
   } else {
     try {
       const receipt = await payerTx({
@@ -534,11 +557,8 @@ let armed = null;
         // The label is on-chain and set at creation, so the rehearsal wallet
         // arrives already named — the agents screen reads "Kopi Runner" rather
         // than a hex address, with no second transaction and nothing to type.
-        //
-        // Only on THIS branch, deliberately. A wallet that already exists keeps
-        // whatever its owner named it: renaming is a separate `setLabel`
-        // transaction, and a reset that quietly overwrote a payer's own name for
-        // their agent would be doing something no step here is allowed to do.
+        // An EXISTING wallet is renamed by step 6c instead, which costs a
+        // transaction and so only fires when the name actually differs.
         args: [agentSigner, DEMO_AGENT_LABEL],
       });
       // The address comes from the LOG, not from the simulation's return value:
@@ -553,6 +573,11 @@ let armed = null;
       if (created?.args?.wallet) {
         wallet = created.args.wallet;
         walletCreated = true;
+        // Named by the call above. 6c re-reads it from the chain anyway and will
+        // find this value, so it sends nothing; this assignment is the fallback
+        // for the case where that read FAILS on a wallet we just created and
+        // therefore already know the name of.
+        walletLabel = DEMO_AGENT_LABEL;
       } else {
         degraded = true;
         walletProblems.push(
@@ -668,12 +693,92 @@ if (wallet) {
   }
 }
 
+// 6c. The name, restored to the rehearsal one.
+//
+//     Every other thing this script owns about the agent is reset — caps,
+//     categories, expiry, `spentToday`, balance — and the label was the one
+//     exception, so a wallet renamed during a browser test kept that name
+//     through every reset afterwards. That is a stage problem, not a
+//     cosmetic one: the demo script and the troubleshooting table both name
+//     "Kopi Runner", and a presenter reading a different name on the agents
+//     screen cannot tell a rename from the wrong wallet.
+//
+//     A separate transaction because the contract makes it one, and that is
+//     deliberate there: `setPolicy` resets the daily counter, so a rename must
+//     never ride along with it. Conditional, so the usual run — where the name
+//     already matches — sends nothing and costs nothing against the 30s budget.
+//
+//     Reported but never `degraded`, like the EURC line: a wallet with the
+//     wrong NAME still settles, denies and meters correctly, so failing a
+//     rehearsal over it would be the wrong trade. Silence would be worse than
+//     either, hence the note.
+//     The current name is read from the CHAIN, not from `/api/agents`, and that
+//     is the whole safety of this step. `toAgentSummary` substitutes `""` when
+//     the `label()` call fails — its own comment says the degraded value
+//     "COLLIDES with real ones" and that "the substitution is invisible in the
+//     response" — so a wallet whose name merely failed to READ is indistinguish-
+//     able on the wire from one nobody named. Deciding a transaction on that
+//     field means one RPC blip on the public node overwrites a payer's own name
+//     for their agent, signed with the payer's key, reported as `renamed from ""`.
+//     A direct `readContract` cannot lie that way: it throws, and we skip and say so.
+if (wallet) {
+  try {
+    walletLabel = await publicClient.readContract({
+      address: wallet,
+      abi: agentPbmWalletAbi,
+      functionName: "label",
+    });
+  } catch (err) {
+    // Announced, not swallowed. A silent skip leaves a presenter reading the
+    // agents screen expecting "Kopi Runner" and finding something else — which
+    // is the exact ambiguity this step exists to remove.
+    walletWarnings.push(
+      `could not read the current name (${brief(err instanceof Error ? err.message : String(err))}); left it alone`,
+    );
+  }
+}
+
+if (wallet && walletLabel !== null && walletLabel !== DEMO_AGENT_LABEL) {
+  try {
+    await payerTx({
+      address: wallet,
+      abi: agentPbmWalletAbi,
+      functionName: "setLabel",
+      args: [DEMO_AGENT_LABEL],
+    });
+    // Said out loud on SUCCESS too, the same way the top-up reports `+X sent`
+    // and only when it moved something: this costs a transaction and a couple
+    // of seconds, so a run that suddenly takes longer should say why rather
+    // than leave a presenter wondering. A run where the name already matches
+    // prints nothing, because nothing happened.
+    walletNotes.push(`renamed from "${walletLabel}"`);
+    walletLabel = DEMO_AGENT_LABEL;
+  } catch (err) {
+    walletWarnings.push(
+      `renamed from "${walletLabel}" FAILED (${brief(err instanceof Error ? err.message : String(err))}); ` +
+        `the agents screen will not read "${DEMO_AGENT_LABEL}"`,
+    );
+  }
+}
+
+/* THREE outcomes, and only the first fails the run.
+   `mark()` prefixes `✓` to anything not starting with `⚠`, so a line carrying a
+   warning has to open with one — otherwise "the rename failed" ships under a
+   checkmark on the one screen an operator scans before going on stage. A soft
+   warning still exits 0: a wallet with the wrong NAME settles, denies and meters
+   exactly as well as one with the right name. */
 const walletLine =
-  walletProblems.length > 0
+  (walletProblems.length > 0
     ? `⚠ agent    ${wallet ?? "not provisioned"}  ${walletProblems.join(" · ")}` +
       (armed ? ` · armed ${armed}` : "")
-    : `agent    ${wallet}${walletCreated ? " (created)" : ""}  ${armed}` +
-      (sentLine ? ` (${sentLine})` : "");
+    : `${walletWarnings.length > 0 ? "⚠ " : ""}agent    ${wallet}${walletCreated ? " (created)" : ""}  ${armed}` +
+      (sentLine ? ` (${sentLine})` : "")) +
+  // Appended to whichever line was built, rather than owning one: a remark about
+  // a name belongs beside the agent it names, and a second line for it would
+  // read as a second problem.
+  ([...walletWarnings, ...walletNotes].length > 0
+    ? ` · ${[...walletWarnings, ...walletNotes].join(" · ")}`
+    : "");
 
 // 6b. Which wallet will the agent ACTUALLY use? The CLI knows only its session
 //     key: it asks for every wallet listing that signer and takes the NEWEST
