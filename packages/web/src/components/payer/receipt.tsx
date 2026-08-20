@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { Address } from "viem";
 import {
   basescanTx,
@@ -184,7 +184,8 @@ export function PendingReceipt({ receipt }: { receipt: PendingReceiptState }) {
 }
 
 function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: number }) {
-  const { identity, agentName, chainNow } = usePayer();
+  const { identity, agents, agentName, chainNow } = usePayer();
+  const spender = paidBy(settlement, identity.address, agents, agentName);
   const amountIn = BigInt(settlement.amountIn);
   const gross = BigInt(settlement.xsgdOut);
   const netToShop = gross - BigInt(settlement.feeXsgd);
@@ -215,7 +216,13 @@ function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: numb
           <KeyValue label="Network fee" mono={false}>
             <span className="text-accent">0.00 · sponsored</span>
           </KeyValue>
-          <KeyValue label="Paid by">{paidBy(settlement, identity.address, agentName)}</KeyValue>
+          <KeyValue label="Paid by">
+            {spender.agent ? (
+              <AgentLink wallet={spender.agent}>{spender.text}</AgentLink>
+            ) : (
+              spender.text
+            )}
+          </KeyValue>
           <KeyValue label="Transaction" divider={false}>
             <a
               className="focus-ring rounded-badge underline-offset-2 hover:underline"
@@ -272,7 +279,15 @@ function DeclinedBody({
         <KeyValueList>
           <KeyValue label="Attempted">{relativeWhen(at, chainNow())}</KeyValue>
           <KeyValue label="Amount">S${formatUnits6(BigInt(denial.xsgdAmount))}</KeyValue>
-          <KeyValue label="Agent">{agentName(denial.wallet) ?? shortAddress(denial.wallet)}</KeyValue>
+          {/* Always linkable: `IntentDenied` carries the POLICY WALLET, so this
+              address is an AgentPBMWallet by construction even when it is not
+              one of ours — and the detail screen reads a stranger's policy
+              perfectly well, showing it without the controls (F16). */}
+          <KeyValue label="Agent">
+            <AgentLink wallet={denial.wallet}>
+              {agentName(denial.wallet) ?? shortAddress(denial.wallet)}
+            </AgentLink>
+          </KeyValue>
           <KeyValue label="Merchant category">{merchantCategory ?? "Unknown"}</KeyValue>
           <KeyValue label="Rule that stopped it">{reading.rule}</KeyValue>
           <KeyValue label="Moved" mono={false}>
@@ -307,6 +322,37 @@ function DeclinedBody({
   );
 }
 
+/**
+ * The agent a receipt names, as a way of getting to it.
+ *
+ * The receipt states which agent spent and then leaves the payer to go and find
+ * it — back out, open the agents tab, pick it from a list — while holding the
+ * wallet address the whole time. `?agent=` already addresses that screen, so the
+ * name is the link.
+ *
+ * A BUTTON, not an anchor. This pushes an overlay onto the route the payer is
+ * already on, which is what `pushOverlay` owns; an `<a href>` would be a router
+ * navigation, and a navigation racing the provider's own URL write-back is the
+ * documented way to cancel it (see the tab-bar rule in `payer-context`).
+ * Opening pushes, so Back returns to this receipt rather than out of it.
+ *
+ * `›` and not `↗`: the arrow is this app's mark for an EXTERNAL link, and every
+ * Basescan row on this same screen carries one. Using it here would promise a
+ * new tab.
+ */
+function AgentLink({ wallet, children }: { wallet: Address; children: ReactNode }) {
+  const { pushOverlay } = usePayer();
+  return (
+    <button
+      type="button"
+      onClick={() => pushOverlay({ kind: "agent", wallet })}
+      className="focus-ring rounded-badge underline-offset-2 hover:underline"
+    >
+      {children} <span aria-hidden>›</span>
+    </button>
+  );
+}
+
 export function findAgent(
   agents: readonly AgentSummary[] | null,
   wallet: Address,
@@ -327,9 +373,20 @@ export function findAgent(
 function paidBy(
   settlement: SettlementEvent,
   self: Address | null,
+  agents: readonly AgentSummary[] | null,
   agentName: (wallet: Address) => string | null,
-): string {
-  if (settlement.bridged) return "via facilitator";
-  if (self && settlement.payer.toLowerCase() === self.toLowerCase()) return "You";
-  return agentName(settlement.payer) ?? shortAddress(settlement.payer);
+): { text: string; agent: Address | null } {
+  if (settlement.bridged) return { text: "via facilitator", agent: null };
+  if (self && settlement.payer.toLowerCase() === self.toLowerCase()) {
+    return { text: "You", agent: null };
+  }
+  return {
+    text: agentName(settlement.payer) ?? shortAddress(settlement.payer),
+    /* Linked only when this address is a wallet we KNOW is an agent. Unlike a
+       denial, a settlement's payer is not always a policy wallet: a vanilla
+       x402 client that pins its own nonce settles as a plain EOA, and the agent
+       screen opened on one would sit there reading a policy that does not
+       exist. Absent beats wrong, so an unrecognised payer stays plain text. */
+    agent: findAgent(agents, settlement.payer) ? settlement.payer : null,
+  };
 }
