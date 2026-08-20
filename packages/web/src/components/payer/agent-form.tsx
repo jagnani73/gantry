@@ -388,7 +388,7 @@ function AgentFormFields({
           expectedLabel = label;
           record();
         }
-        toast.success(savedText(landed));
+        toast.success(savedText());
         refresh();
         popOverlay();
         return;
@@ -745,10 +745,19 @@ function writeList(landed: readonly FormWrite[]): string {
 }
 
 /** The toast after a save that fully succeeded. */
-function savedText(landed: readonly FormWrite[]): string {
-  const list = writeList(landed);
-  // Capitalised here rather than in the map, which is also read mid-sentence.
-  return `${list.charAt(0).toUpperCase()}${list.slice(1)} updated on-chain.`;
+/**
+ * GENERIC on success, deliberately, and it takes no argument to make that
+ * permanent.
+ *
+ * Enumerating which of the three writes landed is noise when they all did: the
+ * payer just made those changes and the screen behind the toast shows them.
+ * `landedText` stays specific for the PARTIAL case, which is the only one where
+ * knowing which landed changes what the payer does next — and that asymmetry is
+ * the rule, not an inconsistency. A toast is transient, so it may only carry
+ * what is safe to miss; a half-applied save is not.
+ */
+function savedText(): string {
+  return "All changes saved on-chain.";
 }
 
 /** What already mined, as a sentence to lead an error with. Empty when nothing

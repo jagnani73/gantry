@@ -6,7 +6,7 @@ import { agentStatus, shortAddress, type AgentSummary } from "@gantry/shared";
 import { CapMeter, Card, Chip, Mono } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { STATUS_LABEL } from "./agent-detail";
-import { categoryLabels, sgdFromCapUnits } from "./agent-rules";
+import { categoryLabels, policyFingerprint, sgdFromCapUnits } from "./agent-rules";
 import { usePayer } from "./payer-context";
 
 /**
@@ -47,8 +47,17 @@ type AgentTab = "all" | "active" | "inactive";
  * replaced by a notice that names them and offers a retry instead.
  */
 export function AgentsScreen() {
-  const { agents, agentsError, agentsUnreadable, chainNow, agentName, identity, refresh, pushOverlay } =
-    usePayer();
+  const {
+    agents,
+    agentsError,
+    agentsUnreadable,
+    chainNow,
+    agentName,
+    agentExpectation,
+    identity,
+    refresh,
+    pushOverlay,
+  } = usePayer();
   // Without an address there is no owner to enumerate wallets for, so the
   // skeletons would never resolve into anything.
   const noWallet = identity.ready && !identity.address;
@@ -221,6 +230,7 @@ export function AgentsScreen() {
                       agent={agent}
                       name={agentName(agent.wallet) ?? shortAddress(agent.wallet)}
                       now={now}
+                      superseded={isSuperseded(agent, agentExpectation(agent.wallet))}
                       onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
                     />
                   ))
@@ -331,15 +341,32 @@ function TabButton({
   );
 }
 
+/**
+ * Is this row known to be behind a write the payer has already made?
+ *
+ * The detail screen has waited on this since it was written; the LIST did not,
+ * and that is what let a save look half-applied. A save can send THREE
+ * transactions in sequence, so a re-read fired after the first one lands sees
+ * the new policy and the OLD name — which is exactly what a payer reported:
+ * categories updated, the rename apparently ignored. Nothing was wrong on
+ * chain; the list was reading between two blocks and said nothing about it.
+ */
+function isSuperseded(agent: AgentSummary, expected: string | null): boolean {
+  return expected !== null && policyFingerprint(agent) !== expected;
+}
+
 function AgentCard({
   agent,
   name,
   now,
+  superseded,
   onOpen,
 }: {
   agent: AgentSummary;
   name: string;
   now: number;
+  /** A write of the payer's own is mined but not yet visible in this read. */
+  superseded: boolean;
   onOpen: () => void;
 }) {
   // Never derived from `revoked` alone: a policy that simply ran out denies
@@ -353,7 +380,14 @@ function AgentCard({
     <Card as="button" radius="card-m" pad="m" hover onClick={onOpen} className="w-full text-left">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-card-title">{name}</div>
+          {/* Known-stale text is not rendered at all, the same rule the detail
+              screen follows: a name the payer has just replaced is a claim
+              about the chain that is already false, and showing it silently is
+              how a working rename reads as one that was ignored. The address
+              below never changes, so it stays. */}
+          <div className="truncate text-card-title">
+            {superseded ? <span className="text-faint">Saving…</span> : name}
+          </div>
           <Mono size="2xs" tone="faint" className="mt-1 block">
             {shortAddress(agent.wallet)}
           </Mono>
