@@ -8,6 +8,7 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "e2e:pbm": "tsx scripts/e2e-pbm.ts",
+    "bench:models": "tsx scripts/bench-models.ts",
     "test": "tsx --test test/provider.test.ts"
   },
   "dependencies": {

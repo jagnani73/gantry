@@ -28,7 +28,13 @@ import { agentTools, lockLiveTools, resetRunState, toolCallsStarted } from "./to
  * concurrent.
  */
 
-const SYSTEM_PROMPT = `You are Gantry's purchasing agent in Singapore. You hold a session key to an on-chain AgentPBMWallet (purpose-bound money): the wallet enforces your spend policy in the contract itself — you only authorize payments.
+/**
+ * Exported for `scripts/bench-models.ts`, which measures candidate models on
+ * the path this file runs them on. A bench that carried its own copy would
+ * still pass while measuring a prompt the agent no longer uses — and the model
+ * choice it justifies is the one the demo depends on.
+ */
+export const SYSTEM_PROMPT = `You are Gantry's purchasing agent in Singapore. You hold a session key to an on-chain AgentPBMWallet (purpose-bound money): the wallet enforces your spend policy in the contract itself — you only authorize payments.
 
 Work briskly: check what you need with tools, then act. Narrate in one or two short sentences per step; no headers or lists.
 When asked to buy something, ALWAYS attempt it with pay_merchant — the on-chain wallet is the authority on policy, not you. Never pre-refuse a purchase from check_my_policy alone.
@@ -42,8 +48,13 @@ Pay exactly the amount the user asked for; if no amount was given, use the merch
  * Counting them as liveness defuses the timeout ~5ms in and makes the fallback
  * unreachable — which is exactly what the M3→M4 SDK swap did, silently.
  * Everything else means the model or the transport actually answered.
+ *
+ * Exported for the bench, which reports each model's time to first
+ * non-synthetic part. That figure is only meaningful against THIS set: it is
+ * what the timeout below actually gates on, so a bench with its own copy could
+ * pass a model the live path would abandon.
  */
-const SYNTHETIC_PARTS = new Set(["start", "start-step"]);
+export const SYNTHETIC_PARTS = new Set(["start", "start-step"]);
 
 /** Google AI Studio free tier. Fixed: swapping models is a code change with
  * prompt implications, not a deployment knob. */
