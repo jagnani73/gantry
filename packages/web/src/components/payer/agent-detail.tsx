@@ -168,7 +168,12 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         const expected = agentExpectation(wallet);
         if (!expected || policyFingerprint(summary) === expected) {
           // Either nothing was pending, or the read caught up. Both end the wait.
-          if (expected) settleAgentExpectation(wallet);
+          //
+          // The summary goes WITH it. This read is proven current — it matches
+          // the fingerprint this browser wrote — and it is otherwise invisible
+          // outside this component, so settling the flag alone left the agents
+          // list unguarded over the row it still held from before the write.
+          if (expected) settleAgentExpectation(wallet, summary);
           return;
         }
         if (attempt + 1 >= FRESHNESS_ATTEMPTS) {
@@ -176,6 +181,9 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           // are behind rather than wrong — but rendering them silently as
           // current is what put an "Active" chip over a revoked wallet.
           console.warn(`gantry: ${wallet} still reads the previous policy after a confirmed write`);
+          // No summary, deliberately: this read is the one we have just declared
+          // stale, and promoting it into the store would have the agents list
+          // state it as fact with none of the caveat this screen shows below.
           settleAgentExpectation(wallet);
           setWaitedOut(true);
           setNotice({

@@ -221,8 +221,13 @@ export interface PayerStore {
   /** Record what was just written. Cleared by `settleAgentExpectation`. */
   expectAgentPolicy(wallet: Address, fingerprint: string): void;
   /** Stop waiting: the read matched, or the wait was given up on. Both are
-   * "no longer expecting", and neither is a claim about the chain. */
-  settleAgentExpectation(wallet: Address): void;
+   * "no longer expecting", and neither is a claim about the chain.
+   *
+   * Pass `settledBy` when the read that ended the wait MATCHED the expectation —
+   * it replaces that wallet's row in `agents` in the same update, so the guard
+   * and the data can never be cleared apart. Omit it when giving up: a read
+   * already known to be stale must not be promoted into shared state. */
+  settleAgentExpectation(wallet: Address, settledBy?: AgentSummary): void;
 
   /** Re-reads everything, agent enumeration included. For a policy write. */
   refresh(): void;
@@ -1367,7 +1372,30 @@ export function PayerProvider({
     setExpectations((prev) => ({ ...prev, [wallet.toLowerCase()]: fingerprint }));
   }, []);
 
-  const settleAgentExpectation = useCallback((wallet: Address) => {
+  const settleAgentExpectation = useCallback((wallet: Address, settledBy?: AgentSummary) => {
+    // The read that ENDED the wait also replaces the row, in the same update.
+    //
+    // Clearing the flag without the data is what let a confirmed rename read as
+    // ignored. The detail screen polls `api.agent(wallet)` into its own local
+    // state and then settles this store-wide flag, so the agents LIST — whose
+    // `Saving…` guard is keyed on exactly this flag, over the `agents` array
+    // that poll never touches — lost its guard while still holding a stale row.
+    // It then rendered the old name beside the new caps as fact, which is the
+    // precise state `isSuperseded` was written to prevent.
+    //
+    // Only a read that MATCHED the fingerprint may be passed here. A read we
+    // have just declared stale (the waited-out branch) must not be promoted
+    // into shared state: the detail screen carries a notice saying its figures
+    // may be a moment old, and the list has nowhere to put one.
+    if (settledBy) {
+      setAgents((prev) =>
+        prev === null
+          ? prev
+          : prev.map((agent) =>
+              agent.wallet.toLowerCase() === settledBy.wallet.toLowerCase() ? settledBy : agent,
+            ),
+      );
+    }
     setExpectations((prev) => {
       const key = wallet.toLowerCase();
       // Returning `prev` unchanged matters: this is called from a fetch effect,
