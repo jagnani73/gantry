@@ -632,11 +632,25 @@ const READBACK_DELAY_MS = 800;
  * expensive one, because a presenter reads it as "the reset did not take" and
  * budgets the rehearsal around a cap that is not actually consumed.
  */
-const armedHere = (body) =>
-  body?.dailyCap === DEMO_POLICY.dailyCap.toString() && body?.spentToday === "0";
-async function readArmedPolicy() {
+const armedHere = (body, expiry) =>
+  body?.dailyCap === DEMO_POLICY.dailyCap.toString() &&
+  body?.perTxCap === DEMO_POLICY.perTxCap.toString() &&
+  // The one that was missing, and the one that decides whether the REJECTION
+  // beat still rejects. A test over caps alone passes on the pre-write read
+  // whenever the caps did not change — which is every run — so the retry loop
+  // exited on attempt zero and the line below printed the OLD categories.
+  // Observed live: a run that correctly armed food_beverage reported
+  // "food_beverage, electronics" and called it ✓, one line above a cheat sheet
+  // telling the presenter to demo a refusal that would no longer happen.
+  body?.categoryBitmap === DEMO_POLICY.categoryBitmap.toString() &&
+  // Chain-derived, so it is compared against the exact value this run sent
+  // rather than recomputed — recomputing it here would drift by however long
+  // the transaction took.
+  body?.expiry === expiry &&
+  body?.spentToday === "0";
+async function readArmedPolicy(expiry) {
   let result = await call("GET", `/api/agents/${wallet}`);
-  for (let attempt = 0; attempt < READBACK_RETRIES && !armedHere(result.body); attempt++) {
+  for (let attempt = 0; attempt < READBACK_RETRIES && !armedHere(result.body, expiry); attempt++) {
     await delay(READBACK_DELAY_MS);
     result = await call("GET", `/api/agents/${wallet}`);
   }
@@ -651,6 +665,9 @@ async function readArmedPolicy() {
 if (wallet) {
   try {
     const block = await publicClient.getBlock();
+    // Held, not recomputed: the readback below compares against the value this
+    // run actually sent.
+    const expiry = Number(block.timestamp) + DEMO_POLICY.policyTtlSeconds;
     await payerTx({
       address: wallet,
       abi: agentPbmWalletAbi,
@@ -659,18 +676,18 @@ if (wallet) {
         {
           dailyCap: DEMO_POLICY.dailyCap,
           perTxCap: DEMO_POLICY.perTxCap,
-          expiry: Number(block.timestamp) + DEMO_POLICY.policyTtlSeconds,
+          expiry,
           categoryBitmap: DEMO_POLICY.categoryBitmap,
         },
       ],
     });
-    const { res, body } = await readArmedPolicy();
+    const { res, body } = await readArmedPolicy(expiry);
     if (res?.ok && body) {
       const sgd = (units) => (Number(BigInt(units) * BigInt(body.rate)) / 1e12).toFixed(2);
       armed =
         `S$${sgd(body.dailyCap)}/day · ${body.categories.join(", ")} · ` +
         `spent S$${sgd(body.spentToday)} · ${usd(body.balance)}`;
-      if (!armedHere(body)) {
+      if (!armedHere(body, expiry)) {
         // A confirmed setPolicy and a wallet that does not report it is not lag
         // any more — it is a wallet whose policy is not what this run armed.
         degraded = true;
