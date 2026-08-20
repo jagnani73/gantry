@@ -272,3 +272,24 @@ function receiptKeyParam(value: string | null): string | null {
   if (trimmed === "" || trimmed.length > RECEIPT_KEY_MAX) return null;
   return RECEIPT_KEY_SHAPE.test(trimmed) ? trimmed : null;
 }
+
+/**
+ * Did this URL ASK for an overlay, whatever came of it?
+ *
+ * The counterpart to `overlayFromQuery` returning null. Refusing to render junk
+ * off a URL is the half that matters and it works — but the payer was told
+ * nothing, so a link that named a shop we could not read was indistinguishable
+ * from a link that only ever opened the app. They land on their wallet tab and
+ * cannot tell a broken link from a working one.
+ *
+ * Deliberately shallow: it answers "was something asked for", not "what was
+ * wrong with it". Naming the reason needs a `rejected` arm carrying it out of
+ * the parser, which is a bigger change than one sentence to the payer is worth
+ * right now. `sgd` and `allow` are excluded because neither is an overlay on its
+ * own — they modify one, and a URL carrying only `?sgd=` asked for nothing.
+ */
+const OVERLAY_NAMING_PARAMS = ["scan", "pay", "shop", "agent", "edit", "receipt"] as const;
+
+export function namesAnOverlay(params: URLSearchParams): boolean {
+  return OVERLAY_NAMING_PARAMS.some((key) => params.get(key) !== null);
+}

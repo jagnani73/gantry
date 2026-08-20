@@ -19,36 +19,32 @@ green, and the relayer NOT carrying an EIP-7702 delegation (`eth_getCode` on
 ## What needs a human right now
 
 Kept at the top because it is the question this file gets asked, and answering it
-from the tables means reading all of them. Current as of the 20 Aug push.
+from the tables means reading all of them. Current as of 20 Aug, after the F16/F17
+pass.
 
-**Unverified fixes — shipped, never driven.** Each is a repair for a finding, and
-none of the three has been exercised since it landed:
+**Nothing is blocking.** The three unverified fixes were driven by the owner and
+pass (**25l**, **25m**, **25n** — the last being the originally reported bug), and
+the two open decisions have been made and implemented.
 
-- **25n** — `/pay/:handle` → close → refresh. This is the ORIGINAL reported bug.
-  The fix is in and the mechanism was verified on the `/app` routes, but the entry
-  route itself has not been re-driven.
-- **25l** — a `?receipt=` link while the history request fails must show
-  **"Couldn't read this history"**, never "not in this wallet". Needs the backend
-  stopped, or throttled, to reach.
-- **25m** — `?edit=0x…&allow=7` must tick nothing. Before **F19**'s fix this put an
-  invisible category into a policy the payer signs.
+**One gap left in what shipped.** **F17**'s partial-drop case: `?sgd=4,50` — a
+comma, which is what a European keyboard or a locale-formatted price produces —
+opens the right shop with a **blank keypad**, and nothing says an amount was
+dropped. The merchant said the link carried the price; the customer sees none. The
+whole-overlay case now toasts, but naming a dropped FIELD needs a reason carried
+out of the parser, which the shallow `namesAnOverlay` check deliberately does not
+do.
 
-**Decisions, not tests.** Two findings are recorded OPEN because the fix is a
-design change rather than a repair, and both are calls for the owner:
-
-- **F16** — a URL can open any well-formed address's agent screen, with Revoke and
-  Withdraw on it. Writes revert, so nothing is lost; whether that is acceptable
-  before the finals is a judgement.
-- **F17** — a malformed overlay param refuses silently. Refusing to render junk is
-  the half that matters and it works; telling the payer is the half that is missing.
-
-**Environmental.** **F19** — the in-app scanner cannot decode a QR on the demo
-machine (`BarcodeDetector` is absent). Not a defect, but do not discover it on stage.
+**Environmental, worth knowing before a rehearsal.** **F19** — the in-app scanner
+cannot decode a QR on the demo machine (`BarcodeDetector` is absent in that
+Chrome). Not a defect; the camera runs and the handle field underneath is the way
+through, and a phone's own camera app opening `/pay/<handle>` is unaffected. Do
+not discover it on stage.
 
 **Needs hardware or an account.** **U1** (passkey onboarding) and **U2** (merchant
 payout rotation from a connected wallet) — see [Cannot be run here](#cannot-be-run-here).
 
----
+**Not yet driven at all:** Phases 4-11. Phase 4 (the charge link) carries the one
+security-relevant step still untested — the `X-Forwarded-Host` open-redirect check.
 
 ## Findings register
 
@@ -69,8 +65,8 @@ payout rotation from a connected wallet) — see [Cannot be run here](#cannot-be
 | **F13** | **The new rate skeleton shimmered forever when nothing was being read.** Both chain effects gate on `!address`, so choosing "my own wallet" and connecting nothing left `rate` and `rateError` both null — which the F5 placeholder renders as an animated skeleton, i.e. an active claim that data is on its way. Reachable in one action, no network fault needed. The previous code rendered nothing, which claims nothing, so F5 made this *louder*. | `payer-context.tsx` | **Resolved** 20 Aug — the rate read no longer gates on `address`. The rate is a property of the swap, not of a payer. |
 | **F14** | **The settings card stated the pay token in words before the preference resolved.** F6 gated the picker but not the two lines that make the same claim in prose, so a euro payer's first frame read "You sign an authorization for USDC" and "You pay in USDC" **beside a picker deliberately showing no selection** — the two halves of one card disagreeing, on the screen whose job is to say which token signs. Arguably a worse frame than the jump F6 removed. | `screen-settings.tsx` | **Resolved** 20 Aug — both gated on `payCurrencyReady`, same treatment as the rate row below them. |
 | **F15** | `OverlayHost`'s switch had no `default` **and no annotated return type**, so a new `Overlay` member returned `undefined`, which React's `ReactNode` accepts. The overlay would push onto the stack, write its query, and render nothing — a payer on the wallet screen with a URL naming a screen that is not there and a Back button that appears dead. `overlayToQuery` has this enforcement; its render half did not. | `payer-frame.tsx` | **Resolved** 20 Aug — return type annotated `ReactElement | null`, so a missing case is the same TS2366 the serializer already relies on. Verified by a reviewer who added a probe member and confirmed the serializer errors; the render half did not. |
-| **F16** | **`?agent=` and `?edit=` open ANY well-formed address with no ownership check.** Shape is validated correctly (`isAddress` strict, never `getAddress`), but nothing establishes the wallet is the payer's. `/app?agent=0x…` renders a stranger's caps, bitmap, `spentToday` and balance with Revoke and Withdraw buttons; `/app?edit=0x…&allow=2` opens an editable policy form. Writes revert (`onlyOwner`) so nothing is lost, but this is the screen whose whole job is stating whose rules these are. Sharper on a deployed build, where every visitor shares one demo key. | `overlay-url.ts`, `agent-detail.tsx` | **Open — deferred.** The denial remedy already follows the right rule (it renders nothing for a wallet the payer does not own). The fix is to resolve against the payer's own `agents` list before opening, or open read-only when unowned — but `agents` loads async, so it needs the same deferred-open path the receipt has. Not landed the day before finals. |
-| **F17** | **A malformed overlay param opens nothing and says nothing.** `?pay=<bad handle>`, `?agent=<bad address>`, `?edit=<junk>` all resolve to no overlay and drop the payer on a bare tab with no indication a link was followed and refused. Worse for partial drops, where the overlay DOES open: `?sgd=4,50` (a comma) opens the pay flow on a blank keypad, and `?allow=<junk>` opens the denial-remedy form with nothing pre-ticked — so a payer taps Save, signs, pays gas and changes nothing. | `overlay-url.ts` | **Open — deferred.** Refusing to render junk is correct and is the important half; telling the payer is the missing half. Needs a `rejected`/`dropped` arm on `PendingOverlay` and a surfacing path, plus a re-run of the URL cases. Deferred as a design change, not a defect in what shipped. |
+| **F16** | **`?agent=` and `?edit=` open ANY well-formed address with no ownership check.** Shape is validated correctly (`isAddress` strict, never `getAddress`), but nothing establishes the wallet is the payer's. `/app?agent=0x…` renders a stranger's caps, bitmap, `spentToday` and balance with Revoke and Withdraw buttons; `/app?edit=0x…&allow=2` opens an editable policy form. Writes revert (`onlyOwner`) so nothing is lost, but this is the screen whose whole job is stating whose rules these are. Sharper on a deployed build, where every visitor shares one demo key. | `overlay-url.ts`, `agent-detail.tsx` | **Resolved** 20 Aug — the CONTROLS are gated, not the route. A policy is public chain state, so refusing to display it protects nothing; what was wrong was dressing it as the payer's and offering buttons. `agent.owner` was already read and printed on the screen and `identity.address` was already in the store, so this needed no ownership lookup and no deferred-open path — which is what made the rejected alternative expensive. Detail screen: Edit/Revoke/Withdraw replaced by a line naming the real owner, policy still shown. The FORM refuses outright, since a form is nothing but its controls. Verified both ways in a browser: owned → three controls, no banner; not owned → no controls, banner, policy still visible, and `?edit=` refused. |
+| **F17** | **A malformed overlay param opens nothing and says nothing.** `?pay=<bad handle>`, `?agent=<bad address>`, `?edit=<junk>` all resolve to no overlay and drop the payer on a bare tab with no indication a link was followed and refused. Worse for partial drops, where the overlay DOES open: `?sgd=4,50` (a comma) opens the pay flow on a blank keypad, and `?allow=<junk>` opens the denial-remedy form with nothing pre-ticked — so a payer taps Save, signs, pays gas and changes nothing. | `overlay-url.ts` | **Partly resolved** 20 Aug — a link that NAMES an overlay and opens none now raises a toast: "That link couldn't be opened. Scan the shop's code, or search for it." `namesAnOverlay` is deliberately shallow (was something asked for, not what was wrong with it), which avoids the `rejected` type rework. Raised from a child of `ToastProvider` because the provider that detects it is mounted outside. Verified with `?pay=Ah_Hock_Not_A_Handle`. **STILL OPEN:** the partial-drop case — `?sgd=4,50` opens the right shop with a blank keypad, and nothing says an amount was dropped. That needs the per-field reason the shallow check does not carry. |
 | **F18** | The payer app's 14 Basescan links carried no external-link indicator, while the merchant, landing, directory and onboard surfaces all append `↗` — one app, two conventions. | payer surfaces | **Resolved** 20 Aug — 8 link sites now carry it, each wrapped in `aria-hidden` so a screen reader does not announce "north east arrow" as part of the link name (a reviewer caught that the first pass had not). |
 | **F19** | `BarcodeDetector` is unavailable in the demo Chrome, so the in-app scanner runs the camera and decodes nothing. `scan.tsx` documents this as a designed degraded path and the handle field underneath is the way through — but the consequence is that **the in-app scanner cannot read a QR code on this machine**, which is worth knowing before a rehearsal. The phone's own camera app opening `/pay/<handle>` is unaffected, and CLAUDE.md already names that as the stage path. | `scan.tsx` (no code change) | **Open — environmental, not a defect.** Recorded because it was discovered live during Phase 3b and would otherwise be re-discovered as a bug on stage. |
 
@@ -154,9 +150,9 @@ are the cases that were actually driven; the numbering is a letter because Phase
 | 25i  | Press Forward | Returns to `/app/agents` | **PASS** |
 | 25j  | Junk params — `?shop=not a handle`, `?agent=0xdeadbeef`, a wrong-checksum address, `?edit=junk`, `?scan=0` | Each opens nothing; the URL is not rewritten | **PASS** (driven by the implementing agent, not re-checked here) |
 | 25k  | `?receipt=<key not in history>` | The "not in this wallet" screen, with the key echoed | **PASS** (fabricated key) |
-| 25l  | `?receipt=` while the history request FAILS | The **`unavailable`** screen — never "not in this wallet" | — **not run.** The local backend answers too fast to catch the window; this is **F12**'s fix and it is unverified |
-| 25m  | `?edit=0x…&allow=7` (unlisted category) | Nothing pre-ticked, and nothing added to the signed bitmap | — **not run.** This is **F19**'s fix |
-| 25n  | `/pay/:handle` → close | Lands on `/app`; a refresh does not reopen the payment | — **not run.** This is the ORIGINAL reported bug and it has not been re-driven since the fix |
+| 25l  | `?receipt=` while the history request FAILS | The **`unavailable`** screen — never "not in this wallet" | **PASS** — driven by the owner, 20 Aug |
+| 25m  | `?edit=0x…&allow=7` (unlisted category) | Nothing pre-ticked, and nothing added to the signed bitmap | **PASS** — driven by the owner, 20 Aug |
+| 25n  | `/pay/:handle` → close | Lands on `/app`; a refresh does not reopen the payment | **PASS** — driven by the owner, 20 Aug. This was the originally reported bug |
 
 ## Phase 4 — the charge link
 

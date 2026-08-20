@@ -52,7 +52,7 @@ const MAX_DAYS = 365;
 const DAY_SECONDS = 86_400;
 
 export function AgentForm({ wallet, addCategory }: { wallet: Address | null; addCategory?: number }) {
-  const { popOverlay } = usePayer();
+  const { identity, popOverlay } = usePayer();
 
   // Read the wallet directly and use NOTHING else. The agents list is enumerated
   // from factory logs and can be a minute old; falling back to it whenever it
@@ -85,6 +85,55 @@ export function AgentForm({ wallet, addCategory }: { wallet: Address | null; add
   }, [wallet, reloadNonce]);
 
   const existing = wallet ? (fresh ?? undefined) : undefined;
+
+  /**
+   * Somebody else's wallet, reached by URL.
+   *
+   * `?edit=0x…` takes any well-formed address — ownership is a chain fact and the
+   * parser is pure, so the shape check is all it can do. Every write below is
+   * `onlyOwner`, so a save would revert and nothing could be lost; what must not
+   * happen is the form OFFERING it. The sharp case is a deployed build, where
+   * every visitor signs with the same demo key: `?edit=<that wallet>&allow=2` is
+   * a link that opens the real policy form with a category already ticked, one
+   * tap and one signature from widening rules the payer never went looking for.
+   *
+   * Refused rather than shown read-only, unlike the detail screen behind it. That
+   * screen displays public chain state and gains something by rendering it; a
+   * form is nothing but its controls, so a read-only one is an empty gesture.
+   *
+   * `identity.ready` first: the signer preference resolves in an effect, so
+   * treating "not read yet" as "not yours" would refuse the payer their own form
+   * for a frame on every load.
+   */
+  const notMine =
+    identity.ready &&
+    existing !== undefined &&
+    (identity.address === undefined ||
+      identity.address === null ||
+      existing.owner.toLowerCase() !== identity.address.toLowerCase());
+
+  if (wallet && notMine) {
+    return (
+      <OverlayScreen>
+        <OverlayHeader
+          onBack={popOverlay}
+          backLabel="Back"
+          title="Not your agent"
+          subtitle={shortAddress(wallet)}
+        />
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <p className="text-body text-muted">
+            This agent belongs to another wallet, so its rules are not yours to change. Nothing
+            here was altered.
+          </p>
+          <p className="max-w-[34ch] text-fine text-faint">
+            The contract enforces this, not the app: every write on an agent wallet is
+            owner-only, so a save would have been rejected on-chain.
+          </p>
+        </div>
+      </OverlayScreen>
+    );
+  }
 
   if (wallet && !existing) {
     return (

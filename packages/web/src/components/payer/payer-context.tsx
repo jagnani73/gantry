@@ -33,6 +33,7 @@ import { findActivityRow, toActivityRows, type ActivityRow } from "./activity";
 import { usePayerIdentity, type PayerIdentity } from "./identity";
 import {
   OVERLAY_PARAMS,
+  namesAnOverlay,
   overlayFromQuery,
   overlayToQuery,
   receiptQuery,
@@ -263,6 +264,20 @@ export interface PayerStore {
    * different history entirely.
    */
   pendingReceipt: PendingReceiptState | null;
+  /**
+   * A link named an overlay this app refused to open.
+   *
+   * Carried on the store rather than toasted where it is detected, because the
+   * provider is mounted OUTSIDE ToastProvider — the toast stack is positioned
+   * against the phone frame, so it has to live inside it. A child of that
+   * provider reads this and reports it.
+   *
+   * Deliberately a bare flag and not a reason. Naming what was wrong needs the
+   * parser to carry a rejection out of itself, and one honest sentence is worth
+   * more today than a precise one later.
+   */
+  linkRefused: boolean;
+  clearLinkRefused(): void;
 }
 
 const PayerContext = createContext<PayerStore | null>(null);
@@ -588,6 +603,8 @@ export function PayerProvider({
    * stack, which is the thing the writer actually needs.
    */
   const [seeded, setSeeded] = useState(false);
+  const [linkRefused, setLinkRefused] = useState(false);
+  const clearLinkRefused = useCallback(() => setLinkRefused(false), []);
   /** The newest rows, for the one lookup that cannot wait for a render: Back
    * onto a `?receipt=` the app already has in hand should open it, not flash a
    * loading screen at a payer who has been looking at that row all along. */
@@ -663,7 +680,18 @@ export function PayerProvider({
      `seeded` on is the same commit that carries the stack the URL asked for —
      see the note on `seeded` for what happens when those two come apart. */
   useEffect(() => {
-    applyUrl(window.location.search);
+    const search = window.location.search;
+    /* The link named an overlay and none opened — say so.
+       Refusing to render junk off a URL is the half that matters and it works,
+       but the payer was told nothing: they land on their wallet tab, unable to
+       tell a link that was refused from one that only ever opened the app. The
+       realistic case is a merchant's charge link mangled by a chat client or
+       retyped wrong, where a customer is left with no idea a payment was being
+       asked for. Read BEFORE `applyUrl`, which rewrites nothing on this path but
+       is free to in future. */
+    const params = new URLSearchParams(search);
+    if (namesAnOverlay(params) && overlayFromQuery(params) === null) setLinkRefused(true);
+    applyUrl(search);
     setSeeded(true);
   }, [applyUrl]);
 
@@ -1390,6 +1418,8 @@ export function PayerProvider({
       popOverlay,
       closeOverlays,
       pendingReceipt,
+      linkRefused,
+      clearLinkRefused,
     }),
     [
       identity,
@@ -1428,6 +1458,8 @@ export function PayerProvider({
       popOverlay,
       closeOverlays,
       pendingReceipt,
+      linkRefused,
+      clearLinkRefused,
     ],
   );
 

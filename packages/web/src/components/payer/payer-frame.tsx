@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { ToastProvider } from "@/components/primitives";
+import { ToastProvider, useToast } from "@/components/primitives";
 import { AgentDetail } from "./agent-detail";
 import { AgentForm } from "./agent-form";
 import { MerchantPage } from "./merchant-page";
@@ -94,6 +94,7 @@ export function PayerFrame({ children }: { children: ReactNode }) {
           </main>
           <TabBar />
           <OverlayHost overlay={overlay} pendingReceipt={pendingReceipt} />
+          <RefusedLinkToast />
         </ToastProvider>
       </div>
     </div>
@@ -150,4 +151,28 @@ function OverlayHost({
         />
       );
   }
+}
+
+/**
+ * Says out loud that a link was refused.
+ *
+ * Renders nothing; it exists to be INSIDE `ToastProvider`. The provider that
+ * detects the refusal is mounted outside it — the toast stack positions against
+ * the phone frame, so it cannot be hoisted — and passing a callback down would
+ * make the provider depend on a UI concern it has no other reason to know about.
+ *
+ * The flag is cleared as it is read, so the toast fires once per load rather
+ * than on every re-render of the frame.
+ */
+function RefusedLinkToast() {
+  const { linkRefused, clearLinkRefused } = usePayer();
+  const toast = useToast();
+  useEffect(() => {
+    if (!linkRefused) return;
+    clearLinkRefused();
+    // Not "invalid link": the payer did not write it and cannot fix it. What is
+    // useful is that the app is not simply ignoring them, and what to do next.
+    toast.info("That link couldn't be opened. Scan the shop's code, or search for it.");
+  }, [linkRefused, clearLinkRefused, toast]);
+  return null;
 }

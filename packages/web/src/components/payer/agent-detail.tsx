@@ -61,6 +61,7 @@ const FRESHNESS_POLL_MS = 1_200;
 
 export function AgentDetail({ wallet }: { wallet: Address }) {
   const {
+    identity,
     agents,
     agentName,
     agentExpectation,
@@ -335,6 +336,41 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   }
 
   const rate = BigInt(agent.rate);
+  /**
+   * Is this the payer's own agent, or somebody else's?
+   *
+   * It became a question the moment agents got a URL: `?agent=0x…` takes any
+   * well-formed address, and the shape check is the only one the parser can do
+   * — ownership is a CHAIN fact, and the parser is pure. So a link could put a
+   * stranger's caps, categories, balance and spend history inside this app with
+   * Revoke and Withdraw sitting under them.
+   *
+   * Nothing could be stolen: both writes are `onlyOwner` and revert. The problem
+   * is what the screen SAYS. This is the surface whose whole claim is "these are
+   * your agent's rules and nobody else can change them", and it was making that
+   * claim about wallets the payer has no relationship to.
+   *
+   * The fix is to gate the CONTROLS, not the route. A policy is public chain
+   * state — refusing to display it protects nothing, and anyone can read the same
+   * fields off Basescan — so the honest treatment is to show it and stop pretending
+   * it is actionable. That is also the rule the denial remedy already follows one
+   * layer out: it renders nothing rather than offer a button that can only fail.
+   *
+   * Free, which is why it is this rather than an ownership lookup: `agent.owner`
+   * is already read (it is printed below) and `identity.address` is already in
+   * the store, so there is no async gate and no deferred-open path.
+   *
+   * Gated on `identity.ready`: the signer preference resolves in an effect, so
+   * treating "not read yet" as "not yours" would flash a read-only banner over
+   * the payer's own agent on every load.
+   */
+  const mine =
+    identity.ready &&
+    identity.address !== undefined &&
+    identity.address !== null &&
+    agent.owner.toLowerCase() === identity.address.toLowerCase();
+  /** Only once we KNOW it is not theirs. Unresolved is not a verdict. */
+  const readOnly = identity.ready && !mine;
   /**
    * What the wallet holds, as best this browser can know it.
    *
@@ -652,7 +688,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
               ? ` One token at a time — this withdraws the ${agent.token}; repeat for the rest.`
               : ""}
           </p>
-          {balance > 0n ? (
+          {balance > 0n && !readOnly ? (
             <button
               type="button"
               disabled={busy !== null}
@@ -742,6 +778,19 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           </Card>
         ) : null}
 
+        {/* Both writes are the OWNER's, so on a wallet the payer does not own the
+            row is replaced rather than disabled. A disabled Revoke reads as
+            "temporarily unavailable" on a screen where it is permanently not
+            theirs, and the honest sentence is shorter than the two buttons. */}
+        {readOnly ? (
+          <Card tone="sunken" radius="control-m" pad="none" className="px-4 py-3.5">
+            <p className="text-meta-sm text-muted">
+              This agent belongs to {shortAddress(agent.owner)}, not to the wallet you are signing
+              with, so its rules are shown read-only. Only its owner can edit or revoke it — the
+              contract enforces that, not this app.
+            </p>
+          </Card>
+        ) : (
         <div className="flex gap-2.5">
           <button
             type="button"
@@ -791,6 +840,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
                   : "Revoke"}
           </button>
         </div>
+        )}
         {/* Silent while the figures above are known to be behind. Past the
             give-up branch this screen renders a notice saying it could not read
             the wallet back, and a sentence stating the agent's status as fact
