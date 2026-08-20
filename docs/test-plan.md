@@ -54,8 +54,7 @@ payout rotation from a connected wallet) — see [Cannot be run here](#cannot-be
 are both driven and passing, and the demo policy is verified back to
 `food_beverage` only, so the rejection beat still rejects.
 
-**Not yet driven:** Phases 9-11, and #59 (needs a second wallet). Phases 1-8
-are otherwise complete.
+**Not yet driven:** Phases 9-11. Phases 1-8 are complete.
 
 ## Findings register
 
@@ -259,7 +258,7 @@ it.
 | 56  | Tap it                                            | Policy form opens with Electronics pre-ticked **on top of what is on-chain**, expiry preserved, Save still requires a signature | **PASS** — Electronics ticked ON TOP of Food & Beverage, expiry preserved, Save still signs |
 | 57  | Save, reopen the receipt                          | Now reads **"Your rules have changed since"**                                                                                   | **PASS** after the F22 fix — the reopened receipt reads *Your rules have changed since* with no refresh |
 | 58  | Revert the policy                                 | Or the demo denial beat stops denying                                                                                           | **PASS**, and it surfaced **F24**. `demo:reset` DID revert the policy (chain reads bitmap 2, `food_beverage` only) but PRINTED `food_beverage, electronics` and called it a tick, because its readback freshness test covered only `dailyCap` and `spentToday` — both already true of the pre-write state. Fixed and re-run: now prints `food_beverage` |
-| 59  | View a denial for a wallet the payer does not own | Remedy card renders **nothing**                                                                                                 | —      |
+| 59  | View a denial for a wallet the payer does not own | Remedy card renders **nothing**                                                                                                 | **PASS** — remedy card renders nothing for a wallet the signer does not own. The F23 agent link still resolves, landing on the read-only policy with the owner banner |
 
 ## Phase 9 — the verifier
 
