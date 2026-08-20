@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, Label, Mono } from "@/components/primitives";
 import { formatUnits } from "@/components/primitives/units";
 import { parseSgd } from "@gantry/shared";
@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 // nothing would report an error.
 import { isAmountShape } from "@/components/payer/amount-keypad";
 import { QR_QUIET_ZONE, type QrMatrix } from "./qr-matrix";
+
+/** How long "Copied" stays up before the button offers itself again. */
+const COPY_RESET_MS = 2_000;
 
 type CopyState = "idle" | "copied" | "failed";
 
@@ -77,14 +80,31 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
 
   useEffect(() => setCopied("idle"), [link]);
 
+  /** Timer for the "Copied" label, cleared on unmount so a resolved copy cannot
+   * set state on a screen the merchant has navigated away from. */
+  const resetAt = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(resetAt.current), []);
+
   async function copy() {
+    clearTimeout(resetAt.current);
     try {
       await navigator.clipboard.writeText(link);
       setCopied("copied");
+      /* Reverts on a timer, not only when the link changes.
+         The reset above is keyed on `link`, which HID this rather than fixing
+         it: retyping the amount happens to clear the label, so copying the same
+         link twice was the case nobody hit — the button stayed on "Copied" and
+         the second tap gave no feedback at all. Found on the shop page's copy
+         button, where the URL never changes and the same bug is permanent. */
+      resetAt.current = setTimeout(() => setCopied("idle"), COPY_RESET_MS);
     } catch {
       // No clipboard API outside a secure context — a tablet on the venue
       // network hitting the laptop over http has none. Say so; the link is on
       // screen to select by hand.
+      //
+      // No timer here: a confirmation is an event and is safe to miss, but this
+      // is a CONDITION that will hold on the next tap too, so reverting to
+      // "Copy" would invite a tap that cannot work.
       setCopied("failed");
     }
   }

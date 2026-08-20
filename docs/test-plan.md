@@ -167,17 +167,31 @@ are the cases that were actually driven; the numbering is a letter because Phase
 | 32  | `curl -i -H 'Accept: application/json' "<link>"`       | **402** with `PAYMENT-REQUIRED`                                                                                                   | **PASS** — `402` + `PAYMENT-REQUIRED`; decoded offers are `exact/USDC · exact/EURC · gantry-pbm/USDC · gantry-pbm/EURC`, so `exact/USDC` is accepts[0] as the boot assert requires |
 | 33  | `curl -i "<link>"` (bare `*/*`, what curl sends)       | **402**, not a redirect. `req.accepts()` would answer html here and silently close the machine door with every test still passing | **PASS** — `402`, not a redirect, with curl's bare `Accept: */*` |
 | 34  | `curl -i -H 'Accept: text/html' -H 'X-Forwarded-Host: evil.example' "<link>"` `Accept: text/html` is MANDATORY — without it the request takes the 402 branch and proves nothing about the redirect | Must NOT redirect to evil.example                                                                                                 | **PASS** — `500 PayLinkNotConfigured` ("this host cannot resolve the payer app; set APP_URL"), and zero occurrences of `evil.example` in the response. Control without the header: `302 → http://localhost:3000/pay/…?sgd=4.50`. Live test locally: `trust proxy` is 1 so the header IS honoured, and `APP_URL` is unset so derivation is the path exercised |
-| 35  | `?sgd=1&sgd=2`                                         | Pad starts empty — two prices in a link is a broken link                                                                          | **Backend half PASS** — `curl -i -H 'Accept: text/html' ".../pay/ah-hock-chicken-rice?sgd=1&sgd=2"` returns `302 → /pay/ah-hock-chicken-rice` with **no `?sgd=` at all**: the ambiguous amount is dropped before the payer app ever sees it, so there are two guards, not one. **The web half is not run** — the pad starting empty on `localhost:3000/pay/ah-hock-chicken-rice?sgd=1&sgd=2` needs an eye on the screen |
+| 35  | `?sgd=1&sgd=2`                                         | Pad starts empty — two prices in a link is a broken link                                                                          | **PASS** — the backend drops the ambiguous amount (`302` with no `?sgd=` at all) and the web half was driven by the owner: the pad opens empty. Two guards, not one |
 
 ## Phase 5 — the machine door on a shop page
 
 | #   | What                      | Expected                                                                                      | Result |
 | --- | ------------------------- | --------------------------------------------------------------------------------------------- | ------ |
-| 36  | `/m/ah-hock-chicken-rice` | Fetches a live 402, labelled "asked just now"                                                 | —      |
-| 37  | The offers listed         | Four rows: `exact · USDC`, `exact · EURC`, `gantry-pbm · USDC`, `gantry-pbm · EURC`           | —      |
-| 38  | Each row's ticker         | Taken from the challenge — a euro row rendering "USDC" is the bug this was fixed for          | —      |
-| 39  | Ordering                  | `exact · USDC` **first** (boot assert; vanilla clients take `accepts[0]`)                     | —      |
-| 40  | Stop the backend, reload  | Says the live check did not answer, shows the curl command alone. Never an invented challenge | —      |
+| 36  | `/m/ah-hock-chicken-rice` | Fetches a live 402, labelled "asked just now"                                                 | **PASS** — owner. Two UI changes came out of it: a Copy button on the curl command, and the offers grouped into a table instead of four repeated sentences |
+| 37  | The offers listed         | Four rows: `exact · USDC`, `exact · EURC`, `gantry-pbm · USDC`, `gantry-pbm · EURC`           | **PASS** — owner |
+| 38  | Each row's ticker         | Taken from the challenge — a euro row rendering "USDC" is the bug this was fixed for          | **PASS** — owner |
+| 39  | Ordering                  | `exact · USDC` **first** (boot assert; vanilla clients take `accepts[0]`)                     | **PASS** — owner. Re-confirmed from the header decoded in step 32: `exact/USDC` is `accepts[0]` |
+| 40  | Stop the backend, reload  | Says the live check did not answer, shows the curl command alone. Never an invented challenge | **PASS** — owner |
+
+| 40a | Tap **Copy** on the curl command, twice | Label goes `Copy` → `Copied` → back to `Copy` after ~2s, and the second tap gives feedback too | — **needs a human.** `navigator.clipboard.writeText` requires a real user gesture, which an automated click does not grant, so a scripted run can only ever exercise the failure branch |
+| 40b | The same button where the clipboard is unavailable (plain http over a LAN) | Reads **Select it** and STAYS there | **PASS** — a synthetic click reproduces exactly this, and the label persisted past 3s as intended |
+
+**F20 was found here.** The Copy button never reset: this URL never changes, so
+"Copied" was the label for the rest of the session and a second tap gave no
+feedback at all — indistinguishable from a button that had stopped responding.
+The merchant's charge card carried the same defect, hidden because its reset is
+keyed on the link and retyping an amount happens to clear it; copying the same
+link twice was the case nobody hit. Both now revert on a timer. The FAILURE
+state deliberately does not: a confirmation is an event and is safe to miss,
+while an unavailable clipboard is a condition that holds on the next tap too,
+so reverting would invite a tap that cannot work and take the instruction with
+it.
 
 ## Phase 6 — discovery
 

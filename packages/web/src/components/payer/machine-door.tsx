@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PAYMENT_REQUIRED_HEADER,
   decodePaymentRequiredHeader,
@@ -34,6 +34,12 @@ import { backendUrl } from "@/lib/env";
  * no amount of its own, so one is chosen and labelled as chosen. */
 const SAMPLE_SGD = "4.50";
 
+/** How long "Copied" stays up. Long enough to read, short enough that the
+ * button is ready again before a reader thinks to tap it twice. */
+const COPY_RESET_MS = 2_000;
+
+type CopyState = "idle" | "copied" | "failed";
+
 type Probe =
   | { state: "loading" }
   | { state: "live"; challenge: X402PaymentRequired }
@@ -41,7 +47,41 @@ type Probe =
 
 export function MachineDoor({ handle }: { handle: string }) {
   const [probe, setProbe] = useState<Probe>({ state: "loading" });
+  const [copied, setCopied] = useState<CopyState>("idle");
   const url = `${backendUrl()}/pay/${handle}?sgd=${SAMPLE_SGD}`;
+  /** ONE string, shown and copied. Built separately they would drift, and the
+   * copied one is the half nobody proof-reads. */
+  const command = `curl -i -H 'Accept: application/json' \\\n  "${url}"`;
+
+  /** Timer for the "Copied" label, cleared on unmount so a resolved copy cannot
+   * set state on a card the reader has navigated away from. */
+  const resetAt = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(resetAt.current), []);
+
+  async function copyCommand() {
+    clearTimeout(resetAt.current);
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied("copied");
+      /* "Copied" REVERTS, and that is the whole point of the timer: this URL
+         never changes, so without it the button said "Copied" for the rest of
+         the session and a second tap gave no feedback at all — the reader could
+         not tell a copy that worked from a button that had stopped responding.
+         (The merchant's charge card resets on the link changing, which hides the
+         same bug behind an amount that is usually retyped.) */
+      resetAt.current = setTimeout(() => setCopied("idle"), COPY_RESET_MS);
+    } catch {
+      // No clipboard API outside a secure context — a phone on the venue network
+      // reaching this laptop over plain http has none. Say so; the command is on
+      // screen to select by hand. Same fallback the merchant's charge link uses.
+      //
+      // Deliberately NOT on a timer. A confirmation is an event and is safe to
+      // miss; this is a CONDITION — the clipboard is unavailable and will be on
+      // the next tap too — so reverting to "Copy" would invite a tap that cannot
+      // work and take the instruction off screen with it.
+      setCopied("failed");
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -84,12 +124,25 @@ export function MachineDoor({ handle }: { handle: string }) {
       </p>
 
       <div className="mt-4">
-        <Label>Ask for it yourself</Label>
+        <div className="flex items-baseline justify-between gap-3">
+          <Label>Ask for it yourself</Label>
+          <button
+            type="button"
+            onClick={() => void copyCommand()}
+            className="focus-ring rounded-badge text-meta text-accent hover:text-accent-hover"
+          >
+            {copied === "copied" ? "Copied" : copied === "failed" ? "Select it" : "Copy"}
+          </button>
+        </div>
         {/* Wide, and must scroll inside its own box rather than widening the
-            page — this frame is phone-shaped. */}
+            page — this frame is phone-shaped. Which is also why the copy button
+            exists: the command runs off the right edge on a handset, so the one
+            thing this card invites a reader to do was the one thing they could
+            not do without horizontal-scrolling a code block and selecting it by
+            hand. */}
         <div className="mt-1.5 overflow-x-auto rounded-control bg-fill-hover px-3.5 py-3">
           <Mono size="md" tone="quiet" className="whitespace-pre">
-            {`curl -i -H 'Accept: application/json' \\\n  "${url}"`}
+            {command}
           </Mono>
         </div>
       </div>
@@ -130,7 +183,40 @@ function tokenLabel(offer: X402PaymentRequired["accepts"][number]): string | nul
   return typeof name === "string" && name ? name : null;
 }
 
+/**
+ * Offers grouped by scheme, in the order the server sent them.
+ *
+ * CONSECUTIVE grouping, never a sort or a keyed bucket: `accepts[0]` is what a
+ * vanilla x402 client takes, so the order carries meaning and reordering it here
+ * would misrepresent the response this card's whole claim is that it shows you
+ * verbatim. A server that ever interleaved two schemes would produce two groups
+ * for one scheme, which is the honest rendering of an interleaved list.
+ */
+function bySchemeInOrder(accepts: X402PaymentRequired["accepts"]) {
+  const groups: { scheme: string; payTo: string; offers: typeof accepts }[] = [];
+  for (const offer of accepts) {
+    const last = groups[groups.length - 1];
+    // payTo is a property of the scheme here — `exact` collects to the relayer
+    // for the custodial hop, `gantry-pbm` pays the core directly — so it lifts
+    // to the group rather than repeating on every currency row.
+    if (last && last.scheme === offer.scheme && last.payTo === offer.payTo) last.offers.push(offer);
+    else groups.push({ scheme: offer.scheme, payTo: offer.payTo, offers: [offer] });
+  }
+  return groups;
+}
+
+const SCHEME_NOTE: Record<string, string> = {
+  exact: "any standard x402 client",
+  "gantry-pbm": "through an on-chain spend policy",
+};
+
 function Challenge({ challenge }: { challenge: X402PaymentRequired }) {
+  const groups = bySchemeInOrder(challenge.accepts);
+  // One line if they agree, which they always do today — a challenge names one
+  // chain. Derived rather than assumed so a mixed response could not be
+  // flattened into a claim the server did not make.
+  const networks = [...new Set(challenge.accepts.map((offer) => offer.network))];
+
   return (
     <div className="rounded-control border border-fill-subtle">
       <div className="flex items-baseline justify-between gap-3 border-b border-fill-subtle px-3.5 py-2.5">
@@ -139,39 +225,54 @@ function Challenge({ challenge }: { challenge: X402PaymentRequired }) {
         </Mono>
         <span className="text-fine text-faint">asked just now</span>
       </div>
-      <div className="flex flex-col gap-3 px-3.5 py-3">
-        {/* Keyed on scheme AND currency: each scheme is offered once per payable
-            token, so the scheme alone stopped being unique the moment `exact`
-            fanned out — and duplicate keys make React reuse the wrong row. */}
-        {challenge.accepts.map((offer) => (
-          <div key={`${offer.scheme}/${tokenLabel(offer) ?? "?"}`}>
-            <div className="flex items-baseline justify-between gap-3">
-              <Mono size="md" className="text-ink">
-                {offer.scheme}
-                {tokenLabel(offer) ? (
-                  <span className="text-faint"> · {tokenLabel(offer)}</span>
-                ) : null}
-              </Mono>
-              <span className="text-fine text-faint">
-                {offer.scheme === "exact"
-                  ? "any standard x402 client"
-                  : "through an on-chain spend policy"}
-              </span>
-            </div>
-            {/* Six decimals, not the 2dp default: this is the exact figure a
-                client signs for, and 3.352955 rounded to 3.35 is a different
-                amount of someone's money on the one card whose claim is that
-                these numbers are real. The TICKER has to come from the challenge
-                for the same reason — this said "USDC" on every row, so the euro
-                offers rendered as dollars on the one card claiming to show you
-                exactly what the server said. */}
-            <Mono size="3xs" tone="faintest" className="mt-1 block">
-              {formatUnits6(BigInt(offer.amount), 6)}
-              {tokenLabel(offer) ? ` ${tokenLabel(offer)}` : ""} → {shortAddress(offer.payTo)} on{" "}
-              {offer.network}
+
+      {groups.map((group, index) => (
+        <div
+          key={`${group.scheme}/${group.payTo}/${index}`}
+          className={index > 0 ? "border-t border-fill-subtle" : ""}
+        >
+          <div className="flex items-baseline justify-between gap-3 px-3.5 pt-2.5">
+            <Mono size="md" className="text-ink">
+              {group.scheme}
             </Mono>
+            <span className="text-fine text-faint">{SCHEME_NOTE[group.scheme] ?? "custom scheme"}</span>
           </div>
-        ))}
+
+          {/* A real column rather than a sentence per offer. The currencies of one
+              scheme differ only in ticker and amount, so repeating "→ payTo on
+              network" under each was four copies of one fact and made two numbers
+              a reader wants to compare impossible to compare. `tabular-nums`
+              keeps the digits on a shared grid. */}
+          <div className="mt-1.5 px-3.5">
+            {group.offers.map((offer) => (
+              <div
+                key={tokenLabel(offer) ?? offer.asset}
+                className="flex items-baseline justify-between gap-3 py-0.75"
+              >
+                <Mono size="sm" tone="quiet">
+                  {tokenLabel(offer) ?? shortAddress(offer.asset)}
+                </Mono>
+                {/* Six decimals, not the 2dp default: this is the exact figure a
+                    client signs for, and 3.352955 rounded to 3.35 is a different
+                    amount of someone's money on the one card whose claim is that
+                    these numbers are real. */}
+                <Mono size="sm" tone="quiet" className="tabular-nums">
+                  {formatUnits6(BigInt(offer.amount), 6)}
+                </Mono>
+              </div>
+            ))}
+          </div>
+
+          <Mono size="3xs" tone="faintest" className="mt-1 block px-3.5 pb-2.5">
+            → {shortAddress(group.payTo)}
+          </Mono>
+        </div>
+      ))}
+
+      <div className="border-t border-fill-subtle px-3.5 py-2">
+        <Mono size="3xs" tone="faintest">
+          {networks.join(" · ")}
+        </Mono>
       </div>
     </div>
   );
