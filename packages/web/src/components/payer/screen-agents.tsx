@@ -6,8 +6,8 @@ import { agentStatus, shortAddress, type AgentSummary } from "@gantry/shared";
 import { CapMeter, Card, Chip, Mono } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { STATUS_LABEL } from "./agent-detail";
-import { categoryLabels, policyFingerprint, sgdFromCapUnits } from "./agent-rules";
-import { usePayer, type AgentExpectation } from "./payer-context";
+import { categoryLabels, sgdFromCapUnits } from "./agent-rules";
+import { usePayer } from "./payer-context";
 
 /**
  * Live agents versus the ones that can no longer spend, plus everything.
@@ -52,7 +52,7 @@ export function AgentsScreen() {
     agentsError,
     agentsUnreadable,
     chainNow,
-    agentExpectation,
+    agentAhead,
     identity,
     refresh,
     pushOverlay,
@@ -223,23 +223,16 @@ export function AgentsScreen() {
                     </p>
                   </Card>
                 ) : (
-                  shown.map((row) => {
-                    // The whole row moves together. Taking the name from
-                    // `proven` and the caps from the read would put a confirmed
-                    // rename beside limits it replaced — a subtler version of
-                    // the bug this replaced.
-                    const { agent, ahead } = rowFor(row, agentExpectation(row.wallet));
-                    return (
-                      <AgentCard
-                        key={agent.wallet}
-                        agent={agent}
-                        name={agent.label || shortAddress(agent.wallet)}
-                        now={now}
-                        ahead={ahead}
-                        onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
-                      />
-                    );
-                  })
+                  shown.map((agent) => (
+                    <AgentCard
+                      key={agent.wallet}
+                      agent={agent}
+                      name={agent.label || shortAddress(agent.wallet)}
+                      now={now}
+                      ahead={agentAhead(agent.wallet)}
+                      onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
+                    />
+                  ))
                 )}
               </>
             )}
@@ -347,37 +340,17 @@ function TabButton({
   );
 }
 
-/**
- * The row to render: the read, or what a mined receipt proves over the top of it.
+/*
+ * The reconciliation this screen used to do lives in the store now — `agents`
+ * arrives already carrying what a mined receipt proves, so there is nothing to
+ * merge here and nothing for the next screen to forget. See `agents` in
+ * `payer-context`.
  *
- * A save can send THREE transactions, and `GET /api/agents` composes six
- * unpinned multicalls — so a re-read fired the moment the last one lands
- * routinely comes back holding two different blocks: the new policy and the OLD
- * name. That is exactly what a payer reported (categories updated, the rename
- * apparently ignored), and nothing was wrong on chain.
- *
- * This used to render `Saving…` in place of the name for as long as the
- * mismatch lasted, which was wrong twice over. The save had already finished —
- * it is the READ that is late — so the word pointed at the wrong half. And
- * nothing bounded it: the give-up rule lives with whoever polls, the detail
- * screen polls and this screen does not, so a single stale read left the row
- * frozen with no retry, no explanation and no exit. Reachable in production, not
- * just in theory: the store's 20s poll covers history only, never the agent
- * enumeration, so after a save exactly ONE read is fired and nothing is
- * scheduled to try again.
- *
- * So the browser renders what it watched mine. A mined receipt outranks a
- * lagging read — the rule the merchant payout rotation already follows — and
- * `proven` carries every field an owner write can change. `spentToday`, the
- * balance and the rate stay from the read, because those move without anyone
- * signing anything and no receipt speaks for them.
+ * What was here before rendered `Saving…` in place of the name for as long as
+ * the read stayed behind, which was wrong twice over: the save had already
+ * finished — it is the READ that is late — and nothing bounded the wait, because
+ * the give-up rule lives with whoever polls and this screen does not poll.
  */
-function rowFor(agent: AgentSummary, expected: AgentExpectation | null) {
-  if (expected === null || policyFingerprint(agent) === expected.fingerprint) {
-    return { agent, ahead: false };
-  }
-  return { agent: { ...agent, ...expected.proven }, ahead: true };
-}
 
 function AgentCard({
   agent,

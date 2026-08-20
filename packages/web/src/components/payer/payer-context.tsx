@@ -242,6 +242,10 @@ export interface PayerStore {
    * afterwards is a different component instance.
    */
   agentExpectation(wallet: Address): AgentExpectation | null;
+  /** Whether `agents` is answering for this wallet from a mined receipt rather
+   * than from the backend's read. For SAYING so and nothing else — the values
+   * are true either way. */
+  agentAhead(wallet: Address): boolean;
   /** Record what was just written — the STATE, not a digest of it. The store
    * derives the fingerprint, so what a screen renders while it waits and what
    * the wait compares against cannot be built from different fields. Cleared by
@@ -397,7 +401,53 @@ export function PayerProvider({
   const address = identity.address;
   const pathname = usePathname();
 
-  const [agents, setAgents] = useState<AgentSummary[] | null>(null);
+  const [agentsRead, setAgentsRead] = useState<AgentSummary[] | null>(null);
+  /** Writes this browser watched mine, held until a read agrees. Declared
+   * beside the read it reconciles, because `agents` below is derived from
+   * both and neither means anything on its own. */
+  const [expectations, setExpectations] = useState<Record<string, AgentExpectation>>({});
+
+  /**
+   * The agent list RECONCILED with what this browser watched mine.
+   *
+   * Overlaid here, once, rather than at each screen — because "remember to apply
+   * the pending write before you render this" is a rule every new consumer has
+   * to be told, and three of them were caught not knowing it: the list rendered
+   * a replaced name as fact, then froze on `Saving…`, and the denial receipt's
+   * remedy card told a payer their agent was "still refused today" seconds after
+   * they had widened the very rule that refused it. Same stale array behind all
+   * three. A screen cannot forget a reconciliation it never has to do.
+   *
+   * A read that already agrees is passed through untouched, so the object
+   * identity of `agents` only changes when the underlying data does.
+   */
+  const agents = useMemo(() => {
+    if (agentsRead === null) return null;
+    if (Object.keys(expectations).length === 0) return agentsRead;
+    return agentsRead.map((agent) => {
+      const pending = expectations[agent.wallet.toLowerCase()];
+      if (!pending || policyFingerprint(agent) === pending.fingerprint) return agent;
+      return { ...agent, ...pending.proven };
+    });
+  }, [agentsRead, expectations]);
+
+  /**
+   * Is this row the receipt's answer rather than the backend's?
+   *
+   * Only for SAYING so. Nothing on screen should behave differently — the values
+   * are true either way — but a payer comparing this against Basescan in the next
+   * few seconds may still see the older ones, so the provenance is stated.
+   */
+  const agentAhead = useCallback(
+    (wallet: Address) => {
+      const pending = expectations[wallet.toLowerCase()];
+      if (!pending || agentsRead === null) return false;
+      const key = wallet.toLowerCase();
+      const read = agentsRead.find((agent) => agent.wallet.toLowerCase() === key);
+      return read !== undefined && policyFingerprint(read) !== pending.fingerprint;
+    },
+    [agentsRead, expectations],
+  );
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [agentsUnreadable, setAgentsUnreadable] = useState<Address[]>([]);
   const [settlements, setSettlements] = useState<SettlementEvent[] | null>(null);
@@ -479,7 +529,6 @@ export function PayerProvider({
   const [balanceWatch, setBalanceWatch] = useState<BalanceWatch>("idle");
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
-  const [expectations, setExpectations] = useState<Record<string, AgentExpectation>>({});
   const [clockOffset, setClockOffset] = useState(0);
   const [nonce, setNonce] = useState(0);
   const [historyNonce, setHistoryNonce] = useState(0);
@@ -987,7 +1036,7 @@ export function PayerProvider({
       .agents({ owner: address })
       .then((res) => {
         if (cancelled) return;
-        setAgents(res.agents);
+        setAgentsRead(res.agents);
         setAgentsUnreadable(res.unreadable ?? []);
       })
       .catch((err: unknown) => {
@@ -998,7 +1047,7 @@ export function PayerProvider({
         // list, and a PBM payment's on-chain payer is the WALLET, so an empty
         // list silently narrows the history query to the human address and drops
         // every agent payment out of Activity with nothing on screen saying so.
-        setAgents(null);
+        setAgentsRead(null);
         // The whole enumeration failed, so there is no per-wallet verdict to
         // report; `agentsError` is the one that has to be on screen.
         setAgentsUnreadable([]);
@@ -1395,6 +1444,7 @@ export function PayerProvider({
     [expectations],
   );
 
+
   const expectAgentPolicy = useCallback((wallet: Address, written: ExpectedAgentState) => {
     const entry: AgentExpectation = {
       fingerprint: policyFingerprint(written),
@@ -1419,7 +1469,7 @@ export function PayerProvider({
     // into shared state: the detail screen carries a notice saying its figures
     // may be a moment old, and the list has nowhere to put one.
     if (settledBy) {
-      setAgents((prev) =>
+      setAgentsRead((prev) =>
         prev === null
           ? prev
           : prev.map((agent) =>
@@ -1466,6 +1516,7 @@ export function PayerProvider({
       retryMerchant,
       agentName,
       agentExpectation,
+      agentAhead,
       expectAgentPolicy,
       settleAgentExpectation,
       refresh,
@@ -1506,6 +1557,7 @@ export function PayerProvider({
       retryMerchant,
       agentName,
       agentExpectation,
+      agentAhead,
       expectAgentPolicy,
       settleAgentExpectation,
       refresh,
