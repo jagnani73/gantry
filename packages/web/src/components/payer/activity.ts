@@ -41,6 +41,48 @@ export function denialKey(row: DenialEvent): string {
 }
 
 /**
+ * The row a `?receipt=<key>` URL names, or null.
+ *
+ * The exact key is the whole answer for every row that came from the index. The
+ * fallback exists for exactly ONE producer: the pay flow builds a receipt
+ * locally the instant a payment settles — before the indexer has seen it — and
+ * it cannot know the log index, so it writes 0. The key that reaches the URL
+ * after a payment is therefore `<txHash>:0` while the indexed row arriving
+ * seconds later is `<txHash>:9`. Without this, refreshing the receipt you are
+ * looking at reports the payment as not in your history, permanently, for a
+ * payment sitting one tab away in Activity.
+ *
+ * It resolves only when EXACTLY ONE loaded row shares the transaction. Two
+ * settlements in one transaction is a shape the relayer never produces — it
+ * settles one intent per transaction — but if one ever appeared, picking
+ * between them would be a guess, and a receipt is the wrong screen to guess on.
+ * It declines instead, and "not in this wallet's history" stands.
+ */
+export function findActivityRow(
+  rows: readonly ActivityRow[],
+  key: string,
+): ActivityRow | null {
+  const exact = rows.find((row) => row.key === key);
+  if (exact) return exact;
+  const txHash = settlementKeyTx(key);
+  if (txHash === null) return null;
+  const sameTx = rows.filter(
+    (row) => row.kind === "settlement" && row.settlement.txHash.toLowerCase() === txHash,
+  );
+  return sameTx.length === 1 ? sameTx[0]! : null;
+}
+
+/** The transaction half of a `settlementKey`, or null for anything that is not
+ * one — a denial key names no transaction, and a refusal never reached the
+ * chain, so there is nothing for the fallback above to match it on. */
+function settlementKeyTx(key: string): string | null {
+  const split = key.lastIndexOf(":");
+  if (split <= 0) return null;
+  const txHash = key.slice(0, split).toLowerCase();
+  return /^0x[0-9a-f]{64}$/.test(txHash) && /^\d+$/.test(key.slice(split + 1)) ? txHash : null;
+}
+
+/**
  * Newest first. Settlements in the same block fall back to (blockNumber,
  * logIndex) so the client's order is the server's order — two rows that arrive
  * with one `blockTime` must not swap places between a page load and a refresh.

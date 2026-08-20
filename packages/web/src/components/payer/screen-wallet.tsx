@@ -7,6 +7,7 @@ import { Card, Chip, cn, Figure, Label, Money, Mono, StatusDot, useToast } from 
 import { api } from "@/lib/api";
 import { ActivityRowItem } from "./activity-row";
 import { placesPaid } from "./activity";
+import { CurrencyPill } from "./currency-picker";
 import { formatRate, sgdUnits } from "./format";
 import { MerchantTile } from "./merchant-tile";
 import { usePayer } from "./payer-context";
@@ -105,7 +106,20 @@ export function WalletScreen() {
       </div>
 
       <Card tone="accent" radius="panel" pad="md" className="mt-4.5">
-        <Label tone="on-accent-muted">Available to spend</Label>
+        {/* The currency control lives HERE, in the header of the card whose
+            figure it governs — this card's balance, the token line under it and
+            the rate line under that are all it changes, and a control for them
+            sitting on another screen made the payer connect two things the app
+            had put apart. The right side of this row was empty.
+
+            A pill that OPENS the picker rather than being it: three segments do
+            not fit beside a heading, and a pill that cycled would change which
+            token the payer signs for on a stray tap with no chance to see the
+            options first. */}
+        <div className="flex items-center justify-between gap-3">
+          <Label tone="on-accent-muted">Available to spend</Label>
+          <CurrencyPill />
+        </div>
         {balance === null ? (
           <Figure value="…" size="balance" tone="on-accent" className="mt-3" />
         ) : rate ? (
@@ -159,7 +173,16 @@ export function WalletScreen() {
           <p className="mt-2.5 text-fine text-on-accent-muted">
             showing {sendToken}: the swap&apos;s rate could not be read, so no S$ conversion is shown
           </p>
-        ) : null}
+        ) : (
+          /* Neither read yet — the first load, or the gap after a currency
+             switch, since the rate is per-token and a read stamped with the old
+             one is not an answer about this one. Rendering nothing here made the
+             card change height on every switch; a placeholder holds the line and
+             says the figure above is still settling. */
+          <p className="mt-2.5 flex h-4 items-center" aria-hidden>
+            <span className="inline-block h-3 w-52 max-w-full animate-pulse rounded-badge bg-on-accent/18" />
+          </p>
+        )}
       </Card>
 
       {topUpNote ? (

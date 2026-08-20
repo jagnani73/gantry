@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { ToastProvider } from "@/components/primitives";
 import { AgentDetail } from "./agent-detail";
 import { AgentForm } from "./agent-form";
 import { MerchantPage } from "./merchant-page";
 import { PayFlow } from "./pay-flow";
-import { Receipt } from "./receipt";
+import { PendingReceipt, Receipt } from "./receipt";
 import { Scan } from "./scan";
 import { TabBar } from "./tab-bar";
-import { usePayer, type Overlay } from "./payer-context";
+import { usePayer, type Overlay, type PayerStore } from "./payer-context";
 
 /**
  * The phone shell: one scrolling screen, the tab bar pinned under it, and a
@@ -41,7 +41,7 @@ import { usePayer, type Overlay } from "./payer-context";
  * overlays are positioned against this element so they cannot escape the mock.
  */
 export function PayerFrame({ children }: { children: ReactNode }) {
-  const { overlay } = usePayer();
+  const { overlay, pendingReceipt } = usePayer();
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
 
@@ -57,9 +57,12 @@ export function PayerFrame({ children }: { children: ReactNode }) {
    * content the payer never asked to see. It also rules out the reverse bug of
    * setting `scrollTop` directly, which inherits the same smooth behaviour.
    *
-   * Keyed on pathname alone. Overlays (pay, receipt, a shop page) are context
-   * state at the same URL and scroll inside their own element, so closing one
-   * returns the payer to where they were — which is what they expect.
+   * Keyed on pathname alone, and that is now LOAD-BEARING rather than merely
+   * sufficient. Overlays write their own query (`overlay-url.ts`) but never
+   * change the pathname, so this does not fire when one opens and the pane keeps
+   * its offset — closing an overlay returns the payer to where they were, which
+   * is what they expect. Do NOT "correct" this to `useSearchParams` or to
+   * `pathname + search`: that reinstates a scroll reset on every overlay open.
    */
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0, behavior: "instant" });
@@ -90,15 +93,41 @@ export function PayerFrame({ children }: { children: ReactNode }) {
             <div className="mx-auto w-full max-w-md px-5 pt-15.5 pb-6">{children}</div>
           </main>
           <TabBar />
-          <OverlayHost overlay={overlay} />
+          <OverlayHost overlay={overlay} pendingReceipt={pendingReceipt} />
         </ToastProvider>
       </div>
     </div>
   );
 }
 
-function OverlayHost({ overlay }: { overlay: Overlay | null }) {
-  if (!overlay) return null;
+/**
+ * The return type is ANNOTATED, and that is the enforcement — not decoration.
+ *
+ * `overlayToQuery` already fails to compile when a new `Overlay` member has no
+ * URL spelling, because its return type is written out and its switch has no
+ * `default`. This switch had neither, so a new kind returned `undefined`, which
+ * React's `ReactNode` accepts happily: the overlay would push onto the stack,
+ * write its query, and render NOTHING — a payer looking at the wallet screen
+ * with a URL naming a screen that is not there, and a Back button that appears
+ * dead. Annotating it makes the missing case TS2366, the same error the
+ * serializer already relies on.
+ *
+ * Do not add a `default:` to either switch. The missing case is the point.
+ */
+function OverlayHost({
+  overlay,
+  pendingReceipt,
+}: {
+  overlay: Overlay | null;
+  pendingReceipt: PayerStore["pendingReceipt"];
+}): ReactElement | null {
+  // Mutually exclusive by construction — a pending receipt only exists while the
+  // stack is empty, and every mutator clears it — so the order here is a
+  // tiebreak that should never be needed. The stack wins if one ever is: a real
+  // overlay is something the payer opened, and a placeholder must not cover it.
+  if (!overlay) {
+    return pendingReceipt ? <PendingReceipt receipt={pendingReceipt} /> : null;
+  }
   switch (overlay.kind) {
     case "scan":
       return <Scan />;

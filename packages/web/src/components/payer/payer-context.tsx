@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
 import { erc20Abi, type Address } from "viem";
 import { usePublicClient } from "wagmi";
 import {
@@ -28,8 +29,14 @@ import {
   type TokenId,
 } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
-import { toActivityRows, type ActivityRow } from "./activity";
+import { findActivityRow, toActivityRows, type ActivityRow } from "./activity";
 import { usePayerIdentity, type PayerIdentity } from "./identity";
+import {
+  OVERLAY_PARAMS,
+  overlayFromQuery,
+  overlayToQuery,
+  receiptQuery,
+} from "./overlay-url";
 
 /**
  * The payer app's one store.
@@ -55,6 +62,24 @@ export type Overlay =
    * rather than a hunt through the list. It is a starting value only — the form
    * still reads the wallet itself and the payer still confirms. */
   | { kind: "agentForm"; wallet: Address | null; addCategory?: number };
+
+/**
+ * A receipt asked for by URL, before its row is in hand.
+ *
+ * Exported so the screen that renders it imports this shape rather than
+ * re-declaring it structurally — the two spellings drifted the moment a third
+ * status was added, and the compiler had nothing to say about it.
+ *
+ * `unavailable` is the one that has to exist. `missing` is a claim about this
+ * wallet's history, and only a COMPLETED read can support it; a read that failed
+ * is not evidence a payment does not exist. Collapsing the two put the headline
+ * "That payment isn't in this wallet's history" over a backend that never
+ * answered.
+ */
+export type PendingReceiptState = {
+  key: string;
+  status: "loading" | "missing" | "unavailable";
+};
 
 export interface PayerStore {
   identity: PayerIdentity;
@@ -114,6 +139,19 @@ export interface PayerStore {
    */
   payCurrency: DisplayCurrency;
   setPayCurrency(code: DisplayCurrencyCode): void;
+  /**
+   * Has the stored preference been read, or is `payCurrency` still the default?
+   *
+   * Exposed because a CONTROL has to gate on it. The value above starts at USD
+   * on both sides of hydration and the stored choice arrives in an effect, so a
+   * euro payer watched the selection jump USD → EUR on every load — the picker
+   * was stating an answer it did not have yet. The two chain reads in this
+   * provider already gate on this internally; nothing was carrying it to the UI.
+   *
+   * Same rule as `identity.ready` one card above it on the settings screen:
+   * defaulting before the read is a claim, not a default.
+   */
+  payCurrencyReady: boolean;
   /** The token `payCurrency` resolves to — what a signature will name. */
   sendToken: TokenId;
   /**
@@ -203,6 +241,28 @@ export interface PayerStore {
   replaceOverlay(overlay: Overlay): void;
   popOverlay(): void;
   closeOverlays(): void;
+  /**
+   * A receipt the URL names that has no row behind it yet.
+   *
+   * Every other overlay carries an id the URL can hold whole; a receipt carries
+   * an `ActivityRow`, so `?receipt=<key>` on a cold load names a row this app
+   * has not fetched. That is THREE answers, never two:
+   *
+   * - `loading` — the history is still being read. Saying "not found" here
+   *   would be the same collapse `settlements === null` versus `[]` exists to
+   *   prevent, and it would say it for the second before the row lands.
+   * - `missing` — the history is in and the key is not in it. Reported, not
+   *   swallowed: closing the overlay as if nothing had been asked for would
+   *   leave a payer who followed a receipt link staring at a wallet screen
+   *   with no idea their link did anything.
+   * - resolved — this goes null and the receipt is a normal overlay on the
+   *   stack, which is why it is not an `Overlay` kind of its own.
+   *
+   * `missing` is not a claim that the payment never happened, and the screen
+   * must not word it as one: the history is paged, and a different signer has a
+   * different history entirely.
+   */
+  pendingReceipt: PendingReceiptState | null;
 }
 
 const PayerContext = createContext<PayerStore | null>(null);
@@ -230,6 +290,10 @@ const BALANCE_POLL_MS = 1_500;
  * chooses the token a payer signs, so a value stored under the old meaning must
  * not be silently reinterpreted as a payment instruction. */
 const PAY_CURRENCY_KEY = "gantry.payCurrency";
+/** Dead since `PriceReference` was deleted, and cleared at boot — see the
+ * `removeItem` below for why a dead key next to a live one is worth deleting
+ * rather than ignoring. */
+const LEGACY_DISPLAY_CURRENCY_KEY = "gantry.displayCurrency";
 
 export type BalanceWatch = "idle" | "watching" | "unconfirmed";
 
@@ -237,16 +301,54 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * `pathname` + an overlay's query, merged into what is on screen now.
+ *
+ * Built from `window.location.search` rather than from the last URL this
+ * provider wrote, which is the same rule the merchant directory follows: a
+ * param nobody here owns — a `utm_*`, something a QR generator appended —
+ * survives an overlay opening and closing instead of being deleted by the first
+ * one to write. Every param the serializer CAN write is cleared first, so a
+ * `pay` left over from the previous overlay cannot sit beside the `receipt`
+ * that replaced it and make one URL name two overlays.
+ */
+function overlayUrl(pathname: string, serial: string): string {
+  const next = new URLSearchParams(window.location.search);
+  for (const key of OVERLAY_PARAMS) next.delete(key);
+  for (const [key, value] of new URLSearchParams(serial)) next.set(key, value);
+  const search = next.toString();
+  return search === "" ? pathname : `${pathname}?${search}`;
+}
+
 export function PayerProvider({
   children,
-  initialOverlay,
+  entry,
 }: {
   children: ReactNode;
-  initialOverlay?: Overlay;
+  /**
+   * Set only by the two ENTRY routes, `/pay/:handle` and `/m/:handle`, where the
+   * pathname is itself the encoding of the bottom overlay — the route IS the
+   * payment, or IS the shop. Two things follow from that and both are why this
+   * is one prop rather than two:
+   *
+   * - `overlay` is the FLOOR of the stack, and it contributes no query, because
+   *   the pathname already says it. That keeps `/pay/x?sgd=1.50` — a submission
+   *   artifact and the backend's dual-door redirect target — byte-identical to
+   *   what it is today rather than rewritten to `?pay=x&sgd=1.50`.
+   * - `exit` is where an emptied stack goes. On these routes there is nothing
+   *   underneath: popping the floor used to leave the payer on the wallet
+   *   screen with the URL still naming a half-finished payment, so a refresh
+   *   dropped them back into it. A floor with nowhere to exit to IS that bug,
+   *   so the two arrive together and cannot be supplied apart.
+   *
+   * The provider therefore never checks a pathname to work out where it is.
+   */
+  entry?: { overlay: Overlay; exit: () => void };
 }) {
   const identity = usePayerIdentity();
   const publicClient = usePublicClient();
   const address = identity.address;
+  const pathname = usePathname();
 
   const [agents, setAgents] = useState<AgentSummary[] | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
@@ -255,10 +357,49 @@ export function PayerProvider({
   const [settlementsError, setSettlementsError] = useState<string | null>(null);
   const [denials, setDenials] = useState<DenialEvent[]>([]);
   const [denialsError, setDenialsError] = useState<string | null>(null);
-  const [balance, setBalance] = useState<bigint | null>(null);
-  const [balanceError, setBalanceError] = useState<string | null>(null);
-  const [rate, setRate] = useState<bigint | null>(null);
-  const [rateError, setRateError] = useState<string | null>(null);
+  /**
+   * Have the refusal pages been ASKED for and answered?
+   *
+   * `denials` starts `[]` and is `[]` again for a payer with no agents, so the
+   * array cannot tell "none exist" from "not fetched" — the same collapse
+   * `settlements === null` avoids by being nullable. Nothing needed the
+   * distinction until a receipt could be named by a URL: a `denial:` key looked
+   * up one tick too early would render "that payment isn't in this wallet's
+   * history" over a refusal that was still in flight.
+   */
+  const [denialsReady, setDenialsReady] = useState(false);
+  /**
+   * The two chain reads, each STAMPED with the token it answered for.
+   *
+   * Not `bigint | null` beside a separate "is it stale" flag, because the
+   * dangerous state is the one a flag lets you forget to set. Both reads follow
+   * `sendToken`, and both used to be written only on SUCCESS — so switching to
+   * euros left USDC's rate and USDC's balance on screen, relabelled EURC, for a
+   * whole round-trip. That is not a slow update: `1 EURC = 1.3421 XSGD` is a
+   * false exchange rate, and `rate` is what EVERY S$ figure in this app converts
+   * at, so the wrong number was not confined to the screen that showed it. About
+   * 12.5% adrift at 1.3421 against 1.5100.
+   *
+   * Stamped rather than cleared by an effect: clearing depends on effect
+   * ORDERING and on the next person remembering the rule, while a stamp makes
+   * the stale value unreadable by construction. The exposed `rate` and `balance`
+   * below are `null` the instant the currency changes, which is exactly what
+   * "we do not know yet" should look like. Same move as making an unpayable
+   * currency unrepresentable rather than filtering it out.
+   *
+   * The ERRORS are stamped too. A failure reading USDC says nothing about EURC,
+   * and leaving it up would put "balance unavailable" over a currency nobody
+   * has tried to read.
+   */
+  const [balanceRead, setBalanceRead] = useState<{ token: TokenId; value: bigint } | null>(null);
+  const [balanceErrorRead, setBalanceErrorRead] = useState<{
+    token: TokenId;
+    message: string;
+  } | null>(null);
+  const [rateRead, setRateRead] = useState<{ token: TokenId; value: bigint } | null>(null);
+  const [rateErrorRead, setRateErrorRead] = useState<{ token: TokenId; message: string } | null>(
+    null,
+  );
   /**
    * Which currency the payer PAYS IN — no longer merely what they read.
    *
@@ -319,6 +460,24 @@ export function PayerProvider({
       // which is an answer; leaving the app permanently waiting is not.
       setPayCurrencyReady(true);
     }
+    try {
+      // The key this one REPLACED, removed rather than left lying in real
+      // browsers. `gantry.displayCurrency` chose a display symbol; this chooses
+      // a token, and the rename exists precisely so a value stored under the old
+      // meaning can never be read as a payment instruction. Nothing has read it
+      // since `PriceReference` was deleted — but it sits one word away from a
+      // live key and holds values like `inr`, which is not payable at all, so
+      // the next person to find it has every reason to think it is config.
+      window.localStorage.removeItem(LEGACY_DISPLAY_CURRENCY_KEY);
+    } catch (err) {
+      // Logged, not assumed. The comment here used to assert "blocked storage,
+      // nothing to clean up anyway" — true of the case where `getItem` above has
+      // already logged, and unfalsifiable for every other. A storage that READS
+      // but refuses writes (Safari private browsing has behaved this way, as do
+      // some enterprise policies) fails only here, and the stale key this exists
+      // to delete then survives with no trace anywhere.
+      console.warn("gantry: legacy display-currency key could not be cleared", err);
+    }
   }, []);
 
   const setPayCurrency = useCallback((code: DisplayCurrencyCode) => {
@@ -342,9 +501,292 @@ export function PayerProvider({
   const sendToken = settlementSendToken(payCurrency);
   const sendTokenAddress = tokenAddress(BASE_SEPOLIA_ADDRESSES, sendToken);
 
-  // Overlays are a stack so "receipt → about this shop → back" lands on the
-  // receipt rather than dumping the payer onto a tab they never chose.
-  const [stack, setStack] = useState<Overlay[]>(initialOverlay ? [initialOverlay] : []);
+  /* Only a read of the CURRENT token is an answer about the current token. A
+     stamp from the previous one is not "nearly right" — see the note on the
+     state above — so it reads as null and the screens render their own
+     not-yet-known state, which they already have for the first load. */
+  const balance = balanceRead?.token === sendToken ? balanceRead.value : null;
+  const balanceError = balanceErrorRead?.token === sendToken ? balanceErrorRead.message : null;
+  const rate = rateRead?.token === sendToken ? rateRead.value : null;
+  const rateError = rateErrorRead?.token === sendToken ? rateErrorRead.message : null;
+
+  /* ── Overlays, and the URL ──────────────────────────────────────────────
+     Overlays are a stack so "receipt → about this shop → back" lands on the
+     receipt rather than dumping the payer onto a tab they never chose.
+
+     THE URL CARRIES THE TOP OVERLAY ONLY; the stack keeps the depth. So an
+     in-app "receipt → about this shop" is two deep in memory while the URL says
+     the shop, and a refresh there restores a valid ONE-deep stack showing the
+     shop. That is a deliberate trade and not an oversight: encoding a whole
+     stack in a query string produces a URL nobody can read or hand-edit — the
+     opposite of the point — and the depth here is never more than two, so what
+     is lost is one Back press on a link somebody pasted.
+
+     The sync is the History API, never `router.push`/`router.replace`, for the
+     reason `directory-client.tsx` records at length: which overlay is open is a
+     decision this client has already made over state it already holds, and a
+     router navigation per change queues RSC round-trips until the address bar
+     is several steps stale — which is worse than no sync at all, because the
+     stale URL is the one that gets copied. `pushState` is synchronous and
+     cannot fall behind. Opening PUSHES and closing REPLACES, so Back is a way
+     OUT of an overlay rather than a way back into it. */
+  const [stack, setStack] = useState<Overlay[]>(() =>
+    entry ? [entry.overlay] : [],
+  );
+  /** A receipt the URL names whose row has not been found yet — see the store
+   * field of the same name for why this is not an `Overlay` kind. */
+  const [pendingReceiptKey, setPendingReceiptKey] = useState<string | null>(null);
+
+  /**
+   * The entry route's floor overlay and its exit, captured ONCE.
+   *
+   * The floor is compared by IDENTITY below to decide whether the top of the
+   * stack is the thing the pathname already says. The prop it comes from is an
+   * object literal built by the page above, so it is rebuilt whenever that page
+   * re-renders — capturing it here is what keeps the comparison meaning "the
+   * overlay this route opened with" rather than "an overlay that happens to
+   * look like it".
+   */
+  const floorRef = useRef<Overlay | null>(entry?.overlay ?? null);
+  const exitRef = useRef<(() => void) | undefined>(entry?.exit);
+  useEffect(() => {
+    exitRef.current = entry?.exit;
+  });
+
+  /**
+   * The overlay query the URL and the stack are known to AGREE on.
+   *
+   * This one ref is what stops the two halves driving each other forever: the
+   * effect that writes the URL from the stack returns early when the stack
+   * already serializes to this, and the `popstate` handler that writes the
+   * stack from the URL sets it to what the URL says before touching state. So
+   * whichever side moves first, the other sees agreement and does nothing.
+   *
+   * It holds the SERIALIZED form rather than the raw search string on purpose.
+   * The two are not the same: a URL may carry params this module does not own,
+   * and `?pay=x&sgd=junk` resolves to an overlay that serializes back as
+   * `pay=x`. Comparing raw strings would see a difference that is not one and
+   * rewrite the payer's URL under them.
+   */
+  const lastSyncedRef = useRef("");
+  /** How many overlays were on screen when the URL last agreed — the input to
+   * push-versus-replace. A pending receipt counts as one: it occupies the
+   * screen, and it becomes a real overlay without the URL changing. */
+  const lastDepthRef = useRef(entry ? 1 : 0);
+  /**
+   * The URL has been read AND the stack it produced has been applied.
+   *
+   * State rather than a ref, and that distinction was a real bug rather than a
+   * style choice. Effects all run on the same commit, so a ref flipped by the
+   * seed is already true when the writer below runs — but the writer's `stack`
+   * is still the one from the render that just painted, i.e. the empty
+   * pre-seed one. On a cold `/app?shop=ah-hock-chicken-rice` that read as "no
+   * overlay", replaced the URL down to `/app` (deleting the query it had just
+   * been asked to honour) and then pushed the shop back on a render later — a
+   * spurious history entry and a moment where the link had been thrown away.
+   * As state it gates the writer until the commit that CARRIES the seeded
+   * stack, which is the thing the writer actually needs.
+   */
+  const [seeded, setSeeded] = useState(false);
+  /** The newest rows, for the one lookup that cannot wait for a render: Back
+   * onto a `?receipt=` the app already has in hand should open it, not flash a
+   * loading screen at a payer who has been looking at that row all along. */
+  const rowsRef = useRef<ActivityRow[]>([]);
+
+  /**
+   * What the URL should say, given what is on screen.
+   *
+   * The floor overlay of an entry route serializes to NOTHING, because the
+   * pathname already says it: `/pay/ah-hock-chicken-rice?sgd=1.50` is a printed
+   * link and a backend redirect target, and rewriting it to
+   * `?pay=ah-hock-chicken-rice&sgd=1.50` would restate the route in its own
+   * query for no reader's benefit.
+   */
+  const serialize = useCallback((top: Overlay | null, pendingKey: string | null): string => {
+    if (pendingKey !== null) return receiptQuery(pendingKey).toString();
+    if (top === null || top === floorRef.current) return "";
+    return overlayToQuery(top).toString();
+  }, []);
+
+  /**
+   * Reads the URL and makes the stack match it.
+   *
+   * Used for the mount seed and for Back/Forward, which is the same operation:
+   * the URL is the authority and the stack is what has to move. Depth is set to
+   * one because that is what the URL can carry — see the note on the stack.
+   */
+  const applyUrl = useCallback(
+    (search: string) => {
+      const asked = overlayFromQuery(new URLSearchParams(search));
+      const floor = floorRef.current;
+
+      if (asked === null) {
+        // No overlay in the query. On an entry route that is the FLOOR — the
+        // pathname's own overlay — which is what makes Back out of `/m/x?pay=x`
+        // land on the shop page rather than leaving the site.
+        lastSyncedRef.current = "";
+        lastDepthRef.current = floor ? 1 : 0;
+        setPendingReceiptKey(null);
+        setStack((prev) =>
+          prev.length === (floor ? 1 : 0) && (floor === null || prev[0] === floor)
+            ? prev
+            : floor
+              ? [floor]
+              : [],
+        );
+        return;
+      }
+
+      if (asked.kind === "receipt") {
+        lastSyncedRef.current = receiptQuery(asked.key).toString();
+        lastDepthRef.current = 1;
+        // A resolved row may carry a DIFFERENT key than the URL asked for — see
+        // `findActivityRow`. `lastSyncedRef` above holds what the URL says, so
+        // the write-back sees a mismatch and replaces it with the canonical
+        // key, which is the correction and not a loop: one write, and the two
+        // agree afterwards.
+        const row = findActivityRow(rowsRef.current, asked.key);
+        setPendingReceiptKey(row ? null : asked.key);
+        setStack(row ? [{ kind: "receipt", row }] : []);
+        return;
+      }
+
+      lastSyncedRef.current = overlayToQuery(asked.overlay).toString();
+      lastDepthRef.current = 1;
+      setPendingReceiptKey(null);
+      setStack([asked.overlay]);
+    },
+    [],
+  );
+
+  /* The seed. Batched with `applyUrl`'s own writes, so the commit that turns
+     `seeded` on is the same commit that carries the stack the URL asked for —
+     see the note on `seeded` for what happens when those two come apart. */
+  useEffect(() => {
+    applyUrl(window.location.search);
+    setSeeded(true);
+  }, [applyUrl]);
+
+  /** A history navigation is in flight, so the pathname effect below must not
+   * treat the pathname landing as a fresh navigation and clear what this just
+   * restored. See the note there. */
+  const poppedRef = useRef(false);
+  useEffect(() => {
+    const onPop = () => {
+      poppedRef.current = true;
+      applyUrl(window.location.search);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [applyUrl]);
+
+  /**
+   * A real navigation closes the overlays, and the PROVIDER has to be what does
+   * it rather than the tab that was tapped.
+   *
+   * The tab bar used to close them in its own `onClick`, and once the stack was
+   * wired to the URL that raced the navigation the same click started: Next
+   * patches `history.replaceState`, so the write-back below — firing on the
+   * emptied stack with the OLD pathname, because the router had not committed
+   * yet — superseded the in-flight navigation. Measured: the overlay closed,
+   * the URL stayed on `/app/agents`, and the tab never changed. Closing here
+   * instead means the write-back only ever runs once the router has landed,
+   * where the two already agree.
+   *
+   * The first run is skipped. A mount is not a navigation, and closing there
+   * would throw away the overlay the URL had just asked for.
+   */
+  const lastPathRef = useRef(pathname);
+  useEffect(() => {
+    if (lastPathRef.current === pathname) return;
+    lastPathRef.current = pathname;
+    /* A pathname change from BACK/FORWARD is not a fresh navigation, and this
+       effect could not tell the two apart — they arrive here identically.
+       Back out of `/app/activity?receipt=…` → `/app/agents` ran the popstate
+       listener (which restored the receipt) and then this effect (which cleared
+       it), and the write-back then saw an empty stack against a non-empty
+       `lastSyncedRef` and REPLACED the `?receipt=` away — so Back landed on a
+       bare tab and DESTROYED the link rather than merely declining to open it.
+       Same for `?agent=`, `?pay=`, `?shop=`, and for Forward.
+
+       The flag is set by the popstate listener, which has already applied the
+       URL by the time this runs. Re-reading `window.location.search` here was
+       tried instead and is WRONG: this effect runs before Next commits the new
+       location for a `<Link>` push, so it read the OUTGOING query, re-seeded the
+       overlay, and the write-back pushed a SECOND history entry — measured, a
+       tab tap took `history.length` from 39 to 41 and Back then landed back on
+       the tab it started from. The flag needs no such assumption. */
+    if (poppedRef.current) {
+      poppedRef.current = false;
+      return;
+    }
+    setPendingReceiptKey(null);
+    setStack((prev) => (prev.length === 0 ? prev : []));
+  }, [pathname]);
+
+  /* The stack, written back to the URL. */
+  useEffect(() => {
+    if (!seeded) return;
+    const serial = serialize(stack.length > 0 ? stack[stack.length - 1]! : null, pendingReceiptKey);
+    const depth = pendingReceiptKey !== null ? 1 : stack.length;
+    // The guard. Nothing below runs when the URL already says this, which is
+    // what makes `popstate` → `setStack` → this effect terminate instead of
+    // bouncing. The depth is still recorded: a pending receipt becoming a real
+    // one changes the stack without changing the URL, and forgetting that would
+    // make the payer's next tap look like a jump of two.
+    if (serial === lastSyncedRef.current) {
+      lastDepthRef.current = depth;
+      return;
+    }
+    const grew = depth > lastDepthRef.current;
+    const url = overlayUrl(pathname, serial);
+    /* The bookkeeping is committed only AFTER the write lands.
+       `pushState` throws — Safari rate-limits it above ~100 calls in 30s — and
+       this runs in an effect, so an unguarded throw escalates to the root error
+       boundary and destroys the provider, including an in-flight pay flow
+       holding a signed authorization. The precedent this pattern copies
+       (`directory-client.tsx`) makes the same calls from EVENT HANDLERS, where a
+       throw logs and moves on; moving it into an effect changed the blast
+       radius. Recording agreement before the call would be the worse half of the
+       trade: the guard above would then early-return forever, permanently
+       convinced the URL matches a stack it does not. Left untouched, the next
+       commit retries. */
+    try {
+      if (grew) window.history.pushState(null, "", url);
+      else window.history.replaceState(null, "", url);
+      lastSyncedRef.current = serial;
+      lastDepthRef.current = depth;
+    } catch (err) {
+      console.warn("gantry: overlay URL sync failed; the address bar is stale", err);
+    }
+  }, [seeded, stack, pendingReceiptKey, pathname, serialize]);
+
+  /**
+   * An emptied stack on an entry route has to LEAVE the route.
+   *
+   * This is the reported bug: closing the overlay on `/pay/ah-hock-chicken-rice`
+   * popped the stack and left the payer on the wallet screen while the URL still
+   * named a payment, so a refresh dropped them back into a half-finished one. A
+   * real Next navigation rather than `history.replaceState`, because unlike
+   * every other transition here this genuinely IS leaving the route; the
+   * provider remounting on the way out costs nothing, since the stack it would
+   * carry is the one that just emptied.
+   */
+  const exitedRef = useRef(false);
+  useEffect(() => {
+    // `seeded` for the same reason the writer gates on it: before the seed
+    // lands, an empty stack is this component's default rather than an answer
+    // about the URL — and acting on it would navigate away from a link that
+    // had not been read yet.
+    if (!seeded || exitedRef.current) return;
+    // A pending receipt is on screen with an empty stack, and closing it is the
+    // payer's decision to make rather than something to pre-empt.
+    if (stack.length > 0 || pendingReceiptKey !== null) return;
+    const exit = exitRef.current;
+    if (!exit) return;
+    exitedRef.current = true;
+    exit();
+  }, [seeded, stack, pendingReceiptKey]);
 
   /* `nonce` and `balanceNonce` are refetch triggers, not data: bumping one is
      what re-runs the effects below after a payment or a policy write. They look
@@ -440,13 +882,34 @@ export function PayerProvider({
     };
   }, []);
 
-  const pushOverlay = useCallback((overlay: Overlay) => setStack((s) => [...s, overlay]), []);
-  const replaceOverlay = useCallback(
-    (overlay: Overlay) => setStack((s) => [...s.slice(0, -1), overlay]),
-    [],
-  );
-  const popOverlay = useCallback(() => setStack((s) => s.slice(0, -1)), []);
-  const closeOverlays = useCallback(() => setStack([]), []);
+  /* Every mutator clears the pending receipt. It is a claim about what the URL
+     asked for, and the moment the payer moves anywhere themselves that claim is
+     answered — leaving it set would put a "looking for this receipt" screen back
+     over whatever they just opened. `popOverlay` clearing it is also how the
+     pending screen's own back button works, since its stack is empty. */
+  const pushOverlay = useCallback((overlay: Overlay) => {
+    setPendingReceiptKey(null);
+    setStack((s) => [...s, overlay]);
+  }, []);
+  const replaceOverlay = useCallback((overlay: Overlay) => {
+    setPendingReceiptKey(null);
+    setStack((s) => [...s.slice(0, -1), overlay]);
+  }, []);
+  const popOverlay = useCallback(() => {
+    setPendingReceiptKey(null);
+    setStack((s) => s.slice(0, -1));
+  }, []);
+  /* Known limit, inherited from the directory's rule and left in step with it
+     deliberately: closing REPLACES one history entry, so emptying a two-deep
+     stack in one call leaves the entry for the overlay underneath behind. Back
+     from a closed pay flow can therefore re-open the shop page it was reached
+     from, and a second press leaves. The alternative is `history.go(-n)`, which
+     walks off the site entirely when those entries were never ours — a deep
+     link into `/app?pay=x` has none. A dead Back press beats leaving the app. */
+  const closeOverlays = useCallback(() => {
+    setPendingReceiptKey(null);
+    setStack([]);
+  }, []);
 
   /* ── Agent wallets ──────────────────────────────────────────────────────
      Enumerated from WalletCreated logs, so a cold call walks a block range and
@@ -534,6 +997,10 @@ export function PayerProvider({
       return;
     }
     let cancelled = false;
+    // Retracted for the duration of the fetch, so a wallet list that changed
+    // (a new agent, a refresh) cannot leave a stale "we have looked" standing
+    // over rows nobody has asked for yet.
+    setDenialsReady(false);
     const wallets = agentWalletsKey.split(",") as Address[];
     void Promise.all(
       wallets.map((wallet) =>
@@ -549,6 +1016,10 @@ export function PayerProvider({
       if (cancelled) return;
       setDenials(pages.flatMap((page) => page.rows));
       setDenialsError(pages.find((page) => page.error)?.error ?? null);
+      // Set even when every page failed. "We asked and it did not work" is an
+      // answer; the errors above are what say so, and a permanent "still
+      // loading" would be the wrong one.
+      setDenialsReady(true);
     });
     return () => {
       cancelled = true;
@@ -571,6 +1042,9 @@ export function PayerProvider({
     // reading against it would answer in a token they do not pay in.
     if (!address || !publicClient || !payCurrencyReady) return;
     let cancelled = false;
+    // Same as the rate read below: a read issued retires the previous verdict
+    // for this token, so "balance unavailable" cannot sit over a read in flight.
+    setBalanceErrorRead((prev) => (prev?.token === sendToken ? null : prev));
     void (async () => {
       try {
         const next = await publicClient.readContract({
@@ -584,13 +1058,13 @@ export function PayerProvider({
         // it clears here as well as in the poll — that is what lets a manual
         // "check again" retire an `unconfirmed` notice.
         if (next !== balanceRef.current) setBalanceWatch("idle");
-        setBalance(next);
+        setBalanceRead({ token: sendToken, value: next });
         balanceRef.current = next;
-        setBalanceError(null);
+        setBalanceErrorRead(null);
       } catch (err) {
         if (cancelled) return;
         console.warn(`gantry: ${sendToken} balance read failed`, err);
-        setBalanceError(messageOf(err));
+        setBalanceErrorRead({ token: sendToken, message: messageOf(err) });
       }
     })();
     return () => {
@@ -620,8 +1094,20 @@ export function PayerProvider({
     // `payCurrencyReady` too: until the stored preference has been read,
     // `sendTokenAddress` is the DEFAULT rather than the payer's choice, and
     // reading against it would answer in a token they do not pay in.
-    if (!address || !publicClient || !payCurrencyReady) return;
+    //
+    // Deliberately NOT gated on `address`. The rate is a property of the SWAP,
+    // not of a payer, and gating it on a signer left `rate` and `rateError` both
+    // null forever whenever nobody was connected — which the placeholder below
+    // renders as an animated skeleton, i.e. an active claim that data is on its
+    // way when nothing had been asked for. Reachable in one action: choose "my
+    // own wallet" and connect nothing.
+    if (!publicClient || !payCurrencyReady) return;
     let cancelled = false;
+    // A read has been ISSUED, so the previous verdict for this token is retired.
+    // Clearing only on success left "the rate could not be read" on screen for
+    // the whole round-trip of the read that was about to replace it. Scoped to
+    // the current token so a stamp for another one is left alone.
+    setRateErrorRead((prev) => (prev?.token === sendToken ? null : prev));
     void (async () => {
       const [rateResult, blockResult] = await Promise.allSettled([
         publicClient.readContract({
@@ -634,11 +1120,11 @@ export function PayerProvider({
       ]);
       if (cancelled) return;
       if (rateResult.status === "fulfilled") {
-        setRate(rateResult.value);
-        setRateError(null);
+        setRateRead({ token: sendToken, value: rateResult.value });
+        setRateErrorRead(null);
       } else {
         console.warn("gantry: FixedRateSwap rate read failed", rateResult.reason);
-        setRateError(messageOf(rateResult.reason));
+        setRateErrorRead({ token: sendToken, message: messageOf(rateResult.reason) });
       }
       if (blockResult.status === "fulfilled") {
         setClockOffset(Number(blockResult.value.timestamp) - Math.floor(Date.now() / 1000));
@@ -651,8 +1137,20 @@ export function PayerProvider({
     };
   // Same reason as the balance read: the rate is per-token, so switching
   // currency has to re-read it or every S$ figure stays converted at the old
-  // token's rate.
-  }, [address, publicClient, nonce, sendTokenAddress, payCurrencyReady]);
+  // token's rate. `sendToken` rides along because the result is STAMPED with it.
+  }, [address, publicClient, nonce, sendToken, sendTokenAddress, payCurrencyReady]);
+
+  /* A top-up poll belongs to the token it started on.
+     `balanceRef` is the baseline the watch compares against, so leaving a USDC
+     figure in it across a switch to euros makes the very first EURC read look
+     like the movement the poll was waiting for. Retiring the poll and dropping
+     the baseline is the honest reset: nothing is known about the new token yet,
+     which is the same thing the stamped reads above now say. */
+  useEffect(() => {
+    balanceRef.current = null;
+    pollToken.current += 1;
+    setBalanceWatch("idle");
+  }, [sendToken]);
 
   const chainNow = useCallback(
     () => Math.floor(Date.now() / 1000) + clockOffset,
@@ -725,6 +1223,85 @@ export function PayerProvider({
     for (const row of rows) ensureMerchant(row.handle);
   }, [rows, ensureMerchant]);
 
+  /* ── `?receipt=<key>` ───────────────────────────────────────────────────
+     The one overlay the URL cannot carry whole. Every other kind is an id the
+     app can act on immediately; a receipt is an `ActivityRow`, so a cold load
+     names a row that has not been fetched.
+
+     `rowsRef` exists for the Back case rather than the cold one: pressing Back
+     onto a receipt the app has had in memory all along should open it, not
+     flash a loading screen. The effect below covers the cold case, where the
+     key is held until the history arrives. */
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  useEffect(() => {
+    if (pendingReceiptKey === null) return;
+    const row = findActivityRow(rows, pendingReceiptKey);
+    // Nothing on a miss. Whether a miss is "not yet" or "not here" is decided by
+    // `pendingReceipt` below, off the loading flags, and never by an absence.
+    if (!row) return;
+    setPendingReceiptKey(null);
+    // Grows the stack from empty and adds NO history entry. Depth is 1 on both
+    // sides — a pending receipt already counted as one — so the write-back
+    // either finds the URL unchanged and does nothing, or REPLACES it with the
+    // row's canonical key. A push would put a duplicate entry in front of Back
+    // for a screen the payer never navigated to.
+    setStack([{ kind: "receipt", row }]);
+  }, [pendingReceiptKey, rows]);
+
+  /**
+   * Has the history finished answering — for BOTH sources?
+   *
+   * A receipt key can name a settlement or a refusal, and the two load on
+   * different schedules: refusals are fetched per agent wallet, so they cannot
+   * even start until the agent enumeration lands. Reporting "not in this
+   * wallet's history" off the settlements alone would say it, briefly and
+   * wrongly, over every refusal.
+   *
+   * A failed enumeration counts as answered. We will never get the refusals in
+   * that case, and "still loading" forever is a worse answer than a caveated
+   * one — the errors the screen also reads are what keep it honest.
+   */
+  /**
+   * Has the history ANSWERED — not merely stopped loading?
+   *
+   * `settlementsError === null` is load-bearing and was missing. The settlements
+   * catch does `setSettlements([])`, which is the sentinel collapse the `agents`
+   * field's own doc forbids twelve lines above it: an empty array is the strong
+   * claim "we asked, there are none", and a failure must never wear it. Without
+   * this clause a payer following a shared `?receipt=` link during a backend
+   * blip was told **"That payment isn't in this wallet's history"** — a verdict
+   * about the chain derived from a request that never came back.
+   *
+   * A failed read is reported by `historyFailed` instead, which is a different
+   * sentence entirely. Fixing the `[]` collapse at its source is the better
+   * repair and is deliberately NOT done here: `settlements` is read by three
+   * screens and this is the wrong week to change what null means to them.
+   */
+  const historyFailed = settlementsError !== null || denialsError !== null || agentsError !== null;
+  const historyKnown =
+    settlements !== null &&
+    settlementsError === null &&
+    (agentsError !== null || (agents !== null && (agents.length === 0 || denialsReady)));
+
+  const pendingReceipt = useMemo<PendingReceiptState | null>(
+    () =>
+      pendingReceiptKey === null
+        ? null
+        : {
+            key: pendingReceiptKey,
+            // THREE answers, not two. "unavailable" exists because a history we
+            // failed to read is not evidence a payment does not exist, and
+            // "missing" is a claim about this wallet that only a completed read
+            // can support. Checked FIRST: a run where one page failed and the
+            // rest returned is still a run that cannot say "not in this wallet".
+            status: historyFailed ? "unavailable" : historyKnown ? "missing" : "loading",
+          },
+    [pendingReceiptKey, historyKnown, historyFailed],
+  );
+
   // `hasOwnProperty`, not a plain lookup: "constructor", "toString" and
   // "valueOf" are all legal handles under HANDLE_REGEX, and a plain-object index
   // answers those from Object.prototype — a shop that would then render as a
@@ -792,6 +1369,7 @@ export function PayerProvider({
       rateError,
       payCurrency,
       setPayCurrency,
+      payCurrencyReady,
       sendToken,
       balanceWatch,
       chainNow,
@@ -811,6 +1389,7 @@ export function PayerProvider({
       replaceOverlay,
       popOverlay,
       closeOverlays,
+      pendingReceipt,
     }),
     [
       identity,
@@ -828,6 +1407,7 @@ export function PayerProvider({
       rateError,
       payCurrency,
       setPayCurrency,
+      payCurrencyReady,
       sendToken,
       balanceWatch,
       chainNow,
@@ -847,6 +1427,7 @@ export function PayerProvider({
       replaceOverlay,
       popOverlay,
       closeOverlays,
+      pendingReceipt,
     ],
   );
 

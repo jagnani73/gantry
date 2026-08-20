@@ -11,6 +11,11 @@ import { PayerFrame } from "@/components/payer/payer-frame";
  * keeps the store alive: the balance, the settlement page and the agent
  * enumeration are shared, and remounting them on every tap would refetch all
  * three — the agent walk alone is a block-range scan.
+ *
+ * No `entry`: these four routes are the app's own tabs, so there is no floor
+ * overlay and an emptied overlay stack has somewhere to be — the tab underneath
+ * it. The provider reads the rest from the URL itself, which is what makes
+ * `/app/agents?agent=0x…` and the other overlay links survive a refresh.
  */
 export default function PayerAppLayout({ children }: { children: ReactNode }) {
   return (

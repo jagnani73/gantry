@@ -38,7 +38,17 @@ export function TabBar() {
             <Link
               key={tab.href}
               href={tab.href}
-              onClick={closeOverlays}
+              /* Only a tap that does NOT change the pathname closes an overlay from here — note the test is `pathname`, not `isActive`: on `/pay/:handle` Wallet renders active and still navigates.
+                 A tap that changes route is a navigation, and the provider
+                 closes the stack when the pathname lands — closing it here as
+                 well raced that navigation and cancelled it, because the URL
+                 write-back then fired with the pathname the router was in the
+                 middle of leaving. This branch is the case that navigation does
+                 NOT cover: same route, so no pathname change, so nothing else
+                 would ever dismiss what is on top. */
+              onClick={() => {
+                if (tab.href === pathname) closeOverlays();
+              }}
               aria-current={isActive ? "page" : undefined}
               className="focus-ring flex flex-col items-center gap-1.25 rounded-nav py-1.5"
             >

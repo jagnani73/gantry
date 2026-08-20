@@ -18,7 +18,7 @@ import { clockTime, effectiveRate, formatRate, relativeWhen } from "./format";
 import { MerchantTile } from "./merchant-tile";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { DenialRemedy } from "./denial-remedy";
-import { usePayer } from "./payer-context";
+import { usePayer, type PendingReceiptState } from "./payer-context";
 
 /**
  * A receipt, in two shapes: a payment that settled, and one the payer's own
@@ -92,6 +92,97 @@ export function Receipt({ row }: { row: ActivityRow }) {
   );
 }
 
+/**
+ * `?receipt=<key>` before — or without — the row behind it.
+ *
+ * A receipt is the one overlay the URL cannot carry whole: every other kind is
+ * an id, and this is an `ActivityRow`. So a link, a refresh or a Back onto a
+ * cold page names a row this app may not have fetched, and there are THREE
+ * answers rather than two.
+ *
+ * The two rendered here are the ones that are not a receipt. "Looking" must
+ * never be worded as "not found" — that is the same collapse the store's
+ * `settlements === null` versus `[]` exists to prevent — and "missing" must
+ * never be worded as "this payment does not exist", which is a claim about the
+ * CHAIN that nothing on this screen can make: the history is paged, and a payer
+ * signing with a connected wallet has a different history from the demo account
+ * entirely. What is true is narrower and is what the copy says — it is not in
+ * the payments loaded for this account.
+ *
+ * Same `OverlayScreen`/`OverlayHeader` chrome as every other overlay, because a
+ * link that lands here should look like the app rather than like a browser
+ * error.
+ */
+export function PendingReceipt({ receipt }: { receipt: PendingReceiptState }) {
+  const { popOverlay, refreshHistory, settlementsError, denialsError, agentsError } = usePayer();
+  const looking = receipt.status === "loading";
+  /**
+   * THREE answers, and the third is the one that had to be added.
+   *
+   * "Not in this wallet" is a verdict about this wallet's history, and only a
+   * COMPLETED read can support it. When a history request failed we have not
+   * looked — so a payer following a shared link during a backend blip was told
+   * their payment "isn't in this wallet's history" on the strength of a request
+   * that never came back. A failed fetch is not evidence a payment does not
+   * exist, and this app does not get to imply otherwise on a receipt screen.
+   *
+   * The failure used to appear only as a qualifying paragraph three lines under
+   * a headline that had already stated the opposite. On a phone the title and
+   * the bold line are what get read.
+   */
+  const unavailable = receipt.status === "unavailable";
+  const failure = settlementsError ?? denialsError ?? agentsError;
+
+  return (
+    <OverlayScreen>
+      <OverlayHeader
+        onBack={popOverlay}
+        backLabel="Back"
+        title={looking ? "Receipt" : unavailable ? "Couldn’t read this history" : "Not in this wallet"}
+      />
+      <div className="flex flex-col gap-3.5 px-5 pt-6 pb-11">
+        <Card radius="card-m" pad="md">
+          <p className="text-card-title-xs">
+            {looking
+              ? "Looking for this receipt"
+              : unavailable
+                ? "We couldn’t finish reading this wallet’s history"
+                : "That payment isn’t in this wallet’s history"}
+          </p>
+          <p className="mt-2 text-body-sm text-quiet">
+            {looking
+              ? "Reading this wallet’s payments and refusals. A receipt opened from a link has to be found in that history before it can be shown."
+              : unavailable
+                ? "So we can’t say whether this payment is in it. Nothing here means the payment did or didn’t happen — only that the history request failed. Try again below."
+                : "It isn’t among the payments loaded for this account — which is not the same as it never having happened. This app reads the most recent page of history, so an older payment may simply not be loaded here, and a receipt made while signing with a different wallet belongs to that wallet’s history rather than this one."}
+          </p>
+          {!looking && failure ? (
+            <p className="mt-3 text-body-sm text-quiet">
+              {unavailable ? "The history request failed:" : "One of the history requests also failed, so what was loaded is incomplete:"}{" "}
+              <span className="font-mono text-mono-sm break-all text-faint">{failure}</span>
+            </p>
+          ) : null}
+          {/* The key verbatim, because it is the only thing the payer can
+              compare against the link they followed. `breakAll` for the same
+              reason a 66-character hash gets it everywhere else in this app. */}
+          <Mono size="3xs" tone="faint" breakAll className="mt-4 block">
+            {receipt.key}
+          </Mono>
+          {!looking ? (
+            <button
+              type="button"
+              onClick={refreshHistory}
+              className="focus-ring mt-4 h-12 w-full rounded-control-m bg-ink text-btn-sm text-paper transition-colors hover:bg-ink-hover"
+            >
+              Read the history again
+            </button>
+          ) : null}
+        </Card>
+      </div>
+    </OverlayScreen>
+  );
+}
+
 function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: number }) {
   const { identity, agentName, chainNow } = usePayer();
   const amountIn = BigInt(settlement.amountIn);
@@ -132,7 +223,7 @@ function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: numb
               target="_blank"
               rel="noreferrer"
             >
-              {shortAddress(settlement.txHash)}
+              {shortAddress(settlement.txHash)} <span aria-hidden>↗</span>
             </a>
           </KeyValue>
         </KeyValueList>
@@ -198,7 +289,7 @@ function DeclinedBody({
                 target="_blank"
                 rel="noreferrer"
               >
-                {shortAddress(denial.cancelTxHash)}
+                {shortAddress(denial.cancelTxHash)} <span aria-hidden>↗</span>
               </a>
             </KeyValue>
           ) : (

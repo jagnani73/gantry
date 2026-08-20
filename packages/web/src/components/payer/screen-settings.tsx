@@ -5,15 +5,13 @@ import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
   BASE_SEPOLIA_ADDRESSES,
-  DISPLAY_CURRENCIES,
-  SEND_CURRENCY_OPTIONS,
   basescanAddress,
   settlementSendToken,
   shortAddress,
 } from "@gantry/shared";
-import { Card, KeyValue, KeyValueList, Mono, useToast } from "@/components/primitives";
+import { Card, KeyValue, KeyValueList, Mono } from "@/components/primitives";
 import { switchSigner, type SignerPreference } from "@/lib/payer-signer";
-import { cn } from "@/lib/utils";
+import { CurrencyPicker } from "./currency-picker";
 import { formatRate } from "./format";
 import { usePayer } from "./payer-context";
 
@@ -25,8 +23,7 @@ import { usePayer } from "./payer-context";
  * on no testnet at all. Both facts belong on the screen that explains the wallet.
  */
 export function SettingsScreen() {
-  const { identity, rate, payCurrency, setPayCurrency, sendToken } = usePayer();
-  const toast = useToast();
+  const { identity, rate, rateError, payCurrency, payCurrencyReady, sendToken } = usePayer();
   /** `switchSigner` throws only when storage is blocked, in which case the
    * reload never happens and this is the only thing that would say so. */
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -141,57 +138,44 @@ export function SettingsScreen() {
           Changes the token you sign for and the balance below. The shop is paid in Singapore
           dollars either way.
         </p>
-        <div className="mt-3.5 flex flex-wrap gap-2">
-          {SEND_CURRENCY_OPTIONS.map(({ code, locked }) => {
-            const option = DISPLAY_CURRENCIES[code];
-            const active = !locked && code === payCurrency.code;
-            return (
-              <button
-                key={code}
-                type="button"
-                aria-pressed={active}
-                // Locked options stay in the tab order and announce themselves
-                // rather than being `disabled`: a disabled control tells a
-                // screen reader nothing about WHY, and "coming soon" is the
-                // whole message. The toast is the answer to the tap.
-                aria-disabled={locked}
-                onClick={() =>
-                  locked
-                    ? toast.info(`Paying in ${option.label} is coming soon.`)
-                    : setPayCurrency(code)
-                }
-                className={cn(
-                  "focus-ring flex h-13 min-w-22 flex-col items-start justify-center rounded-control px-3.5 transition-colors",
-                  locked
-                    ? "cursor-not-allowed bg-fill-subtle text-faint"
-                    : active
-                      ? "bg-ink text-paper"
-                      : "bg-fill-subtle text-muted hover:bg-fill-hover hover:text-ink",
-                )}
-              >
-                <span className="text-btn-sm font-medium">
-                  {option.symbol} {code}
-                </span>
-                <span className={cn("text-fine", active ? "text-paper/70" : "text-faint")}>
-                  {locked ? "coming soon" : `sends ${settlementSendToken(option)}`}
-                </span>
-              </button>
-            );
-          })}
+        <div className="mt-3.5">
+          <CurrencyPicker />
         </div>
         <p className="mt-3.5 text-fine text-faint">
           {/* Names the real contract, because that is the claim: a payer signing
-              in euros is authorising Circle's own EURC, not a Gantry mock. */}
-          You sign an authorization for {settlementSendToken(payCurrency)} — Circle&apos;s own
-          token — and the swap converts it to XSGD inside the settlement transaction, at the
-          owner-set rate.
+              in euros is authorising Circle's own EURC, not a Gantry mock.
+
+              Gated on `payCurrencyReady` for the same reason the picker above
+              is. `payCurrency` starts at USD on both sides of hydration and the
+              stored choice arrives in an effect, so a euro payer's first frame
+              read "You sign an authorization for USDC" — in words, beside a
+              picker deliberately showing NO selection. The two halves of one
+              card disagreeing is a worse frame than the jump F6 removed, on the
+              one screen whose whole job is to say which token signs. */}
+          {payCurrencyReady ? (
+            <>
+              You sign an authorization for {settlementSendToken(payCurrency)} — Circle&apos;s
+              own token — and the swap converts it to XSGD inside the settlement transaction, at
+              the owner-set rate.
+            </>
+          ) : (
+            <>Checking which token you sign for…</>
+          )}
         </p>
       </Card>
 
       <Card radius="card-m" pad="none" className="mt-3 px-5 py-2">
         <KeyValueList>
           <KeyValue label="Network">Base Sepolia</KeyValue>
-          <KeyValue label="You pay in">{sendToken}</KeyValue>
+          {/* Same gate: this states the token in the fewest possible words, so
+              stating the wrong one is that much easier to read as fact. */}
+          <KeyValue label="You pay in">
+            {payCurrencyReady ? (
+              sendToken
+            ) : (
+              <span className="inline-block h-3 w-12 animate-pulse rounded-badge bg-fill-hover align-middle" />
+            )}
+          </KeyValue>
           <KeyValue label="Shop is paid in">
             <span className="inline-flex items-center gap-2">
               XSGD
@@ -201,7 +185,23 @@ export function SettingsScreen() {
             </span>
           </KeyValue>
           <KeyValue label="Rate">
-            {rate ? `1 ${sendToken} = ${formatRate(rate)} XSGD` : "unavailable"}
+            {/* THREE answers, not two. The rate is read per-token and the read
+                is stamped with the token it answered for, so switching currency
+                makes this null until the new one lands — and "unavailable" over
+                that gap is a claim about the swap that is not true. It also has
+                to be distinguishable from the previous behaviour, which was
+                worse than either: the OLD token's rate sat here relabelled, so
+                picking euros read `1 EURC = 1.3421 XSGD`.
+
+                The row above flips instantly (it is local state) and this one
+                waits a round-trip, which is what the placeholder is for. */}
+            {rate ? (
+              `1 ${sendToken} = ${formatRate(rate)} XSGD`
+            ) : rateError ? (
+              "unavailable"
+            ) : (
+              <span className="inline-block h-3.5 w-32 animate-pulse rounded-badge bg-fill-hover align-middle" />
+            )}
           </KeyValue>
           <KeyValue label="Receipts">On-chain</KeyValue>
           <KeyValue label="Settlement" divider={false}>
@@ -211,7 +211,7 @@ export function SettingsScreen() {
               target="_blank"
               rel="noreferrer"
             >
-              {shortAddress(BASE_SEPOLIA_ADDRESSES.gantryCore)}
+              {shortAddress(BASE_SEPOLIA_ADDRESSES.gantryCore)} <span aria-hidden>↗</span>
             </a>
           </KeyValue>
         </KeyValueList>
