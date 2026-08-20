@@ -177,12 +177,44 @@ interface AgentReads {
   unreadable: Address[];
 }
 
+/** Every per-wallet getter this read needs, in the order the single batch below
+ * lays them out. The array IS the layout — add one here and it is read back by
+ * position, so nothing has to be kept in step by hand. */
+const WALLET_READS = [
+  "owner",
+  "agentSigner",
+  "policy",
+  "spentToday",
+  "policyUpdatedAt",
+  "label",
+] as const;
+
 /**
- * One AgentSummary per wallet in a fixed number of round trips.
+ * One AgentSummary per wallet, in ONE round trip.
  *
- * Five multicalls fired together, not five reads per wallet: an owner with three
- * agents costs exactly what an owner with one costs. Each batch is homogeneous
- * so the calldata stays trivial to read in a trace.
+ * Not one read per wallet, and — since 20 Aug — not one batch per field either.
+ * This used to fire eight multicalls under a `Promise.all`: six wallet getters
+ * plus a balance batch per payable token. Eight separate JSON-RPC requests over
+ * a fallback transport chain, which means up to eight different nodes, at up to
+ * eight different block heights, composed into one response that says nothing
+ * about which. A payer hit exactly that: a rename confirmed in the browser came
+ * back as the new policy beside the OLD name, because the policy batch had seen
+ * the block and the label batch had not, and every screen downstream rendered
+ * the mixture as one coherent fact.
+ *
+ * Collapsed into a single multicall, that is unrepresentable: one request, one
+ * node, one block, atomic by construction. It is also strictly cheaper against
+ * the rate-limited public node the sweep already leans on. `batchSize: 0` is
+ * what makes it one request rather than several — viem otherwise splits on
+ * calldata size and would quietly reintroduce the split it was collapsed to
+ * avoid. Safe because the wallet set is always one owner's or one signer's, so
+ * it is small; an unfiltered enumeration is refused a layer up for other
+ * reasons.
+ *
+ * Pinning a `blockNumber` was the other candidate and is worse here: on a
+ * fallback chain a block some replica has not seen turns a stale read into a
+ * failed one, and these wallets would land in the "could not be read" notice —
+ * a scarier wrong answer than a slightly old one.
  *
  * `allowFailure` keeps two different failures apart — the same distinction
  * verifyPbm draws. A transport error rejects, and the caller gets a 5xx it can
@@ -192,88 +224,53 @@ interface AgentReads {
 async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
   if (wallets.length === 0) return { agents: [], absent: [], unreadable: [] };
 
-  // One balance batch and one rate per PAYABLE token, so a wallet can be asked
-  // what it actually holds rather than assumed. Two tokens today: each balance
-  // batch is a single multicall, so this costs two round trips rather than two
-  // per wallet — which matters, because the sweep already leans on a
-  // rate-limited public node.
-  const [rates, balancesByToken] = await Promise.all([
-    Promise.all(PAYABLE_TOKEN_IDS.map((id) => readRate(id))),
-    Promise.all(
-      PAYABLE_TOKEN_IDS.map((id) =>
-        publicClient.multicall({
-          allowFailure: true,
-          contracts: wallets.map(
-            (wallet) =>
-              ({
-                address: tokenAddress(config.addresses, id),
-                abi: erc20Abi,
-                functionName: "balanceOf",
-                args: [wallet],
-              }) as const,
-          ),
-        }),
+  // ONE batch: every getter for every wallet, then every payable token's
+  // balance for every wallet. Laid out field-major so a slice per field falls
+  // straight out of the result, in the order `WALLET_READS` declares.
+  const contracts = [
+    ...WALLET_READS.flatMap((functionName) =>
+      wallets.map((address) => ({ address, abi: agentPbmWalletAbi, functionName }) as const),
+    ),
+    ...PAYABLE_TOKEN_IDS.flatMap((id) =>
+      wallets.map(
+        (wallet) =>
+          ({
+            address: tokenAddress(config.addresses, id),
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [wallet],
+          }) as const,
       ),
     ),
-  ]);
+  ];
+  // The rate rides alongside rather than inside: it is a swap read, per TOKEN
+  // rather than per wallet, and a display conversion rather than a fact the
+  // policy depends on — so it has no stake in the single-block guarantee. Fired
+  // concurrently, because serialising it would trade a round trip for nothing.
+  const [results, rates] = (await Promise.all([
+    publicClient.multicall({
+      allowFailure: true,
+      // See the note above: without this viem splits on calldata size and the
+      // single-block guarantee this whole shape exists for is gone.
+      batchSize: 0,
+      contracts,
+    }),
+    Promise.all(PAYABLE_TOKEN_IDS.map((id) => readRate(id))),
+  ])) as [BatchResult[], bigint[]];
   const rateOf = new Map(PAYABLE_TOKEN_IDS.map((id, i) => [id, rates[i]!]));
-
-  const [owners, signers, policies, spent, stamps, labels] = await Promise.all([
-    publicClient.multicall({
-      allowFailure: true,
-      contracts: wallets.map(
-        (address) => ({ address, abi: agentPbmWalletAbi, functionName: "owner" }) as const,
-      ),
-    }),
-    publicClient.multicall({
-      allowFailure: true,
-      contracts: wallets.map(
-        (address) => ({ address, abi: agentPbmWalletAbi, functionName: "agentSigner" }) as const,
-      ),
-    }),
-    publicClient.multicall({
-      allowFailure: true,
-      contracts: wallets.map(
-        (address) => ({ address, abi: agentPbmWalletAbi, functionName: "policy" }) as const,
-      ),
-    }),
-    publicClient.multicall({
-      allowFailure: true,
-      contracts: wallets.map(
-        (address) => ({ address, abi: agentPbmWalletAbi, functionName: "spentToday" }) as const,
-      ),
-    }),
-    // These two are DISPLAY reads, and the `.catch` is what keeps them that way.
-    // Everything above shares one `Promise.all`, so a transport-level rejection
-    // — a 429 from the rate-limited public node, a timeout — rejects the whole
-    // read and turns into a 503 over the entire agents surface. Two fields the
-    // code declares non-essential must not hold that veto, and adding them took
-    // the round trips that can trigger it from six to eight. An empty array
-    // reads back as "not successful" through the optional chaining below, which
-    // is the same degradation a per-entry failure already gets.
-    publicClient
-      .multicall({
-        allowFailure: true,
-        contracts: wallets.map(
-          (address) => ({ address, abi: agentPbmWalletAbi, functionName: "policyUpdatedAt" }) as const,
-        ),
-      })
-      .catch((err: unknown) => {
-        console.warn("agents: policyUpdatedAt batch failed, dates degraded to 0", err);
-        return [] as BatchResult[];
-      }),
-    publicClient
-      .multicall({
-        allowFailure: true,
-        contracts: wallets.map(
-          (address) => ({ address, abi: agentPbmWalletAbi, functionName: "label" }) as const,
-        ),
-      })
-      .catch((err: unknown) => {
-        console.warn("agents: label batch failed, names degraded to empty", err);
-        return [] as BatchResult[];
-      }),
-  ]);
+  // A short result would silently shift every slice onto the wrong field, which
+  // is the one way this layout can lie. Cheaper to assert than to debug.
+  if (results.length !== contracts.length) {
+    throw new Error(
+      `agents: multicall returned ${results.length} of ${contracts.length} results`,
+    );
+  }
+  const fieldAt = (index: number): BatchResult[] =>
+    results.slice(index * wallets.length, (index + 1) * wallets.length);
+  const [owners, signers, policies, spent, stamps, labels] = WALLET_READS.map((_, i) =>
+    fieldAt(i),
+  ) as [BatchResult[], BatchResult[], BatchResult[], BatchResult[], BatchResult[], BatchResult[]];
+  const balancesByToken = PAYABLE_TOKEN_IDS.map((_, i) => fieldAt(WALLET_READS.length + i));
 
   const agents: AgentSummary[] = [];
   const failed: Address[] = [];
