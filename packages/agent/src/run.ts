@@ -157,12 +157,34 @@ async function runLive(prompt: string, provider: Provider): Promise<"done" | "ti
       // wording stable across runs (the chain, not the sampler, is the
       // authority on outcomes either way).
       temperature: 0,
+      // The SDK's default `onError` console.errors the whole error object —
+      // stack, request body, response headers, ~40 lines — BEFORE the error
+      // part reaches the loop below. On a misconfigured model that buried the
+      // three `[agent]` lines saying what actually happened under a wall of
+      // machine detail, on the one output an operator reads mid-demo. Nothing
+      // is lost by silencing it: the same error arrives as a stream part, is
+      // rethrown, and its message is carried out as `detail`.
+      onError: () => undefined,
     });
     for await (const part of result.stream) {
       // A model that opens with a silent tool call (no text preamble) must
       // still defuse the timeout, or the fallback could start while a tool is
       // executing — so every non-synthetic part counts, not just text.
-      if (!SYNTHETIC_PARTS.has(part.type)) sawStream = true;
+      //
+      // EXCEPT an error part, and the exception is load-bearing. `sawStream`
+      // means "the model produced something", and the catch upstream reads it as
+      // exactly that: streamed-then-failed is the prose-without-tools shape and
+      // REFUSES, because the scripted engine pays and a model that only talked
+      // gave no evidence a payment was wanted. An error is not prose — nothing
+      // was produced — and counting it made every gateway failure look like one.
+      //
+      // `streamText` folds gateway errors INTO the stream (see below), so with
+      // this line counting them the "nothing streamed, fall back" branch was
+      // unreachable for the only failures that reach it in practice: a dead key,
+      // a cold gateway, a 402. Measured: `AISA_MODEL=gemini-3.5-flash` on an
+      // unfunded account refused and exited 1, where the fallback exists
+      // precisely to carry that run.
+      if (part.type !== "error" && !SYNTHETIC_PARTS.has(part.type)) sawStream = true;
       if (abandoned) return "done";
       if (part.type === "text-delta") {
         narrator.write(part.text);
