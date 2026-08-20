@@ -43,6 +43,18 @@ const EnvSchema = z.object({
    * unauthenticated USDC spigot on a public box. `hostClass` below warns loudly
    * rather than silently trusting it. */
   NODE_ENV: z.string().optional(),
+  /**
+   * `closed` refuses self-service registration; anything else (including unset)
+   * leaves it open. The kill switch for the one thing a rate limiter cannot
+   * undo — a registration is permanent and its text renders on a public page —
+   * so it exists to be flipped from a host dashboard during an incident, with
+   * no code change and no push.
+   *
+   * An enum would be worse here: the safe state is OPEN (that is the product),
+   * so a typo must not close the door, and the one value that closes it is
+   * spelled out rather than inferred.
+   */
+  ONBOARDING: z.string().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -107,7 +119,7 @@ function classifyHost(nodeEnv: string | undefined): HostClass {
     // registration on a public host.
     console.warn(
       `NODE_ENV="${raw}" is not a value we recognise — treating this as a DEMO host, ` +
-        `which leaves the payer faucet unmetered and self-service onboarding ON. ` +
+        `which leaves the payer faucet unmetered and merchant registration unmetered. ` +
         `Set NODE_ENV=production if this is a public deployment.`,
     );
   }
@@ -187,16 +199,34 @@ export const config = {
    */
   faucetEthDailyBudget: faucetLimits.gas,
   /**
-   * Whether strangers may register merchants. Same key, different resource:
-   * onboarding spends relayer ETH per call and permanently claims a handle,
-   * and its cooldown is per-IP, which bounds one browser rather than one
-   * attacker. Draining the gas key stops every door, not just onboarding.
+   * Whether strangers may register merchants. OPEN everywhere since 20 Aug.
    *
-   * Off in production is also the more honest product position: real merchant
-   * acquiring is underwritten, never self-service. Self-registration is the
-   * demo affordance; a deployed host serves the merchants already on-chain.
+   * It used to be `isDemoHost`, on the argument that onboarding spends relayer
+   * ETH and draining the gas key stops every door rather than just this one.
+   * That argument was weak where it mattered: this is Base Sepolia, the ETH is
+   * faucet ETH, and `registerMerchant` costs ~180k gas. A rail nobody outside
+   * the demo can join is also a poor demonstration of a permissionless registry
+   * — `registerMerchant` needs no permission from us on-chain, and a door that
+   * says otherwise off-chain was telling a story the contract does not.
+   *
+   * What the gate was really standing in front of is NOT gas: a registration is
+   * PERMANENT and its text renders on `/merchants`, a public submission
+   * artifact. Nothing can delete a handle, and `resolveProfile` rejects
+   * invisible and deceptive text but has no opinion on offensive text. So the
+   * replacement control is a global rolling-24h ceiling in `services/merchants`,
+   * which bounds the total regardless of how many IPs a caller has — the per-IP
+   * cooldown never could.
+   *
+   * `ONBOARDING=closed` is the kill switch, for responding to abuse without a
+   * code change (a Render env edit redeploys on its own).
    */
-  onboardingEnabled: isDemoHost,
+  onboardingEnabled: env.ONBOARDING !== "closed",
+  /**
+   * Whether that ceiling is enforced. Unmetered on a demo host for the same
+   * reason both faucet legs are: a rehearsal pass registers the canonical shops
+   * repeatedly and any sane public ceiling would stop it mid-run.
+   */
+  onboardingMetered: !isDemoHost,
   /* The historical demo AgentPBMWallet used to be pinned here. It is gone: the
    * read path is owner-driven and answers for any wallet, the admin re-arm was
    * deleted with the rest of the server-side policy writes, and the wallet

@@ -18,6 +18,7 @@ import { countMerchants, getMerchantRow, insertMerchant, listMerchants } from ".
 import { ApiError } from "../errors";
 import { indexerStatus } from "../indexer";
 import { sendRelayerTx } from "../relayer";
+import { emptyBudget, msUntilReset, release, reserve } from "./faucet-budget";
 import {
   normalizeProfile,
   resolveProfile,
@@ -220,9 +221,19 @@ function throttle(cooldownMs: number, errorName: string, message: string): Throt
 }
 
 function assertNotThrottled(t: Throttle, key: string): void {
+  const now = Date.now();
   const last = t.last.get(key);
-  if (last !== undefined && Date.now() - last < t.cooldownMs) {
+  if (last !== undefined && now - last < t.cooldownMs) {
     throw new ApiError(429, t.errorName, t.message);
+  }
+  // Swept here rather than on a timer, because an entry older than the cooldown
+  // is indistinguishable from an absent one — keeping it changes no decision.
+  // These maps were unbounded and keyed by IP: fine while the route was reachable
+  // only on a demo host, a slow leak once it is open to the internet, where the
+  // key space is every address that ever tried. O(n) on a map whose live size is
+  // bounded by callers-within-30s, on a path that already awaits a chain write.
+  for (const [entry, at] of t.last) {
+    if (now - at >= t.cooldownMs) t.last.delete(entry);
   }
 }
 
@@ -250,6 +261,35 @@ const profileThrottle = throttle(
  * relayer, which holds the only gas key every door in the system depends on.
  */
 const registerInFlight = new Set<string>();
+
+/**
+ * The ceiling the per-IP cooldown never was.
+ *
+ * A cooldown bounds one browser; it does not bound one attacker, who has as many
+ * IPs as they care to use. That was tolerable while onboarding was demo-only and
+ * stops being tolerable the moment it is open on a public host — and the thing
+ * being bounded is NOT gas (this is Sepolia, and `registerMerchant` is ~180k).
+ * It is that a registration is PERMANENT and its text renders on `/merchants`:
+ * nothing can delete a handle, and `resolveProfile` refuses invisible and
+ * deceptive text while having no opinion on offensive text. A global ceiling
+ * makes the worst case a number we chose.
+ *
+ * `faucet-budget` rather than a second mechanism: it is the same shape, already
+ * unit-tested, and it RESERVES before the spend, so concurrent requests cannot
+ * both pass the check and overshoot — which a count-after-success scheme allows
+ * by construction.
+ *
+ * NOT a security boundary, and the faucet's module says so in the same words:
+ * the state is in-process, so a restart resets it and two instances would get
+ * one ceiling each. This bounds casual abuse, which is the actual threat to a
+ * testnet registry.
+ */
+const REGISTER_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Registrations per rolling window, across every caller. Twenty is far above
+ * any legitimate use of a demo — a room of judges trying the form is a handful —
+ * and far below the number that would make the public directory unusable. */
+export const PUBLIC_REGISTER_DAILY = 20n;
+let registerBudget = emptyBudget();
 
 /**
  * The same bound for profile edits, for the same reason.
@@ -298,11 +338,11 @@ export async function registerMerchant(
       "OnboardingDisabled",
       // NOT "merchants are verified": nothing anywhere in Gantry reviews or
       // verifies a merchant, and saying otherwise claims a KYC that does not
-      // exist. What this gate protects is the relayer's gas key, which is the
-      // honest reason and the only one.
-      "self-service onboarding is off on this deployment: registering through this route spends " +
-        "Gantry's own gas key. Run the backend without NODE_ENV=production to onboard (demo host), " +
-        "or register on-chain directly. registerMerchant is permissionless and needs no permission from us.",
+      // exist. This is now a switch an operator threw, not a policy — so it
+      // says that, and says the rail is still open without us.
+      "self-service onboarding is switched off on this deployment right now. " +
+        "registerMerchant is permissionless on-chain, so you can register directly without us — " +
+        "this route only offers to pay the gas for you.",
     );
   }
   if (!isValidHandle(req.handle)) {
@@ -335,8 +375,40 @@ export async function registerMerchant(
   if (registerInFlight.has(key)) {
     throw new ApiError(429, "OnboardingInProgress", "a registration from this address is already in flight");
   }
+  // Cooldown → in-flight → ceiling, the order faucet-core uses: the two cheap
+  // per-caller checks first, so a caller hammering one IP is turned away without
+  // consuming a global budget everyone shares.
+  const metered = !operator && config.onboardingMetered;
+  if (metered) {
+    const reservation = reserve(
+      registerBudget,
+      1n,
+      PUBLIC_REGISTER_DAILY,
+      Date.now(),
+      REGISTER_WINDOW_MS,
+    );
+    registerBudget = reservation.state;
+    if (!reservation.ok) {
+      const resetInMs = msUntilReset(registerBudget, Date.now(), REGISTER_WINDOW_MS);
+      throw new ApiError(
+        429,
+        "OnboardingBudgetExhausted",
+        `this deployment registers at most ${PUBLIC_REGISTER_DAILY} shops a day and has used them ` +
+          `all; the window rolls in about ${Math.ceil(resetInMs / 60_000)} minutes. ` +
+          // The escape hatch is real and worth naming: the contract is
+          // permissionless, so this ceiling bounds OUR relayer and not the rail.
+          "registerMerchant is permissionless on-chain, so you can also register directly without us.",
+      );
+    }
+  }
 
   registerInFlight.add(key);
+  /** Did this call actually put a NEW shop on the rail? Only that keeps its
+   * reservation. A revert creates nothing, and the `alreadyRegistered` branch
+   * finds a handle an EARLIER call claimed — charging the budget for either
+   * would let a loop of failures exhaust a ceiling that exists to bound how
+   * many merchants appear. */
+  let created = false;
   try {
     const { receipt } = await sendRelayerTx({
       address: config.addresses.gantryCore,
@@ -356,6 +428,7 @@ export async function registerMerchant(
     // Cooldown only after a successful register, so a reverted attempt still
     // surfaces its real error on retry rather than a bogus 429 (faucet precedent).
     if (!operator) armThrottle(registerThrottle, key);
+    created = true;
     primeRegistration(req.handle, req.categoryId, profile.value, receipt.blockNumber);
     console.log(
       `registered ${req.handle} → ${payout.address} (category ${req.categoryId}) in ${receipt.transactionHash}`,
@@ -392,6 +465,7 @@ export async function registerMerchant(
     throw err;
   } finally {
     registerInFlight.delete(key);
+    if (metered && !created) registerBudget = release(registerBudget, 1n);
   }
 }
 

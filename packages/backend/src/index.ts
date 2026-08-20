@@ -6,6 +6,7 @@ import { config } from "./config";
 import { assertTokenDomains, relayerAccount } from "./chain";
 import { errorMiddleware } from "./errors";
 import { startIndexer } from "./indexer";
+import { PUBLIC_REGISTER_DAILY } from "./services/merchants";
 import { healthRouter } from "./routes/health";
 import { merchantsRouter } from "./routes/merchants";
 import { intentsRouter } from "./routes/intents";
@@ -86,10 +87,13 @@ async function main() {
     // not be armed" into a mystery on the one host nobody is watching the logs of.
     console.log(
       config.hostClass === "demo"
-        ? "demo host: payer faucet unmetered on both legs, self-service onboarding ON"
+        ? "demo host: payer faucet unmetered on both legs, onboarding unmetered" +
+            (config.onboardingEnabled ? "" : " but SWITCHED OFF (ONBOARDING=closed)")
         : `public host: payer faucet capped at ${config.faucetDailyBudget} token units and ` +
-            `${config.faucetEthDailyBudget} wei/24h across all addresses; self-service ` +
-            "onboarding OFF — only merchants already on-chain are served",
+            `${config.faucetEthDailyBudget} wei/24h across all addresses; onboarding ` +
+            (config.onboardingEnabled
+              ? `metered at ${PUBLIC_REGISTER_DAILY} shops/24h across all callers`
+              : "SWITCHED OFF (ONBOARDING=closed) — only merchants already on-chain are served"),
     );
     // A public host derives nothing from the request host — that is the open
     // redirect guard — so without APP_URL the pay link's human half 500s. Said
