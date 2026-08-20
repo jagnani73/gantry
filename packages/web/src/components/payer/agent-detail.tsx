@@ -28,7 +28,7 @@ import { api } from "@/lib/api";
 import { describeWriteError } from "@/lib/write-error";
 import type { ActivityRow } from "./activity";
 import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
-import { categorySplit, policyFingerprint, revokedFingerprint, sgdFromCapUnits } from "./agent-rules";
+import { categorySplit, policyFingerprint, revokedState, sgdFromCapUnits } from "./agent-rules";
 import { calendarDate, relativeWhen, sgdUnits } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
 import { usePayer } from "./payer-context";
@@ -166,7 +166,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         setFresh(summary);
         setReadError(null);
         const expected = agentExpectation(wallet);
-        if (!expected || policyFingerprint(summary) === expected) {
+        if (!expected || policyFingerprint(summary) === expected.fingerprint) {
           // Either nothing was pending, or the read caught up. Both end the wait.
           //
           // The summary goes WITH it. This read is proven current — it matches
@@ -295,7 +295,8 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
    * licence to wait indefinitely.
    */
   const expected = agentExpectation(wallet);
-  const superseded = agent !== undefined && expected !== null && policyFingerprint(agent) !== expected;
+  const superseded =
+    agent !== undefined && expected !== null && policyFingerprint(agent) !== expected.fingerprint;
 
   const history = useMemo(
     () => rows.filter((row) => belongsToWallet(row, wallet)),
@@ -457,7 +458,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     // Recorded before the re-read is triggered so the poll below can see it.
     // The wallet keeps its label through a revoke, so the expectation carries the
     // one already on-chain rather than claiming the name went too.
-    expectAgentPolicy(wallet, revokedFingerprint(agent.label, agent.agentSigner));
+    expectAgentPolicy(wallet, revokedState(agent.label, agent.agentSigner));
     refresh();
     // Through the same effect as every other read, rather than a bare `api.agent`
     // here: that one-shot read was itself the too-early one, and it landed

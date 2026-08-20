@@ -29,6 +29,11 @@ import {
   type TokenId,
 } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
+import {
+  policyFingerprint,
+  provenAgentFields,
+  type ExpectedAgentState,
+} from "./agent-rules";
 import { findActivityRow, toActivityRows, type ActivityRow } from "./activity";
 import { usePayerIdentity, type PayerIdentity } from "./identity";
 import {
@@ -81,6 +86,25 @@ export type PendingReceiptState = {
   key: string;
   status: "loading" | "missing" | "unavailable";
 };
+
+/**
+ * A write this browser watched mine, held until a read agrees with it.
+ *
+ * Two halves, and both are needed. `fingerprint` answers "has the read caught
+ * up"; `proven` is what to SHOW while it has not — because a mined receipt
+ * outranks a lagging read, the same rule the merchant payout rotation follows.
+ *
+ * Before `proven` existed the agents list rendered `Saving…` in place of the
+ * name for as long as the read stayed behind, which was wrong twice over: the
+ * save had already finished (it is the read that is late, not the write), and
+ * nothing bounded the wait, because the give-up rule lives with the poller and
+ * the list does not poll. There is nothing to bound now — the row shows what
+ * the chain holds.
+ */
+export interface AgentExpectation {
+  fingerprint: string;
+  proven: ReturnType<typeof provenAgentFields>;
+}
 
 export interface PayerStore {
   identity: PayerIdentity;
@@ -204,7 +228,7 @@ export interface PayerStore {
   agentName(wallet: Address): string | null;
 
   /**
-   * The policy fingerprint this browser WROTE and has not yet read back.
+   * What this browser WROTE and has not yet read back.
    *
    * `setPolicy` and `revoke` are confirmed by a mined receipt in the browser,
    * and then read back through the backend — whose RPC provider is a different
@@ -217,9 +241,12 @@ export interface PayerStore {
    * the overlay unmounting: the form writes it, and the detail screen that opens
    * afterwards is a different component instance.
    */
-  agentExpectation(wallet: Address): string | null;
-  /** Record what was just written. Cleared by `settleAgentExpectation`. */
-  expectAgentPolicy(wallet: Address, fingerprint: string): void;
+  agentExpectation(wallet: Address): AgentExpectation | null;
+  /** Record what was just written — the STATE, not a digest of it. The store
+   * derives the fingerprint, so what a screen renders while it waits and what
+   * the wait compares against cannot be built from different fields. Cleared by
+   * `settleAgentExpectation`. */
+  expectAgentPolicy(wallet: Address, written: ExpectedAgentState): void;
   /** Stop waiting: the read matched, or the wait was given up on. Both are
    * "no longer expecting", and neither is a claim about the chain.
    *
@@ -452,7 +479,7 @@ export function PayerProvider({
   const [balanceWatch, setBalanceWatch] = useState<BalanceWatch>("idle");
   const [merchants, setMerchants] = useState<Record<string, MerchantResponse | null>>({});
   const [merchantErrors, setMerchantErrors] = useState<Record<string, string>>({});
-  const [expectations, setExpectations] = useState<Record<string, string>>({});
+  const [expectations, setExpectations] = useState<Record<string, AgentExpectation>>({});
   const [clockOffset, setClockOffset] = useState(0);
   const [nonce, setNonce] = useState(0);
   const [historyNonce, setHistoryNonce] = useState(0);
@@ -1368,8 +1395,12 @@ export function PayerProvider({
     [expectations],
   );
 
-  const expectAgentPolicy = useCallback((wallet: Address, fingerprint: string) => {
-    setExpectations((prev) => ({ ...prev, [wallet.toLowerCase()]: fingerprint }));
+  const expectAgentPolicy = useCallback((wallet: Address, written: ExpectedAgentState) => {
+    const entry: AgentExpectation = {
+      fingerprint: policyFingerprint(written),
+      proven: provenAgentFields(written),
+    };
+    setExpectations((prev) => ({ ...prev, [wallet.toLowerCase()]: entry }));
   }, []);
 
   const settleAgentExpectation = useCallback((wallet: Address, settledBy?: AgentSummary) => {

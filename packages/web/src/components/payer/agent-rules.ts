@@ -91,7 +91,16 @@ export function sgdFromCapUnits(units: string | bigint, rate: bigint): string {
  * folding them in would make the expectation unsatisfiable. `withdraw` therefore
  * records no expectation at all rather than a satisfiable-but-meaningless one.
  */
-export function policyFingerprint(state: {
+/**
+ * Everything an owner write can change about a wallet.
+ *
+ * The exact set `policyFingerprint` hashes, and therefore the exact set the
+ * freshness gate can wait on. `spentToday`, the balance and the rate are
+ * deliberately absent: they move without anyone signing anything, so a gate
+ * including them would never settle, and a row overlaid with them would state
+ * figures no receipt proves.
+ */
+export interface ExpectedAgentState {
   dailyCap: bigint | string;
   perTxCap: bigint | string;
   expiry: number;
@@ -103,7 +112,9 @@ export function policyFingerprint(state: {
    * fingerprint that can NEVER match, whose symptom is not an error but the
    * detail screen waiting out all six polls and then blaming the RPC. */
   agentSigner: Address;
-}): string {
+}
+
+export function policyFingerprint(state: ExpectedAgentState): string {
   return [state.dailyCap, state.perTxCap, state.expiry, state.categoryBitmap]
     .map(String)
     .concat(state.label, state.agentSigner.toLowerCase())
@@ -113,15 +124,50 @@ export function policyFingerprint(state: {
 /** What `revoke()` leaves behind: the policy zeroed, expiry included. The label
  * and the signer both survive a revoke untouched, so the caller supplies the
  * ones already on-chain rather than assuming the wallet lost them too. */
-export function revokedFingerprint(label: string, agentSigner: Address): string {
-  return policyFingerprint({
-    dailyCap: 0n,
-    perTxCap: 0n,
-    expiry: 0,
-    categoryBitmap: 0n,
-    label,
-    agentSigner,
-  });
+export function revokedState(label: string, agentSigner: Address): ExpectedAgentState {
+  return { dailyCap: 0n, perTxCap: 0n, expiry: 0, categoryBitmap: 0n, label, agentSigner };
+}
+
+/**
+ * The `AgentSummary` fields a mined receipt PROVES, projected from what was
+ * written.
+ *
+ * A mined receipt outranks a lagging read — the rule the merchant payout
+ * rotation already follows — so a row known to be behind renders THESE rather
+ * than a spinner or the values they replaced. The browser watched the block; it
+ * does not need a replica's permission to say what is in it.
+ *
+ * `categories` and `revoked` are derived here rather than carried, because both
+ * are functions of what was signed and reading them back is exactly the thing
+ * being worked around. `revoked` is derived the same way the backend derives it
+ * (`expiry === 0`, per `AgentSummary`), so an overlaid row and a read one can
+ * never disagree about the chip above them.
+ */
+export function provenAgentFields(
+  state: ExpectedAgentState,
+): Pick<
+  AgentSummary,
+  | "dailyCap"
+  | "perTxCap"
+  | "expiry"
+  | "categoryBitmap"
+  | "categories"
+  | "label"
+  | "agentSigner"
+  | "revoked"
+> {
+  return {
+    dailyCap: String(state.dailyCap),
+    perTxCap: String(state.perTxCap),
+    expiry: state.expiry,
+    // Stringified from the same value the fingerprint hashes, so the two
+    // readings of one bitmap cannot drift.
+    categoryBitmap: String(state.categoryBitmap),
+    categories: categoryIdsOf(BigInt(state.categoryBitmap)).map(categoryName),
+    label: state.label,
+    agentSigner: state.agentSigner,
+    revoked: state.expiry === 0,
+  };
 }
 
 /** Bytes, not characters — `AgentPBMWallet._setLabel` counts `bytes(label).length`,

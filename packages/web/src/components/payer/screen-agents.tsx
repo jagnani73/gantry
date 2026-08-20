@@ -7,7 +7,7 @@ import { CapMeter, Card, Chip, Mono } from "@/components/primitives";
 import { cn } from "@/lib/utils";
 import { STATUS_LABEL } from "./agent-detail";
 import { categoryLabels, policyFingerprint, sgdFromCapUnits } from "./agent-rules";
-import { usePayer } from "./payer-context";
+import { usePayer, type AgentExpectation } from "./payer-context";
 
 /**
  * Live agents versus the ones that can no longer spend, plus everything.
@@ -52,7 +52,6 @@ export function AgentsScreen() {
     agentsError,
     agentsUnreadable,
     chainNow,
-    agentName,
     agentExpectation,
     identity,
     refresh,
@@ -224,16 +223,23 @@ export function AgentsScreen() {
                     </p>
                   </Card>
                 ) : (
-                  shown.map((agent) => (
-                    <AgentCard
-                      key={agent.wallet}
-                      agent={agent}
-                      name={agentName(agent.wallet) ?? shortAddress(agent.wallet)}
-                      now={now}
-                      superseded={isSuperseded(agent, agentExpectation(agent.wallet))}
-                      onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
-                    />
-                  ))
+                  shown.map((row) => {
+                    // The whole row moves together. Taking the name from
+                    // `proven` and the caps from the read would put a confirmed
+                    // rename beside limits it replaced — a subtler version of
+                    // the bug this replaced.
+                    const { agent, ahead } = rowFor(row, agentExpectation(row.wallet));
+                    return (
+                      <AgentCard
+                        key={agent.wallet}
+                        agent={agent}
+                        name={agent.label || shortAddress(agent.wallet)}
+                        now={now}
+                        ahead={ahead}
+                        onOpen={() => pushOverlay({ kind: "agent", wallet: agent.wallet })}
+                      />
+                    );
+                  })
                 )}
               </>
             )}
@@ -342,31 +348,50 @@ function TabButton({
 }
 
 /**
- * Is this row known to be behind a write the payer has already made?
+ * The row to render: the read, or what a mined receipt proves over the top of it.
  *
- * The detail screen has waited on this since it was written; the LIST did not,
- * and that is what let a save look half-applied. A save can send THREE
- * transactions in sequence, so a re-read fired after the first one lands sees
- * the new policy and the OLD name — which is exactly what a payer reported:
- * categories updated, the rename apparently ignored. Nothing was wrong on
- * chain; the list was reading between two blocks and said nothing about it.
+ * A save can send THREE transactions, and `GET /api/agents` composes six
+ * unpinned multicalls — so a re-read fired the moment the last one lands
+ * routinely comes back holding two different blocks: the new policy and the OLD
+ * name. That is exactly what a payer reported (categories updated, the rename
+ * apparently ignored), and nothing was wrong on chain.
+ *
+ * This used to render `Saving…` in place of the name for as long as the
+ * mismatch lasted, which was wrong twice over. The save had already finished —
+ * it is the READ that is late — so the word pointed at the wrong half. And
+ * nothing bounded it: the give-up rule lives with whoever polls, the detail
+ * screen polls and this screen does not, so a single stale read left the row
+ * frozen with no retry, no explanation and no exit. Reachable in production, not
+ * just in theory: the store's 20s poll covers history only, never the agent
+ * enumeration, so after a save exactly ONE read is fired and nothing is
+ * scheduled to try again.
+ *
+ * So the browser renders what it watched mine. A mined receipt outranks a
+ * lagging read — the rule the merchant payout rotation already follows — and
+ * `proven` carries every field an owner write can change. `spentToday`, the
+ * balance and the rate stay from the read, because those move without anyone
+ * signing anything and no receipt speaks for them.
  */
-function isSuperseded(agent: AgentSummary, expected: string | null): boolean {
-  return expected !== null && policyFingerprint(agent) !== expected;
+function rowFor(agent: AgentSummary, expected: AgentExpectation | null) {
+  if (expected === null || policyFingerprint(agent) === expected.fingerprint) {
+    return { agent, ahead: false };
+  }
+  return { agent: { ...agent, ...expected.proven }, ahead: true };
 }
 
 function AgentCard({
   agent,
   name,
   now,
-  superseded,
+  ahead,
   onOpen,
 }: {
   agent: AgentSummary;
   name: string;
   now: number;
-  /** A write of the payer's own is mined but not yet visible in this read. */
-  superseded: boolean;
+  /** This row is what a mined receipt proves, ahead of what the backend has read
+   * back. Everything on it is true of the chain; only its provenance differs. */
+  ahead: boolean;
   onOpen: () => void;
 }) {
   // Never derived from `revoked` alone: a policy that simply ran out denies
@@ -380,17 +405,20 @@ function AgentCard({
     <Card as="button" radius="card-m" pad="m" hover onClick={onOpen} className="w-full text-left">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {/* Known-stale text is not rendered at all, the same rule the detail
-              screen follows: a name the payer has just replaced is a claim
-              about the chain that is already false, and showing it silently is
-              how a working rename reads as one that was ignored. The address
-              below never changes, so it stays. */}
-          <div className="truncate text-card-title">
-            {superseded ? <span className="text-faint">Saving…</span> : name}
-          </div>
+          {/* Known-stale text is still never rendered — but the answer is the
+              new value, not a placeholder. The browser watched the block; it
+              does not need a replica's agreement to name what is in it. */}
+          <div className="truncate text-card-title">{name}</div>
           <Mono size="2xs" tone="faint" className="mt-1 block">
             {shortAddress(agent.wallet)}
           </Mono>
+          {/* Said, not implied. These figures are true and their provenance is
+              a receipt rather than a read, and a payer comparing this screen
+              against Basescan in the next few seconds may see the older one.
+              It disappears on its own the moment the two agree. */}
+          {ahead ? (
+            <div className="mt-1 text-fine text-faint">Just changed · reading it back</div>
+          ) : null}
         </div>
         <Chip tone={live ? "accent" : "danger"}>{STATUS_LABEL[status]}</Chip>
       </div>

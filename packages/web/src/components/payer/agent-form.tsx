@@ -22,7 +22,6 @@ import {
   categoryIdsOf,
   labelByteLength,
   LABEL_MAX_BYTES,
-  policyFingerprint,
   sgdFromCapUnits,
 } from "./agent-rules";
 import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
@@ -402,14 +401,11 @@ function AgentFormFields({
         let expectedSigner = existing!.agentSigner;
         let expectedLabel = existing!.label;
         const record = () =>
-          expectAgentPolicy(
-            wallet,
-            policyFingerprint({
-              ...expectedPolicy,
-              label: expectedLabel,
-              agentSigner: expectedSigner,
-            }),
-          );
+          expectAgentPolicy(wallet, {
+            ...expectedPolicy,
+            label: expectedLabel,
+            agentSigner: expectedSigner,
+          });
 
         if (!policyUnchanged) {
           setBusy("Updating the policy on-chain…");
@@ -463,10 +459,7 @@ function AgentFormFields({
       toast.success("Agent created and its rules armed.");
       // The signer went into the constructor, so it is the typed one by
       // definition — there is no `existing` on this path to read it from.
-      expectAgentPolicy(
-        target,
-        policyFingerprint({ ...policy, label, agentSigner: getAddress(signer.trim()) }),
-      );
+      expectAgentPolicy(target, { ...policy, label, agentSigner: getAddress(signer.trim()) });
       refresh();
       replaceOverlay({ kind: "agent", wallet: target });
     } catch (err) {
