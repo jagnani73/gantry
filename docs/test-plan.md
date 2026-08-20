@@ -74,6 +74,24 @@ security-relevant step still untested — the `X-Forwarded-Host` open-redirect c
 
 ---
 
+
+## Running the commands on this machine
+
+The shell here is **PowerShell**, and every `curl` in this file is written in bash
+idiom — which cost three attempts on the first one that used a pipe. `jq` is not
+installed either. The translations:
+
+| bash | PowerShell |
+| ---- | ---------- |
+| a trailing `\` to continue a line | a trailing backtick, or just put it on one line |
+| `-o /dev/null` | `-o NUL` |
+| `\| grep -i foo` | `\| Select-String -Pattern "foo"` |
+| `\| jq` | `\| python -m json.tool` |
+| `curl` | `curl.exe` when a flag collides with the PowerShell alias |
+
+The Bash tool is also available and takes the bash forms unchanged, so the other
+option is to run them there rather than translating.
+
 ## Phase 1 — the CLI sign-off gate
 
 Ten chain-touching regressions, no offline suite covers them. **Check exit codes,
@@ -197,10 +215,10 @@ it.
 
 | #   | What                                                                      | Expected                                                                                   | Result |
 | --- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------ |
-| 41  | `curl -s localhost:4000/discovery/resources \| jq`                        | Every merchant, each with its own `?sgd=1.00` and a real quote (745101 USDC / 662252 EURC) | —      |
-| 42  | `?limit=1&offset=1`                                                       | Paging works; `total` is the registry's count, not the page length                         | —      |
-| 43  | Compare a listing's `accepts[]` to the challenge its `resource` points at | Same set, same order — these drifted for one commit                                        | —      |
-| 44  | Response headers                                                          | `Cache-Control: no-store`                                                                  | —      |
+| 41  | `curl -s localhost:4000/discovery/resources \| jq`                        | Every merchant, each with its own `?sgd=1.00` and a real quote (745101 USDC / 662252 EURC) | **PASS** — 3 merchants, each carrying its own `?sgd=1.00` and the real quote (745101 USDC / 662252 EURC), plus `serviceName`, `description`, `tags` and `lastUpdated`. `indexer.lag` 0 |
+| 42  | `?limit=1&offset=1`                                                       | Paging works; `pagination.total` is the registry's count, not the page length — it is NESTED, which is the Bazaar shape                         | **PASS** — `limit=1&offset=1` returns exactly one item (`gadgethub-sg`, the second) and `pagination` reads `{limit:1, offset:1, total:3}`: the registry's count, not the page length |
+| 43  | Compare a listing's `accepts[]` to the challenge its `resource` points at | Same set, same order — these drifted for one commit                                        | **PASS** — identical as a SET and in ORDER. Listing and challenge both read `exact/USDC@745101 · exact/EURC@662252 · gantry-pbm/USDC@745101 · gantry-pbm/EURC@662252`. Order matters as much as membership: these drifted for one commit when only `exact` learned to fan out |
+| 44  | Response headers                                                          | `Cache-Control: no-store`                                                                  | **PASS** — `Cache-Control: no-store` |
 
 ## Phase 7 — agents (payer app)
 
