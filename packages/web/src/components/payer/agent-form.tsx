@@ -625,7 +625,7 @@ function AgentFormFields({
                 rel="noreferrer"
                 className="focus-ring rounded-badge text-meta text-accent underline-offset-2 hover:underline"
               >
-                Check {shortAddress(unresolved.txHash)} on Basescan
+                Check {shortAddress(unresolved.txHash)} on Basescan <span aria-hidden>↗</span>
               </a>
               {createdWallet ? (
                 <button

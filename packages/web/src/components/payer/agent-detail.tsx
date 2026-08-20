@@ -532,7 +532,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
                 target="_blank"
                 rel="noreferrer"
               >
-                {shortAddress(agent.wallet)}
+                {shortAddress(agent.wallet)} <span aria-hidden>↗</span>
               </a>
             </KeyValue>
             <KeyValue label="Balance">
@@ -722,7 +722,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
                     rel="noreferrer"
                     className="focus-ring rounded-badge text-meta text-accent underline-offset-2 hover:underline"
                   >
-                    Check {shortAddress(notice.txHash)} on Basescan
+                    Check {shortAddress(notice.txHash)} on Basescan <span aria-hidden>↗</span>
                   </a>
                 ) : null}
                 {notice.recheck ? (

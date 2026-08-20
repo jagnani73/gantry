@@ -466,7 +466,7 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
               rel="noreferrer"
               className="focus-ring-inverse flex h-13 items-center justify-center rounded-control-m bg-on-accent text-btn-sm text-ink transition-colors hover:bg-paper"
             >
-              View on Basescan
+              View on Basescan <span aria-hidden>↗</span>
             </a>
           ) : (
             <button
@@ -537,7 +537,7 @@ export function PayFlow({ handle, askingPrice }: { handle: string; askingPrice?:
               rel="noreferrer"
               className="focus-ring flex h-13 items-center justify-center rounded-control-m bg-ink text-btn-sm text-paper transition-colors hover:bg-ink-hover"
             >
-              Check {shortAddress(txHash)} on Basescan
+              Check {shortAddress(txHash)} on Basescan <span aria-hidden>↗</span>
             </a>
           ) : null}
           <button
