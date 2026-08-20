@@ -16,6 +16,38 @@ an account nobody here has, see [Cannot be run here](#cannot-be-run-here)).
 green, and the relayer NOT carrying an EIP-7702 delegation (`eth_getCode` on
 `0x8251…C47B` must answer `0x`). Phases 2–11 assume Phase 1 passed.
 
+## What needs a human right now
+
+Kept at the top because it is the question this file gets asked, and answering it
+from the tables means reading all of them. Current as of the 20 Aug push.
+
+**Unverified fixes — shipped, never driven.** Each is a repair for a finding, and
+none of the three has been exercised since it landed:
+
+- **25n** — `/pay/:handle` → close → refresh. This is the ORIGINAL reported bug.
+  The fix is in and the mechanism was verified on the `/app` routes, but the entry
+  route itself has not been re-driven.
+- **25l** — a `?receipt=` link while the history request fails must show
+  **"Couldn't read this history"**, never "not in this wallet". Needs the backend
+  stopped, or throttled, to reach.
+- **25m** — `?edit=0x…&allow=7` must tick nothing. Before **F19**'s fix this put an
+  invisible category into a policy the payer signs.
+
+**Decisions, not tests.** Two findings are recorded OPEN because the fix is a
+design change rather than a repair, and both are calls for the owner:
+
+- **F16** — a URL can open any well-formed address's agent screen, with Revoke and
+  Withdraw on it. Writes revert, so nothing is lost; whether that is acceptable
+  before the finals is a judgement.
+- **F17** — a malformed overlay param refuses silently. Refusing to render junk is
+  the half that matters and it works; telling the payer is the half that is missing.
+
+**Environmental.** **F19** — the in-app scanner cannot decode a QR on the demo
+machine (`BarcodeDetector` is absent). Not a defect, but do not discover it on stage.
+
+**Needs hardware or an account.** **U1** (passkey onboarding) and **U2** (merchant
+payout rotation from a connected wallet) — see [Cannot be run here](#cannot-be-run-here).
+
 ---
 
 ## Findings register
@@ -40,6 +72,7 @@ green, and the relayer NOT carrying an EIP-7702 delegation (`eth_getCode` on
 | **F16** | **`?agent=` and `?edit=` open ANY well-formed address with no ownership check.** Shape is validated correctly (`isAddress` strict, never `getAddress`), but nothing establishes the wallet is the payer's. `/app?agent=0x…` renders a stranger's caps, bitmap, `spentToday` and balance with Revoke and Withdraw buttons; `/app?edit=0x…&allow=2` opens an editable policy form. Writes revert (`onlyOwner`) so nothing is lost, but this is the screen whose whole job is stating whose rules these are. Sharper on a deployed build, where every visitor shares one demo key. | `overlay-url.ts`, `agent-detail.tsx` | **Open — deferred.** The denial remedy already follows the right rule (it renders nothing for a wallet the payer does not own). The fix is to resolve against the payer's own `agents` list before opening, or open read-only when unowned — but `agents` loads async, so it needs the same deferred-open path the receipt has. Not landed the day before finals. |
 | **F17** | **A malformed overlay param opens nothing and says nothing.** `?pay=<bad handle>`, `?agent=<bad address>`, `?edit=<junk>` all resolve to no overlay and drop the payer on a bare tab with no indication a link was followed and refused. Worse for partial drops, where the overlay DOES open: `?sgd=4,50` (a comma) opens the pay flow on a blank keypad, and `?allow=<junk>` opens the denial-remedy form with nothing pre-ticked — so a payer taps Save, signs, pays gas and changes nothing. | `overlay-url.ts` | **Open — deferred.** Refusing to render junk is correct and is the important half; telling the payer is the missing half. Needs a `rejected`/`dropped` arm on `PendingOverlay` and a surfacing path, plus a re-run of the URL cases. Deferred as a design change, not a defect in what shipped. |
 | **F18** | The payer app's 14 Basescan links carried no external-link indicator, while the merchant, landing, directory and onboard surfaces all append `↗` — one app, two conventions. | payer surfaces | **Resolved** 20 Aug — 8 link sites now carry it, each wrapped in `aria-hidden` so a screen reader does not announce "north east arrow" as part of the link name (a reviewer caught that the first pass had not). |
+| **F19** | `BarcodeDetector` is unavailable in the demo Chrome, so the in-app scanner runs the camera and decodes nothing. `scan.tsx` documents this as a designed degraded path and the handle field underneath is the way through — but the consequence is that **the in-app scanner cannot read a QR code on this machine**, which is worth knowing before a rehearsal. The phone's own camera app opening `/pay/<handle>` is unaffected, and CLAUDE.md already names that as the stage path. | `scan.tsx` (no code change) | **Open — environmental, not a defect.** Recorded because it was discovered live during Phase 3b and would otherwise be re-discovered as a bug on stage. |
 
 **F10–F18 came from a four-agent review** (general code, silent failures, comment accuracy, type design) run over the uncommitted tree on 20 Aug. Two findings were reported independently by two reviewers — F11 and F12 — which is the reason both are graded above the rest. Every claim was re-checked against the code before being accepted; F10's first fix was itself wrong and was caught by measuring `history.length` in a browser rather than by reasoning.
 
@@ -96,10 +129,34 @@ so a change to either is a change to both.
 
 | #   | What                                | Expected                                                           | Result |
 | --- | ----------------------------------- | ------------------------------------------------------------------ | ------ |
-| 22  | `/pay/ah-hock-chicken-rice`, S$1.50 | Review card quotes ≈0.99 EURC, rate line names EURC                | —      |
-| 23  | Top up                              | Faucet grants EURC **sized for the S$5 cap** (≈3.31), not a flat 4 | —      |
-| 24  | Sign & pay                          | Settled card, Basescan link, row lands on the merchant feed        | —      |
-| 25  | Switch to USD, pay again            | ≈1.117652 USDC, both rows on one book                              | —      |
+| 22  | `/pay/ah-hock-chicken-rice`, S$1.50 | Review card quotes ≈0.99 EURC, rate line names EURC | **PASS on the figure, UNOBSERVED on the copy** — the settlement moved 0.993378 EURC, which is the correct ceiling quote at 1.5100, so the quote was right. Nobody recorded whether the rate line on screen named EURC |
+| 23  | Top up                              | Faucet grants EURC **sized for the S$5 cap** (≈3.31), not a flat 4 | **PASS** — balance delta proves it: 4.000000 − 0.993378 + **3.400000** = 6.406622, read off-chain. 3.40 is the per-token grant, not the flat 4 |
+| 24  | Sign & pay                          | Settled card, Basescan link, row lands on the merchant feed        | **PASS** — `0xdc2fcf97…`, block 45717884, gas 183,676. Decoded from the receipt rather than taken from the UI: payer `0xacAD…33F5`, tokenIn EURC, 0.993378 in → 1.500000 XSGD, fee 0.007500, net 1.492500, door `human` |
+| 25  | Switch to USD, pay again            | ≈1.117652 USDC, both rows on one book                              | — **not run.** Payer USDC is unchanged at 86.503834 |
+
+## Phase 3b — URL-addressable overlays
+
+The largest change in the sprint shipped with no steps in this file, which is how
+its two worst defects (**F10**, **F15**) reached a review rather than a test. These
+are the cases that were actually driven; the numbering is a letter because Phases
+4-11 are cross-referenced by number elsewhere in this file.
+
+| #    | What | Expected | Result |
+| ---- | ---- | -------- | ------ |
+| 25a  | Open the scanner | URL becomes `?scan=1` | **PASS** |
+| 25b  | Close it | `/app`, and **no** new history entry (close REPLACES) | **PASS** |
+| 25c  | Reopen | `?scan=1` back, history grew by one (open PUSHES) | **PASS** |
+| 25d  | Press Back | Overlay closes, still inside `/app` | **PASS** |
+| 25e  | **Cold load `/app?scan=1`** | Scanner opens from the URL alone | **PASS** — camera live, 640×480 |
+| 25f  | Open a receipt from Activity | `?receipt=<txHash>:<logIndex>` | **PASS** |
+| 25g  | Tab away to Agents | One history entry added, not two | **PASS** — 42 → 43. Was 39 → 41 before **F10**'s second fix |
+| 25h  | **Press Back** | Returns to `/app/activity?receipt=…` **and renders the receipt** | **PASS** — param survived, overlay restored |
+| 25i  | Press Forward | Returns to `/app/agents` | **PASS** |
+| 25j  | Junk params — `?shop=not a handle`, `?agent=0xdeadbeef`, a wrong-checksum address, `?edit=junk`, `?scan=0` | Each opens nothing; the URL is not rewritten | **PASS** (driven by the implementing agent, not re-checked here) |
+| 25k  | `?receipt=<key not in history>` | The "not in this wallet" screen, with the key echoed | **PASS** (fabricated key) |
+| 25l  | `?receipt=` while the history request FAILS | The **`unavailable`** screen — never "not in this wallet" | — **not run.** The local backend answers too fast to catch the window; this is **F12**'s fix and it is unverified |
+| 25m  | `?edit=0x…&allow=7` (unlisted category) | Nothing pre-ticked, and nothing added to the signed bitmap | — **not run.** This is **F19**'s fix |
+| 25n  | `/pay/:handle` → close | Lands on `/app`; a refresh does not reopen the payment | — **not run.** This is the ORIGINAL reported bug and it has not been re-driven since the fix |
 
 ## Phase 4 — the charge link
 
