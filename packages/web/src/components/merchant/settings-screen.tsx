@@ -344,116 +344,116 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
           ) : (
             /* The alternative was a Save button that 403s, which is the failure
                /onboard already refuses to ship: the worst version is someone
-               rewriting their shop name and losing it to a toast. Editing here
-               spends the relayer's gas key, which is what the gate protects —
-               it is emphatically NOT a review, because nothing in Gantry
-               reviews a merchant. */
+               rewriting their shop name and losing it to a toast. Whatever
+               closes editing, it is emphatically NOT a review, because nothing
+               in Gantry reviews a merchant. Unreachable today; see the note on
+               `editable` in app/merchant/[handle]/settings/page.tsx. */
             <p className="border-t border-hairline pt-5.5 text-fine text-quiet">
-              Editing a shop from this page spends Gantry&apos;s own gas key, so it runs on the demo
-              host instead. Your name, location and one-liner are still yours to change there.
-              Nothing here reviews or approves a shop.
+              Editing is closed on this host. Nothing here reviews or approves a shop.
             </p>
           )}
         </Card>
 
-        <Card radius="card" pad="none" className="p-5.5">
-          <Label>What your customers can pay in</Label>
-          {/* NOT a "Receive in" picker with the other currencies greyed out as
-              "soon". That framed the shop's currency as unbuilt, and it is not:
-              `GantryCore.XSGD` is immutable, set in the constructor, so the
-              settlement asset cannot vary by screen, by payer or by currency and
-              no roadmap can change it without a redeploy. The payer's own
-              settings screen already says "fixed rather than unbuilt", and two
-              surfaces of one product must not contradict each other.
-
-              The honest version of the same card is the half that IS a list: the
-              currencies a payer may send. Static text rather than buttons,
-              because nothing here was ever selectable — the old tiles carried no
-              onClick, and the SGD one was enabled and focusable while doing
-              nothing at all. */}
-          <div className="mt-3.5 flex flex-wrap gap-2">
-            {PAYABLE_CURRENCY_CODES.map((code) => {
-              const option = DISPLAY_CURRENCIES[code];
-              return (
-                <span
-                  key={code}
-                  className="flex h-13 min-w-24 flex-col items-start justify-center rounded-control bg-ink px-3.5 text-paper"
-                >
-                  <span className="text-btn-sm font-medium">
-                    {option.symbol} {code}
-                  </span>
-                  <span className="text-fine text-paper/70">{option.label}</span>
-                </span>
-              );
-            })}
-          </div>
-          <p className="mt-3.5 text-fine text-faint">
-            Whichever they send, you are paid in XSGD — the settlement token is fixed in the
-            contract and cannot be changed per shop. XSGD is mocked on this testnet; real XSGD
-            exists only on mainnet, via StraitsX.
-          </p>
-        </Card>
-
-        <Card tone="sunken" radius="card" pad="none" className="p-5.5">
-          <Label>What a payer sees</Label>
-          <Card radius="control-m" pad="none" className="mt-3.5 p-5.5">
-            <div className="flex items-center gap-3.5">
-              <ShopTile name={preview.displayName} />
-              <div className="min-w-0">
-                <div className="text-card-title">{preview.displayName}</div>
-                {preview.location ? (
-                  <div className="mt-0.75 text-meta-sm text-muted">{preview.location}</div>
-                ) : null}
+        {/* The right column is ONE grid child, not two. As direct children the
+            second one wrapped back under the form at `xl`, which put the live
+            preview of the form at the bottom left rather than beside the fields
+            it previews. The wrapper also fixes the stacking order below `xl`,
+            where source order is the reading order. */}
+        <div className="flex flex-col gap-5">
+          <Card tone="sunken" radius="card" pad="none" className="p-5.5">
+            <Label>What a payer sees</Label>
+            <Card radius="control-m" pad="none" className="mt-3.5 p-5.5">
+              <div className="flex items-center gap-3.5">
+                <ShopTile name={preview.displayName} />
+                <div className="min-w-0">
+                  <div className="text-card-title">{preview.displayName}</div>
+                  {preview.location ? (
+                    <div className="mt-0.75 text-meta-sm text-muted">{preview.location}</div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {merchant ? (
-                <Chip tone="accent">
-                  {CATEGORY_LABELS[merchant.categoryId] ?? merchant.categoryName}
-                </Chip>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {merchant ? (
+                  <Chip tone="accent">
+                    {CATEGORY_LABELS[merchant.categoryId] ?? merchant.categoryName}
+                  </Chip>
+                ) : null}
+                {/* "Registered", not "Verified": registration is permissionless and
+                    self-attested, and "verified" would imply a KYC step nobody ran. */}
+                <Chip>Registered on-chain</Chip>
+              </div>
+              {preview.blurb ? (
+                <p className="mt-4 border-t border-fill-subtle pt-4 text-meta text-muted">
+                  {preview.blurb}
+                </p>
               ) : null}
-              {/* "Registered", not "Verified": registration is permissionless and
-                  self-attested, and "verified" would imply a KYC step nobody ran. */}
-              <Chip>Registered on-chain</Chip>
-            </div>
-            {preview.blurb ? (
-              <p className="mt-4 border-t border-fill-subtle pt-4 text-meta text-muted">
-                {preview.blurb}
-              </p>
-            ) : null}
-            {/* The registration date renders as nothing while it is absent, never
-                as "Unknown" and never as an estimate. The backend walks
-                MerchantRegistered logs in amortised passes, so a cold process
-                answers "not yet" for the first minute — and this is the one fact
-                a shop would cite as proof it existed. */}
-            {merchant ? (
-              <Mono size="3xs" tone="faintest" className="mt-3.5 block">
-                merchant {shortAddress(merchant.merchantId)}
-                {merchant.registeredAt === undefined
-                  ? null
-                  : ` · registered ${shortDate(merchant.registeredAt)}`}
-              </Mono>
-            ) : null}
+              {/* The registration date renders as nothing while it is absent, never
+                  as "Unknown" and never as an estimate. The backend walks
+                  MerchantRegistered logs in amortised passes, so a cold process
+                  answers "not yet" for the first minute — and this is the one fact
+                  a shop would cite as proof it existed. */}
+              {merchant ? (
+                <Mono size="3xs" tone="faintest" className="mt-3.5 block">
+                  merchant {shortAddress(merchant.merchantId)}
+                  {merchant.registeredAt === undefined
+                    ? null
+                    : ` · registered ${shortDate(merchant.registeredAt)}`}
+                </Mono>
+              ) : null}
+            </Card>
+            {/* The chip is a claim about the HANDLE, and the name sitting above it
+                is not covered by it. These fields went ON-CHAIN on 11 Aug 2026 —
+                which changes where they are stored and changes nothing about
+                whether they are true. Self-attested text in a contract is still
+                self-attested; the honest-labels rule is what stops "on-chain" from
+                quietly reading as "verified" on the one screen that puts the two
+                next to each other. */}
+            <p className="mt-3.5 text-fine text-quiet">
+              Stored on-chain, but self-attested: nobody verifies these. The handle and category
+              cannot change at all.
+            </p>
+            <p className="mt-2.5 text-fine text-quiet">
+              This page carries nothing about your balance or your payouts.
+            </p>
           </Card>
-          {/* The chip is a claim about the HANDLE, and the name sitting above it
-              is not covered by it. These fields went ON-CHAIN on 11 Aug 2026 —
-              which changes where they are stored and changes nothing about
-              whether they are true. Self-attested text in a contract is still
-              self-attested; the honest-labels rule is what stops "on-chain" from
-              quietly reading as "verified" on the one screen that puts the two
-              next to each other. */}
-          <p className="mt-3.5 text-fine text-quiet">
-            The name, location and one-liner are yours to write. They live in GantryCore now, so
-            every payer surface reads the same record, but nobody verifies them, and
-            &ldquo;registered&rdquo; means a contract call anyone can make, not a check anyone
-            ran. The handle and category cannot change at all: the handle is claimed permanently
-            and the contract ships no setter for the category.
-          </p>
-          <p className="mt-2.5 text-fine text-quiet">
-            Payers reach this from a receipt or from a shop they have paid before. It carries
-            nothing about your balance or your payouts.
-          </p>
-        </Card>
+
+          <Card radius="card" pad="none" className="p-5.5">
+            <Label>What your customers can pay in</Label>
+            {/* NOT a "Receive in" picker with the other currencies greyed out as
+                "soon". That framed the shop's currency as unbuilt, and it is not:
+                `GantryCore.XSGD` is immutable, set in the constructor, so the
+                settlement asset cannot vary by screen, by payer or by currency and
+                no roadmap can change it without a redeploy. The payer's own
+                settings screen already says "fixed rather than unbuilt", and two
+                surfaces of one product must not contradict each other.
+
+                The honest version of the same card is the half that IS a list: the
+                currencies a payer may send. Static text rather than buttons,
+                because nothing here was ever selectable — the old tiles carried no
+                onClick, and the SGD one was enabled and focusable while doing
+                nothing at all. */}
+            <div className="mt-3.5 flex flex-wrap gap-2">
+              {PAYABLE_CURRENCY_CODES.map((code) => {
+                const option = DISPLAY_CURRENCIES[code];
+                return (
+                  <span
+                    key={code}
+                    className="flex h-13 min-w-24 flex-col items-start justify-center rounded-control bg-ink px-3.5 text-paper"
+                  >
+                    <span className="text-btn-sm font-medium">
+                      {option.symbol} {code}
+                    </span>
+                    <span className="text-fine text-paper/70">{option.label}</span>
+                  </span>
+                );
+              })}
+            </div>
+            <p className="mt-3.5 text-fine text-faint">
+              You are paid in XSGD whichever they send. It is fixed in the contract, and mocked on
+              this testnet.
+            </p>
+          </Card>
+        </div>
       </div>
 
       {/* Where the money goes, and the only write in this back-office the chain
@@ -466,8 +466,7 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
         <Card radius="card" pad="none" className="px-6 py-5.5">
           <Label>Chime on new payment</Label>
           <p className="mt-2.5 mb-3.5 text-meta text-muted">
-            A short tone when a settlement lands. Browsers need one tap on the page before they
-            will play sound, so it arms itself the first time you click anything.
+            A short tone when a settlement lands. Browsers need one tap on the page first.
           </p>
           <div className="flex items-center gap-3">
             <Toggle
