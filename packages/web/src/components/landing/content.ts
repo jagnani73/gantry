@@ -81,7 +81,7 @@ export const SEAMS = [
   },
   {
     title: "Merchants are self-attested",
-    body: "Categories carry no KYC, and the back-office has no login. Anyone with the URL can read a shop's takings, or rewrite the text on its public page. Payout, handle and category are out of reach.",
+    body: "Categories carry no KYC, and the back-office has no login: anyone with the URL can read a shop's takings. Changing them is a different matter, and both writes are signed by the payout key.",
   },
   {
     title: "There is no off-ramp",
