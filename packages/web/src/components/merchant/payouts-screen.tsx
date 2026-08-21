@@ -67,7 +67,11 @@ export function PayoutsScreen() {
             <Label size="lg" tone="on-accent-muted">
               Paid out to date
             </Label>
-            <Figure units={totals.net} size="payout" tone="on-accent" className="mt-4" />
+            {/* `kpi`, the same step Overview's headline takes. These two cards
+                make the same kind of claim about the same book and sit one nav
+                click apart, so a 52-vs-56 difference read as a difference in
+                KIND rather than as two sizes. */}
+            <Figure units={totals.net} size="kpi" tone="on-accent" className="mt-4" />
             <div className="mt-3.5 text-body-sm text-on-accent-body">
               {totals.count === 0
                 ? "Nothing has settled yet"

@@ -135,10 +135,10 @@
   --text-figure-kpi--line-height: 1;
   --text-figure-kpi--letter-spacing: -0.03em;
   --text-figure-kpi--font-weight: 600;
-  --text-figure-lg: 52px; /* payouts to date */
-  --text-figure-lg--line-height: 1;
-  --text-figure-lg--letter-spacing: -0.03em;
-  --text-figure-lg--font-weight: 600;
+  /* No 52px step. There was one, for Payouts' "paid out to date" alone, and it
+     put that headline four pixels under the Overview headline making the same
+     kind of claim — a difference that reads as meaning rather than as size.
+     Every merchant KPI headline is --text-figure-kpi. */
   --text-figure-balance: 50px; /* phone wallet balance */
   --text-figure-balance--line-height: 1;
   --text-figure-balance--letter-spacing: -0.03em;

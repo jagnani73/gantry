@@ -10,23 +10,30 @@ import { formatUnits, type Units } from "./units";
  * pairing wrong is the fastest way to make a payments screen look amateur — so
  * the pairing lives here and the size names are the places they appear, not px.
  */
-type FigureSize = "entry" | "paid" | "kpi" | "payout" | "balance" | "detail" | "sm";
+type FigureSize = "entry" | "paid" | "kpi" | "balance" | "detail" | "sm";
 
 const FIGURE: Record<FigureSize, string> = {
   entry: "text-entry", // 64 — phone amount pad
   paid: "text-figure-kpi", // 56 — payer success
-  kpi: "text-figure-kpi", // 56 — collected today
-  payout: "text-figure-lg", // 52 — paid out to date
+  kpi: "text-figure-kpi", // 56 — every merchant KPI headline
   balance: "text-figure-balance", // 50 — wallet balance
   detail: "text-figure", // 44 — drawer, receipt, agent detail
   sm: "text-figure-sm", // 40 — secondary KPI
 };
 
+/*
+ * There was a `payout` step at 52 between `kpi` and `balance`, for Payouts'
+ * "paid out to date" alone. It is gone, and the gap it leaves is deliberate:
+ * one screen having its own headline size is how two cards making the same kind
+ * of claim ended up four pixels apart, which reads as a difference in KIND
+ * rather than as two sizes. A merchant KPI headline is `kpi`. Adding a step back
+ * for one screen is the same mistake.
+ */
+
 const CURRENCY: Record<FigureSize, string> = {
   entry: "text-currency-xl", // 28
   paid: "text-currency-lg", // 24
   kpi: "text-currency", // 22
-  payout: "text-currency", // 22
   balance: "text-currency", // 22
   detail: "text-currency-sm", // 20
   sm: "text-currency-sm", // 20
