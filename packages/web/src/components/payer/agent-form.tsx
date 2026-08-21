@@ -606,6 +606,27 @@ function AgentFormFields({
             In S$. The contract stores {capToken}, so these convert at the swap&apos;s owner-set
             rate and the wallet enforces the converted figure.
           </p>
+          {/* Stated only when it costs something, and with the figure it costs.
+              `_setPolicy` zeroes the wallet's daily counter unconditionally —
+              `setPolicy` and `revoke` share that path — so ANY save here hands
+              the agent its whole allowance back, including a save that only
+              tightened the caps. That is a real consequence of pressing this
+              button and the form said nothing about it; the payer's own
+              rehearsal habit ("re-arm to reset the counter") is the same
+              mechanism seen from the other side.
+
+              A blanket sentence would be noise on the common path, where the
+              counter is already zero and nothing is given away. */}
+          {existing && BigInt(existing.spentToday) > 0n ? (
+            <p className="text-fine text-faint">
+              <span className="text-ink">
+                Saving resets today&apos;s spend, currently S$
+                {sgdFromCapUnits(existing.spentToday, BigInt(existing.rate))}, back to zero.
+              </span>{" "}
+              The wallet clears its daily counter whenever the policy is written, so the agent gets
+              a full allowance again today — even if you are lowering the cap.
+            </p>
+          ) : null}
 
           <Field label="Allowed at">
             <div className="flex flex-wrap gap-2">
