@@ -444,7 +444,12 @@ export async function registerMerchant(
   // Cooldown → in-flight → ceiling, the order faucet-core uses: the two cheap
   // per-caller checks first, so a caller hammering one IP is turned away without
   // consuming a global budget everyone shares.
-  const metered = !operator && config.onboardingMetered;
+  // Everywhere, not just on a public host. The `!isDemoHost` clause this used
+  // to carry was redundant against the case it was written for — `demo:reset`
+  // seeds through this route with `x-admin-token`, so `operator` is already true
+  // for it — and its only real effect was that the ceiling never ran on the
+  // machine anyone tests on.
+  const metered = !operator;
   if (metered) {
     const reservation = reserve(
       registerBudget,
@@ -664,7 +669,10 @@ export async function updateMerchantProfile(
   if (profileInFlight.has(key)) {
     throw new ApiError(429, "ProfileEditInProgress", "a profile edit from this address is already in flight");
   }
-  const metered = !operator && config.profileEditsMetered;
+  // See the note on the register path: metered everywhere, because the operator
+  // exemption already covers the rehearsal case and an unexercised limit is an
+  // untested one.
+  const metered = !operator;
   if (metered) {
     const now = Date.now();
     // PER-HANDLE FIRST, and the order is the whole point: a shop that has used

@@ -126,7 +126,7 @@ function classifyHost(nodeEnv: string | undefined): HostClass {
     // registration on a public host.
     console.warn(
       `NODE_ENV="${raw}" is not a value we recognise — treating this as a DEMO host, ` +
-        `which leaves the payer faucet unmetered and merchant registration unmetered. ` +
+        `which leaves the payer faucet unmetered (merchant writes are metered regardless). ` +
         `Set NODE_ENV=production if this is a public deployment.`,
     );
   }
@@ -228,12 +228,13 @@ export const config = {
    * code change (a Render env edit redeploys on its own).
    */
   onboardingEnabled: env.ONBOARDING !== "closed",
-  /**
-   * Whether that ceiling is enforced. Unmetered on a demo host for the same
-   * reason both faucet legs are: a rehearsal pass registers the canonical shops
-   * repeatedly and any sane public ceiling would stop it mid-run.
-   */
-  onboardingMetered: !isDemoHost,
+  /* `onboardingMetered` is gone (21 Aug). It was `!isDemoHost`, on the faucet's
+     reasoning that a rehearsal would trip a public ceiling — but `demo:reset`
+     seeds through the route with `x-admin-token` and the operator exemption
+     already covers it, so the clause bought nothing and cost the only thing that
+     matters for a limit: it never ran where anyone would notice it was wrong.
+     The faucet legs keep their version because THEIR rehearsal path is a payer
+     funding itself repeatedly, which carries no admin token. */
   /**
    * Whether strangers may edit a shop's display record. Open everywhere since
    * 21 Aug, alongside registration.
@@ -254,7 +255,6 @@ export const config = {
    * signature from that address and the limits become belt and braces.
    */
   profileEditsEnabled: env.PROFILE_EDITS !== "closed",
-  profileEditsMetered: !isDemoHost,
   /* The historical demo AgentPBMWallet used to be pinned here. It is gone: the
    * read path is owner-driven and answers for any wallet, the admin re-arm was
    * deleted with the rest of the server-side policy writes, and the wallet
