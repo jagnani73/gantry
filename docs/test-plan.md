@@ -52,11 +52,18 @@ are both driven and passing, and the demo policy is verified back to
 two ways in. Not blocking: the worst outcome is a keypad the customer retypes
 into.
 
-**Not yet driven:** Phase 11's two build checks (#70, #72), whose expectations
-were INVERTED on 21 Aug when merchant registration and profile editing were
-opened on every host — both used to assert that a production build hid a form,
-and now assert it ships one. #73 (the limits that replaced those gates) is
-driven and passing. Phases 1-10 are complete.
+**Every phase is driven. Nothing in the tables is left blank.** #70 and #72 closed
+as N/A rather than run: both asserted that a production build hid a form, and the
+build-time branch they tested was deleted on 21 Aug when registration and profile
+editing were opened on every host. Their replacement is #73, the runtime limits,
+which passes.
+
+**Still outstanding, and none of it is in this plan's tables:** **U1** and **U2**
+(need hardware or an account), **U3**, **U4** and **U6** (reachable from here,
+never driven — the euro agent door, `AGENT_USE_PAY_LINK=1`, and `demo:seed`), and
+**F17**'s partial-drop case, parked deliberately. One follow-up is recorded rather
+than done: merchant profile edits are bounded by rate limits and not by identity,
+and the chain already offers the identity (`msg.sender == merchant.payout`).
 
 ## Findings register
 
@@ -288,9 +295,9 @@ it.
 | #   | What                                   | Expected                                                                                                          | Result |
 | --- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------ |
 | 69  | `/merchant/<handle>/settings` in dev   | Editable profile; handle + category locked, each with its own reason                                              | —      |
-| 70  | Same, built with `NODE_ENV=production`                                                                 | **Expectation INVERTED 21 Aug.** It used to be "every field locked, no submit path". Profile editing is open on every host now, so the check is that the production build renders the SAME editable form as dev — i.e. no build-time branch survived. Handle and category stay locked, for their own reasons | —      |
+| 70  | Same, built with `NODE_ENV=production`                                                                 | **Expectation INVERTED 21 Aug.** It used to be "every field locked, no submit path". Profile editing is open on every host now, so the check is that the production build renders the SAME editable form as dev — i.e. no build-time branch survived. Handle and category stay locked, for their own reasons | **N/A — the thing this tested no longer exists.** It asserted that a production build hid a form, via a `process.env.NODE_ENV` branch in the server component. That branch is gone (21 Aug), and `grep -rn NODE_ENV packages/web/src` now returns only comments describing what used to be there — both pages return their component unconditionally. A build could only confirm that a component with no conditions in it renders. What replaced the gate is a set of RUNTIME limits, which is #73, and which is driven |
 | 71  | `/onboard` in dev                      | "permanently" appears once, on the handle tag; name/location/blurb say they can be updated, mechanism is "ask us" | —      |
-| 72  | `/onboard` in production                                                                               | **Expectation INVERTED 21 Aug.** It used to be "form not shipped at all". The form now ships and works; the gate is a runtime limit, not a build-time branch | —      |
+| 72  | `/onboard` in production                                                                               | **Expectation INVERTED 21 Aug.** It used to be "form not shipped at all". The form now ships and works; the gate is a runtime limit, not a build-time branch | **N/A — the thing this tested no longer exists.** It asserted that a production build hid a form, via a `process.env.NODE_ENV` branch in the server component. That branch is gone (21 Aug), and `grep -rn NODE_ENV packages/web/src` now returns only comments describing what used to be there — both pages return their component unconditionally. A build could only confirm that a component with no conditions in it renders. What replaced the gate is a set of RUNTIME limits, which is #73, and which is driven |
 | 73  | The merchant-write limits, against a `NODE_ENV=production` backend | Registration: per-IP 30s cooldown, in-flight guard, global 20/24h ceiling, `ONBOARDING=closed` switch. Edits: per-IP 10s, **per-handle 60s**, global 60/24h, `PROFILE_EDITS=closed` switch. Reservations released when nothing is written | **PASS** — driven 20–21 Aug. Register with no admin token → 201 (`0x0cab929b…`). 25 requests from 25 forwarded IPs → all through, which is the measurement that justifies the global ceiling at all, and all released (a broken release would have 429'd at #21). Ceiling forced to 0 → `OnboardingBudgetExhausted` before any chain write. `ONBOARDING=closed` → `OnboardingDisabled`. Edits: one lands, then three more to the SAME shop from three different IPs → `ProfileEditHandleCooldown`, while a different handle passes straight to its own 404 |
 
 ---
