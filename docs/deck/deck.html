@@ -69,6 +69,10 @@
   li b, li strong { color:var(--ink); font-weight:600; }
   .dark li b { color:var(--on-accent); }
   code, .mono { font-family:var(--mono); font-size:.92em; }
+  /* Chrome's print-to-pdf turns every `a` into a real PDF link annotation, which
+     is the only way an address on a slide is actually clickable. Inheriting the
+     colour keeps them from rendering as blue underlined web links on a deck. */
+  a { color:inherit; text-decoration:none; }
   .body { flex:1; display:flex; gap:44px; margin-top:26px; min-height:0; }
   .col { flex:1; min-width:0; display:flex; flex-direction:column; gap:18px; }
 
@@ -79,6 +83,10 @@
   td.yes { color:var(--accent); font-weight:600; }
   td.no  { color:var(--danger); font-weight:600; }
   td.num-cell { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  /* Six rows of run-of-show do not fit at the default row padding: the last one
+     lands under the footnote, and `.slide` is `overflow:hidden` so it clips
+     silently rather than telling you. */
+  table.tight th, table.tight td { padding:9px 14px; }
   .col-hi { background:var(--accent-tint); }
 
   /* ---------- cards ---------- */
@@ -254,9 +262,31 @@
   <div class="footnote">Two payer paths, one settlement function. The agent door has two sub-paths with different trust: <code>exact</code> is custodial, <code>gantry-pbm</code> is not.</div>
 </section>
 
-<!-- ============================ 4. HUMAN DOOR ============================ -->
+<!-- ============================ 4. THE DEMO ============================ -->
 <section class="slide">
   <div class="num">04</div>
+  <div class="eyebrow">Live, on Base Sepolia</div>
+  <h1>What you are about to see</h1>
+  <p class="lede">Two payers, one merchant, one settlement contract.</p>
+  <div class="body" style="flex-direction:column; margin-top:18px">
+    <table class="tight">
+      <thead><tr><th style="width:9%">Time</th><th style="width:36%">What happens</th><th>The point</th></tr></thead>
+      <tbody>
+        <tr><td class="num-cell">0:00</td><td>A printed standee at Maxwell Food Centre</td><td>Set up in two minutes, by someone who has never heard of a blockchain</td></tr>
+        <tr><td class="num-cell">0:20</td><td>A tourist scans it and signs once, in <b>euros</b></td><td>Real EURC in, Singapore dollars out. No ETH, no local bank account</td></tr>
+        <tr><td class="num-cell">1:00</td><td>An AI agent is handed <b>the same link</b></td><td>A browser gets a payment page, a machine gets <code>402 Payment Required</code></td></tr>
+        <tr><td class="num-cell">1:40</td><td>Both payments land in one merchant feed</td><td>Same URL, same contract. The shop cannot tell them apart</td></tr>
+        <tr><td class="num-cell">1:50</td><td>The agent asks for a S$4 cable and is refused</td><td><span class="mono">CategoryNotAllowed</span>, a contract revert rather than a backend check</td></tr>
+        <tr><td class="num-cell">2:15</td><td>Its owner revokes it from their own key</td><td>The kill switch is a signature, not a Gantry API call</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="footnote">Nothing here is a recording. If the venue network gives out I will say so before switching to the backup clip.</div>
+</section>
+
+<!-- ============================ 5. HUMAN DOOR ============================ -->
+<section class="slide">
+  <div class="num">05</div>
   <div class="eyebrow">The human door</div>
   <h1>They sign. They never transact.</h1>
   <div class="body">
@@ -278,9 +308,9 @@
   </div>
 </section>
 
-<!-- ============================ 5. AGENT DOOR ============================ -->
+<!-- ============================ 6. AGENT DOOR ============================ -->
 <section class="slide">
-  <div class="num">05</div>
+  <div class="num">06</div>
   <div class="eyebrow">The agent door</div>
   <h1>An unmodified client pays us</h1>
   <p class="lede">The same endpoint answers a machine with <code>402</code> and an x402 v2 challenge offering two schemes, each priced in <b>both currencies</b>. An agent with no shop in mind enumerates them all from <code>/discovery/resources</code> first, so the loop needs no human at any point.</p>
@@ -299,9 +329,9 @@
   <div class="footnote">I did not write the client. I wrote the server and the facilitator, and somebody else's unmodified <code>@x402/fetch</code> pays me end to end.</div>
 </section>
 
-<!-- ============================ 6. PBM + REFUSAL ============================ -->
+<!-- ============================ 7. PBM + REFUSAL ============================ -->
 <section class="slide">
-  <div class="num">06</div>
+  <div class="num">07</div>
   <div class="eyebrow">Purpose-bound money, pointed at software</div>
   <h1>Money with rules, and proof they hold</h1>
   <div class="body">
@@ -324,41 +354,6 @@
   </div>
 </section>
 
-<!-- ============================ 7. REAL VS MOCKED ============================ -->
-<section class="slide">
-  <div class="num">07</div>
-  <div class="eyebrow">Honest scope</div>
-  <h1>What is real, and what is mocked</h1>
-  <div class="body two-col-list rv" style="margin-top:24px">
-    <section>
-      <h3>Real</h3>
-      <ul>
-        <li>Four contracts deployed and <b>verified</b> on Base Sepolia</li>
-        <li>Payments settle in <b>real Circle testnet USDC or EURC</b>, payer&rsquo;s choice</li>
-        <li>x402 v2 wire format, paid by an unmodified client</li>
-        <li>On-chain policy denials, as contract reverts</li>
-        <li>Live LLM tool-use decisions, on <b>AIsa&rsquo;s</b> gateway</li>
-        <li>Anyone can register a shop on the live deployment</li>
-        <li>Both merchant writes signed by the shop&rsquo;s payout key</li>
-        <li>Real phone, real printed QR</li>
-      </ul>
-    </section>
-    <section>
-      <h3>Mocked</h3>
-      <ul>
-        <li><b>MockXSGD</b>, the only mocked token. XSGD exists on no testnet.</li>
-        <li>Owner-set FX rate, not a market</li>
-        <li>One trusted relayer key, briefly custodial on the <span class="mono">exact</span> path</li>
-        <li>Self-attested categories, no KYC. <b>Registered, never verified.</b></li>
-        <li>No merchant login, so anyone with the URL can read a shop&rsquo;s takings. Changing them is signed by the payout key.</li>
-        <li>The deployed demo payer is one shared account</li>
-        <li>No fiat off-ramp</li>
-      </ul>
-    </section>
-  </div>
-  <div class="footnote">Volunteering the mocks is what makes everything else on these slides believable.</div>
-</section>
-
 <!-- ============================ 8. BUILT AND RUNNING ============================ -->
 <section class="slide">
   <div class="num">08</div>
@@ -367,10 +362,10 @@
   <div class="body">
     <div class="col">
       <div class="addr">
-        <div><span>GantryCore</span><span>0xE6289ceA9232af61d7e4F30A67a848c0C322cc93</span></div>
-        <div><span>FixedRateSwap</span><span>0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d</span></div>
-        <div><span>MockXSGD</span><span>0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503</span></div>
-        <div><span>AgentPBMWalletFactory</span><span>0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1</span></div>
+        <div><span>GantryCore</span><a href="https://sepolia.basescan.org/address/0xE6289ceA9232af61d7e4F30A67a848c0C322cc93"><span>0xE6289ceA9232af61d7e4F30A67a848c0C322cc93</span></a></div>
+        <div><span>FixedRateSwap</span><a href="https://sepolia.basescan.org/address/0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d"><span>0xd84F8C46E7CAEA01188B6e27E8f1a07aD8311a0d</span></a></div>
+        <div><span>MockXSGD</span><a href="https://sepolia.basescan.org/address/0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503"><span>0xffebE1735e22c274Ae30B2fBb3d4e422a75e3503</span></a></div>
+        <div><span>AgentPBMWalletFactory</span><a href="https://sepolia.basescan.org/address/0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1"><span>0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1</span></a></div>
       </div>
       <div class="kpi" style="margin-top:4px">
         <div class="box"><div class="k">Tests</div><div class="v">566</div></div>
@@ -418,21 +413,20 @@
   <div style="display:flex; gap:44px; flex:1; margin-top:6px">
     <div style="flex:1; display:flex; flex-direction:column; gap:16px">
       <ul>
-        <li><b>Passkey merchant wallets.</b> FaceID at signup, no seed phrase, and Gantry never holds the key.</li>
+        <li><b>Tap to pay, over NFC.</b> The standee already carries a URL, and an NFC tag carries the same one, so a tourist taps instead of scanning.</li>
         <li><b>Real XSGD liquidity</b> behind the same <code>IGantrySwap</code> interface, through an aggregator or an RFQ quote.</li>
         <li><b>The institutions door:</b> payroll and disbursements.</li>
         <li><b>SGQR+ interoperability</b>, and mainnet XSGD.</li>
       </ul>
       <div style="font-size:15px; color:var(--on-accent-body); line-height:1.45">
-        Asking a hawker for a payout address is the least realistic step in the whole flow, and it is the first thing I would fix.
+        A hawker should never have to see a hex string. The passkey account is already in; the rest of this list is what turns a prototype into a rail.
       </div>
     </div>
     <div style="flex:0 0 400px; display:flex; flex-direction:column; justify-content:center; gap:22px">
       <div class="hero" style="font-size:31px; line-height:1.22">x402 standardized how machines pay. <span class="soft">Gantry is the rail that lets one merchant accept payments from machines and humans alike.</span></div>
       <div style="display:flex; flex-direction:column; gap:7px; font-size:15px; color:var(--on-accent-body)">
-        <div><span class="chip" style="background:var(--accent-soft); color:var(--accent)">The ask &middot; Best Student Team</span></div>
-        <div class="mono" style="margin-top:4px">github.com/jagnani73/gantry</div>
-        <div class="mono">gantry-innovatex.vercel.app</div>
+        <div class="mono"><a href="https://github.com/jagnani73/gantry">github.com/jagnani73/gantry</a></div>
+        <div class="mono"><a href="https://gantry-innovatex.vercel.app">gantry-innovatex.vercel.app</a></div>
       </div>
     </div>
   </div>
