@@ -94,9 +94,9 @@ const RAILS = [
     name: "Gantry",
     reach: 3,
     stops: "Residents + tourists + agents",
-    note: `One integration reaches all three. Software pays over x402, the standard machines already use, and the shop is paid in XSGD minus ${GANTRY_FEE_LABEL}.`,
+    note: `One integration reaches all three. A tourist pays in dollars or euros, software pays over x402, and the shop is paid in XSGD minus ${GANTRY_FEE_LABEL}.`,
     extra:
-      "Agent spending stays inside on-chain allowances its owner set: daily caps, category allowlists, expiry. Denials are contract reverts, not backend checks.",
+      "Agent spending stays inside on-chain allowances its owner set: daily caps, category allowlists, expiry. Denials are contract reverts rather than backend checks, and anyone can re-derive one from public chain state.",
   },
 ] as const;
 

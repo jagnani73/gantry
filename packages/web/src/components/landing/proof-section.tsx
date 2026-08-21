@@ -90,8 +90,9 @@ export function ProofSection() {
         </div>
         <p className="max-w-[62ch] text-body-lg text-quiet">
           One form (handle, payout address, category), and the shop is registered on-chain and
-          printing its QR. No terminal, no underwriting, no bank visit. We do it on stage, for a
-          shop that did not exist when the demo started.
+          printing its QR. No terminal, no underwriting, no bank visit, and no approval step for us
+          to grant — the registry is permissionless, so the form on this site is open to anyone. We
+          do it on stage, for a shop that did not exist when the demo started.
         </p>
       </Card>
     </section>

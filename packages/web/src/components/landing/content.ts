@@ -36,7 +36,10 @@ export const CARD_FEE_LABEL = formatBps(CARD_FEE_BPS);
 
 export const IDEA = [
   { n: "01", text: "A payment is an intent: merchant M requests S$X." },
-  { n: "02", text: "A QR code and an HTTP 402 response are two encodings of that same intent." },
+  {
+    n: "02",
+    text: "A QR code and an HTTP 402 are two encodings of that same intent — so one URL can be both.",
+  },
   { n: "03", text: "One contract consumes both, so a hawker and an API get paid the same way." },
 ] as const;
 
@@ -78,7 +81,7 @@ export const SEAMS = [
   },
   {
     title: "Merchants are self-attested",
-    body: "Categories carry no KYC, and the back-office has no login. Anyone with the URL can read a shop's takings.",
+    body: "Categories carry no KYC, and the back-office has no login. Anyone with the URL can read a shop's takings, or rewrite the text on its public page. Payout, handle and category are out of reach.",
   },
   {
     title: "There is no off-ramp",
@@ -119,6 +122,11 @@ export const CONTRACTS: ContractRow[] = [
     name: "USDC",
     note: "Circle's real testnet contract: payers sign against it",
     address: BASE_SEPOLIA_ADDRESSES.realUsdc,
+  },
+  {
+    name: "EURC",
+    note: "The second payable currency, also Circle's own",
+    address: BASE_SEPOLIA_ADDRESSES.realEurc,
   },
   {
     name: "MockXSGD",

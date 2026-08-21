@@ -72,7 +72,7 @@ export function DoorsPanel() {
             light
             label="Both settle through"
             title="One contract"
-            body={`Whatever stablecoin arrived is swapped atomically. The merchant receives XSGD, minus ${GANTRY_FEE_LABEL}.`}
+            body={`USDC or EURC in, swapped atomically. The merchant receives XSGD, minus ${GANTRY_FEE_LABEL}.`}
             footer={
               <a
                 className="focus-ring rounded-badge text-faint transition-colors hover:text-accent"
@@ -86,6 +86,28 @@ export function DoorsPanel() {
               </a>
             }
           />
+        </div>
+
+        {/* The doors above are drawn apart because they differ in trust; these
+            two lines are here because they are where the separation collapses.
+            One URL is literally both doors, and an agent can reach the rail
+            without a human having chosen the shop first — neither claim fits
+            inside a card that has to pick a single door to describe. */}
+        <div className="mt-8.5 grid grid-cols-1 gap-x-14 gap-y-4 border-t border-on-accent/15 pt-7 md:grid-cols-2">
+          <p className="text-body text-on-accent-body">
+            <span className="text-on-accent">One URL serves both.</span>{" "}
+            <Mono size="xs" tone="on-accent-muted">
+              /pay/&lt;handle&gt;?sgd=
+            </Mono>{" "}
+            redirects a person into the payer app and answers a machine with the same 402.
+          </p>
+          <p className="text-body text-on-accent-body">
+            <span className="text-on-accent">An agent can find the shop, too.</span>{" "}
+            <Mono size="xs" tone="on-accent-muted">
+              /discovery/resources
+            </Mono>{" "}
+            lists every registered merchant as a payable resource, so nobody has to pick one for it.
+          </p>
         </div>
       </Card>
     </section>

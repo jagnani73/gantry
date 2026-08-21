@@ -23,8 +23,8 @@ export function LandingHero() {
 
         <p className="mt-6.5 max-w-[52ch] text-standfirst text-pretty text-quiet">
           A merchant integrates once and gets paid by anyone: a person scanning a printed QR, or an
-          AI agent paying over x402. Both are the same on-chain payment intent. The shop always
-          receives XSGD.
+          AI agent paying over x402. Both are the same on-chain payment intent. Pay in dollars or
+          euros; the shop is always paid in Singapore dollars.
         </p>
 
         <div className="mt-10 flex flex-wrap gap-3">
