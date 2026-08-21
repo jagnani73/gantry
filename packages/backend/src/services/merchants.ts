@@ -18,13 +18,8 @@ import { countMerchants, getMerchantRow, insertMerchant, listMerchants } from ".
 import { ApiError } from "../errors";
 import { indexerStatus } from "../indexer";
 import { sendRelayerTx } from "../relayer";
-import {
-  emptyBudget,
-  msUntilReset,
-  release,
-  reserve,
-  type BudgetState,
-} from "./faucet-budget";
+import { emptyBudget, msUntilReset, release, reserve } from "./faucet-budget";
+import { emptyHandleBudgets, releaseForHandle, reserveForHandle } from "./handle-budget";
 import {
   normalizeProfile,
   resolveProfile,
@@ -323,14 +318,7 @@ let profileBudget = emptyBudget();
  * is every handle anyone has ever aimed at.
  */
 const PER_HANDLE_EDITS_DAILY = 10n;
-const handleBudgets = new Map<string, BudgetState>();
-
-function handleBudgetOf(handle: string, now: number): BudgetState {
-  for (const [key, state] of handleBudgets) {
-    if (now - state.windowStart >= PROFILE_WINDOW_MS) handleBudgets.delete(key);
-  }
-  return handleBudgets.get(handle) ?? emptyBudget();
-}
+const handleBudgets = emptyHandleBudgets();
 
 /**
  * Bounds CONCURRENT registrations per IP. The cooldown alone only rate-limits
@@ -683,16 +671,15 @@ export async function updateMerchantProfile(
     // its own share must be refused WITHOUT touching the shared budget, or the
     // per-handle cap achieves nothing — the attacker's refused attempts would
     // still be the thing that drains everyone else's allowance.
-    const perHandle = reserve(
-      handleBudgetOf(handle, now),
-      1n,
+    const perHandle = reserveForHandle(
+      handleBudgets,
+      handle,
       PER_HANDLE_EDITS_DAILY,
       now,
       PROFILE_WINDOW_MS,
     );
-    handleBudgets.set(handle, perHandle.state);
     if (!perHandle.ok) {
-      const resetInMs = msUntilReset(perHandle.state, now, PROFILE_WINDOW_MS);
+      const resetInMs = perHandle.resetInMs;
       throw new ApiError(
         429,
         "ProfileEditHandleBudgetExhausted",
@@ -704,7 +691,7 @@ export async function updateMerchantProfile(
     const reservation = reserve(profileBudget, 1n, PUBLIC_PROFILE_EDITS_DAILY, now, PROFILE_WINDOW_MS);
     profileBudget = reservation.state;
     if (!reservation.ok) {
-      handleBudgets.set(handle, release(perHandle.state, 1n));
+      releaseForHandle(handleBudgets, handle);
       const resetInMs = msUntilReset(profileBudget, now, PROFILE_WINDOW_MS);
       throw new ApiError(
         429,
@@ -812,8 +799,7 @@ export async function updateMerchantProfile(
     // and a shop becomes uneditable by its own owner.
     if (metered && !written) {
       profileBudget = release(profileBudget, 1n);
-      const held = handleBudgets.get(handle);
-      if (held) handleBudgets.set(handle, release(held, 1n));
+      releaseForHandle(handleBudgets, handle);
     }
   }
 }
