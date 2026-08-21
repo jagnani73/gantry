@@ -39,10 +39,11 @@ const REPLAY_GRACE_MS = 2_000;
  * directions are not symmetrical. Shorter than the animation and the class comes
  * off mid-decay, so the tint vanishes in a step — the animation cannot be
  * restarted to finish. Longer is harmless: the fill mode holds it at zero. The
- * previous pairing was 1.2s of fade inside a 2s flag, and it was never noticed
- * on a counter, which is what ten seconds is for.
+ * previous pairing was 1.2s of fade inside a 2s flag, which was never noticed on
+ * a counter; three is what that bought, and it is a JUDGEMENT rather than a
+ * measurement, so move it here and in the keyframes together.
  */
-const FRESH_MS = 10_000;
+const FRESH_MS = 3_000;
 
 export function settlementKey(row: SettlementEvent): string {
   return `${row.txHash}:${row.logIndex}`;

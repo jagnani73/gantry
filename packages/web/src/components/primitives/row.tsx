@@ -33,7 +33,7 @@ export interface RowProps extends React.ComponentProps<"div"> {
   /**
    * A row that just arrived. One-shot accent tint rather than a border, because a
    * border would change the row's height and shove the rest of the feed down.
-   * The tint holds and then decays over ten seconds — see `@utility fresh-tint`,
+   * The tint holds and then decays over three seconds — see `@utility fresh-tint`,
    * which owns the layer, the timing and the reduced-motion form. The caller
    * decides how long the flag stays on, and must not take it off early: the
    * animation is not restartable, so a row stripped mid-decay snaps clear.

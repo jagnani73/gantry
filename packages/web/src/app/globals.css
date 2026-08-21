@@ -455,7 +455,7 @@
   );
 }
 
-/* The mark a settlement wears for its first ten seconds, so a merchant looking
+/* The mark a settlement wears for its first three seconds, so a merchant looking
    up from the counter can tell which rows are new. Three things about it are
    deliberate:
  *
@@ -467,14 +467,16 @@
  * declaration, so animating the row's background left the newest row — the one
  * most likely to be clicked, and a <button> that opens the drawer — with no
  * hover response for as long as the mark lasted. At 1.2s that was invisible; at
- * ten seconds it is a dead control. Animating a pseudo-element's opacity leaves
- * the row's background free. The layer sits at z-index -1 under an `isolate`,
- * so it paints over the hover fill but UNDER the row's text, which is what lets
- * it be a fully opaque colour rather than a wash across the numbers.
+ * any length worth seeing it is a dead control. Animating a pseudo-element's
+ * opacity leaves the row's background free. The layer sits at z-index -1 under
+ * an `isolate`, so it paints over the hover fill but UNDER the row's text,
+ * which is what lets it be a fully opaque colour rather than a wash across the
+ * numbers.
  *
- * It HOLDS before it decays. A linear ten-second fade reads as no event at all
- * — it never has an edge, and it sits at a clearly visible tint through the
- * middle of its life. Full tint for the first fifth, then out. */
+ * It HOLDS before it decays. A fade that starts the instant the row lands has
+ * no edge and reads as no event at all, which is what the 1.2s version got
+ * wrong and why nobody ever noticed it. Full tint for the first fifth, then
+ * out. */
 @keyframes fresh-tint {
   0%,
   20% {
@@ -496,7 +498,7 @@
     z-index: -1;
     border-radius: var(--radius-row);
     background-color: var(--color-accent-tint);
-    animation: fresh-tint 10s ease-out 1 forwards;
+    animation: fresh-tint 3s ease-out 1 forwards;
     pointer-events: none;
   }
 
@@ -505,7 +507,7 @@
      the blanket opt-out below must not leave a reduced-motion merchant with no
      mark at all. `animation-name: none` survives that block (it forces duration
      and iteration count, never the name), which drops the fade and leaves the
-     tint standing for the same ten seconds the class is on the row. */
+     tint standing for the whole window the class is on the row. */
   @media (prefers-reduced-motion: reduce) {
     &::after {
       animation: none;
