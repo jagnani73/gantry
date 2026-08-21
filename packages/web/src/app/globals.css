@@ -316,9 +316,9 @@
   --default-transition-duration: 120ms;
   --default-transition-timing-function: ease;
 
-  /* A settlement that just landed. Tint, never a border: a border would resize
-     the row and shove the whole feed down by 2px as each payment arrives. */
-  --animate-accent-tint: accent-tint 1.2s ease-in-out 1;
+  /* A settlement that just landed is the one piece of motion here that is NOT
+     an `--animate-*` utility — it paints a layer the row does not otherwise
+     have, so it lives with its keyframes beside `@utility fresh-tint` below. */
   --animate-overlay-in: overlay-in 180ms ease-out; /* scrims, fades */
   --animate-drawer-in: drawer-in 180ms ease-out; /* merchant transaction drawer */
   --animate-overlay-push: overlay-push 240ms ease-out; /* phone full-screen overlay */
@@ -327,14 +327,6 @@
      no longer there. */
   --animate-sheet-in: sheet-in 180ms ease-out;
 
-  @keyframes accent-tint {
-    from {
-      background-color: var(--color-accent-tint);
-    }
-    to {
-      background-color: transparent;
-    }
-  }
   @keyframes overlay-in {
     from {
       opacity: 0;
@@ -463,6 +455,64 @@
   );
 }
 
+/* The mark a settlement wears for its first ten seconds, so a merchant looking
+   up from the counter can tell which rows are new. Three things about it are
+   deliberate:
+ *
+ * It is a TINT, never a border — a border would resize the row and shove the
+ * whole feed down as each payment arrives.
+ *
+ * It is a LAYER rather than the row's own `background-color`, which is what the
+ * 1.2s version animated. A running animation outranks the `hover:bg-fill-hover`
+ * declaration, so animating the row's background left the newest row — the one
+ * most likely to be clicked, and a <button> that opens the drawer — with no
+ * hover response for as long as the mark lasted. At 1.2s that was invisible; at
+ * ten seconds it is a dead control. Animating a pseudo-element's opacity leaves
+ * the row's background free. The layer sits at z-index -1 under an `isolate`,
+ * so it paints over the hover fill but UNDER the row's text, which is what lets
+ * it be a fully opaque colour rather than a wash across the numbers.
+ *
+ * It HOLDS before it decays. A linear ten-second fade reads as no event at all
+ * — it never has an edge, and it sits at a clearly visible tint through the
+ * middle of its life. Full tint for the first fifth, then out. */
+@keyframes fresh-tint {
+  0%,
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@utility fresh-tint {
+  position: relative;
+  isolation: isolate;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: var(--radius-row);
+    background-color: var(--color-accent-tint);
+    animation: fresh-tint 10s ease-out 1 forwards;
+    pointer-events: none;
+  }
+
+  /* The one piece of motion on either surface that carries meaning the layout
+     does not: which rows are new is not written anywhere else on the screen, so
+     the blanket opt-out below must not leave a reduced-motion merchant with no
+     mark at all. `animation-name: none` survives that block (it forces duration
+     and iteration count, never the name), which drops the fade and leaves the
+     tint standing for the same ten seconds the class is on the row. */
+  @media (prefers-reduced-motion: reduce) {
+    &::after {
+      animation: none;
+    }
+  }
+}
+
 @media print {
   .no-print {
     display: none !important;
@@ -481,7 +531,10 @@ main {
 }
 
 /* Motion is decoration here — none of it carries meaning that the layout does
-   not already carry — so it is safe to switch off wholesale. */
+   not already carry — so it is safe to switch off wholesale. The ONE exception
+   is `fresh-tint`, which is the only place a row's newness is stated; it opts
+   out above by dropping its animation-name, which this block does not force.
+   Anything added here that a screen has no other way to say needs the same. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

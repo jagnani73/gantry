@@ -33,6 +33,10 @@ export interface RowProps extends React.ComponentProps<"div"> {
   /**
    * A row that just arrived. One-shot accent tint rather than a border, because a
    * border would change the row's height and shove the rest of the feed down.
+   * The tint holds and then decays over ten seconds — see `@utility fresh-tint`,
+   * which owns the layer, the timing and the reduced-motion form. The caller
+   * decides how long the flag stays on, and must not take it off early: the
+   * animation is not restartable, so a row stripped mid-decay snaps clear.
    */
   highlight?: boolean;
   as?: React.ElementType;
@@ -57,7 +61,7 @@ export function Row({
         divider && DIVIDER[divider],
         interactive &&
           "focus-ring w-full cursor-pointer text-left transition-colors hover:bg-fill-hover",
-        highlight && "animate-accent-tint",
+        highlight && "fresh-tint",
         className,
       )}
       {...props}

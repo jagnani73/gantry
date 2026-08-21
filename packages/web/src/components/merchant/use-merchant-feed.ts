@@ -31,9 +31,18 @@ const PAGE_SIZE = 50;
  * otherwise chime for every payment taken since lunch. */
 const REPLAY_GRACE_MS = 2_000;
 
-/** How long a row keeps its one-shot arrival tint. Cleared afterwards so that
- * navigating away and back does not replay the highlight on stale rows. */
-const FRESH_MS = 2_000;
+/**
+ * How long a row keeps its one-shot arrival tint. Cleared afterwards so that
+ * navigating away and back does not replay the highlight on stale rows.
+ *
+ * It must MATCH the `fresh-tint` keyframes in `globals.css`, and the two failure
+ * directions are not symmetrical. Shorter than the animation and the class comes
+ * off mid-decay, so the tint vanishes in a step — the animation cannot be
+ * restarted to finish. Longer is harmless: the fill mode holds it at zero. The
+ * previous pairing was 1.2s of fade inside a 2s flag, and it was never noticed
+ * on a counter, which is what ten seconds is for.
+ */
+const FRESH_MS = 10_000;
 
 export function settlementKey(row: SettlementEvent): string {
   return `${row.txHash}:${row.logIndex}`;
