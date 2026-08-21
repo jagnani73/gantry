@@ -94,12 +94,15 @@ const CONTRACTS = [
 type SaveState =
   | { kind: "idle" }
   | { kind: "saving" }
+  /** Declined in the wallet. Its own state rather than an error: nothing failed,
+   * the merchant chose, and the draft is still there to retry. */
+  | { kind: "declined"; message: string }
   | { kind: "error"; message: string; field?: ProfileField };
 
 export function SettingsScreen({ editable }: { editable: boolean }) {
   const { handle, merchant, chime, replace } = useMerchantContext();
   const toast = useToast();
-  const { signer, signProfileEdit } = useProfileWrites();
+  const { signer, ready: walletReady, signProfileEdit } = useProfileWrites();
 
   /**
    * Whether THIS browser can change the shop's details, which since 21 Aug is a
@@ -113,7 +116,10 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
    * so neither is this.
    */
   const owns =
-    merchant !== null && signer !== null && signer.toLowerCase() === merchant.payout.toLowerCase();
+    merchant !== null &&
+    walletReady &&
+    signer !== null &&
+    signer.toLowerCase() === merchant.payout.toLowerCase();
   const canEdit = editable && owns;
 
   /**
@@ -203,7 +209,16 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
       // now raise before the request is ever sent.
       // `describeWriteError` already passes an ApiClientError through verbatim,
       // so one call covers both halves.
-      const message = describeWriteError(err).headline;
+      const described = describeWriteError(err);
+      const message = described.headline;
+      // A declined prompt is a DECISION, not a fault — the same line
+      // `onboard/passkey-payout.tsx` takes about a cancelled passkey. It still
+      // states what happened (nothing was sent, the draft survives), but it does
+      // not raise an alert or a red toast for something the merchant chose.
+      if (described.rejected) {
+        setSave({ kind: "declined", message });
+        return;
+      }
       // A transport failure is NOT a verdict. The server does a chain-touching
       // read before it writes, and on a cold host that read is the slow part —
       // so "client gave up at 12s" and "the write landed" are the SAME run, not
@@ -239,11 +254,19 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
       // The inline card is the record; the toast is what gets NOTICED — and it is
       // the only one that survives this screen unmounting. The merchant screens
       // are routes, so navigating away mid-request makes `setSave` a silent
-      // no-op, and on a production host this route always 403'd (open on every
-      // host since 21 Aug, bounded by rate limits instead), so that was the
-      // default outcome rather than an edge case. Same split, and the same
-      // reasoning, as the payer's wallet top-up.
-      toast.error(`Shop profile not saved. ${message}`);
+      // no-op. Same split, and the same reasoning, as the payer's wallet top-up.
+      //
+      // It takes the SAME `unresolved` branch as the card, which it did not used
+      // to: the card said "may still have been saved" while the toast beside it
+      // said "not saved", at the same moment, on the one outcome the backend had
+      // explicitly reported as unknown. The message that outlives the screen was
+      // the definite and possibly false one, which is the rule about ambiguous
+      // outcomes failing on the branch built to honour it.
+      toast.error(
+        unresolved
+          ? "Shop profile may not have saved. Reload this screen to see what is stored."
+          : `Shop profile not saved. ${message}`,
+      );
     }
   }
 
@@ -359,6 +382,8 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
             <p role="alert" className="text-meta text-danger">
               {save.message}
             </p>
+          ) : save.kind === "declined" ? (
+            <p className="text-meta text-quiet">{save.message}</p>
           ) : null}
 
           {canEdit ? (
@@ -387,8 +412,13 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
             <p className="border-t border-hairline pt-5.5 text-fine text-quiet">
               {!editable
                 ? "Editing is closed on this host. Nothing here reviews or approves a shop."
-                : merchant === null
-                  ? "Reading this shop's record."
+                : merchant === null || !walletReady
+                  ? /* Both are "not asked yet" rather than "absent". Telling a
+                       returning merchant to connect a wallet they already have
+                       connected, then swapping the rows under them a moment
+                       later, is the failure the payer app's `ready` rule exists
+                       to stop. */
+                    "Checking which account is signing."
                   : signer === null
                     ? "Changes to a shop's details are signed by the address its payouts go to. Connect that wallet to edit."
                     : `You are connected as ${shortAddress(signer)}, which is not the address this shop's payouts go to. Only that address can change these details.`}

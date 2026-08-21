@@ -33,11 +33,23 @@ export interface ProfileWrites {
   /** The address in the browser wallet, or null. The screen compares it against
    * the shop's payout to decide whether the form does anything. */
   signer: Address | null;
+  /**
+   * Has the wallet finished answering? FALSE while wagmi reconnects.
+   *
+   * Without this, `signer === null` collapses "no wallet" and "not asked yet"
+   * into one answer, and the screen renders the empty state for the reconnect —
+   * so a merchant whose wallet IS connected is told to connect it, and the
+   * locked rows then swap to inputs a moment later. On the one screen whose job
+   * is to state which account signs, and with a layout shift. The payer app
+   * carries the same rule for the same reason (`PayerIdentity.ready`): one is a
+   * spinner, the other is an empty state.
+   */
+  ready: boolean;
   signProfileEdit(merchantId: Hex, profile: MerchantProfile): Promise<ProfileEditProof>;
 }
 
 export function useProfileWrites(): ProfileWrites {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, status } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
 
@@ -83,5 +95,11 @@ export function useProfileWrites(): ProfileWrites {
     [isConnected, switchChainAsync, walletClient],
   );
 
-  return { signer: isConnected && address ? address : null, signProfileEdit };
+  return {
+    signer: isConnected && address ? address : null,
+    // `reconnecting` is the state a returning merchant lands in on every load;
+    // `connecting` is an in-progress connect. Neither is an answer yet.
+    ready: status !== "reconnecting" && status !== "connecting",
+    signProfileEdit,
+  };
 }
