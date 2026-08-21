@@ -205,7 +205,8 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
       // The inline card is the record; the toast is what gets NOTICED — and it is
       // the only one that survives this screen unmounting. The merchant screens
       // are routes, so navigating away mid-request makes `setSave` a silent
-      // no-op, and on a production host this route ALWAYS 403s, so that was the
+      // no-op, and on a production host this route always 403'd (open on every
+      // host since 21 Aug, bounded by rate limits instead), so that was the
       // default outcome rather than an edge case. Same split, and the same
       // reasoning, as the payer's wallet top-up.
       toast.error(`Shop profile not saved. ${message}`);
@@ -234,7 +235,9 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
         {/* No `as="form"` and no onSubmit when editing is off: an inert form is
             still a form, and Enter in a text field would post it. There are no
             text fields in that branch, which is the point — the decision is
-            made on the server, so the editable version is never sent. */}
+            made on the server, so the editable version is never sent — NO LONGER TRUE
+              since 21 Aug: the page hardcodes `editable`, and the gate is a
+              runtime limit the backend applies. See the note on that page. */}
         <Card
           {...(editable ? ({ as: "form", onSubmit: submit } as const) : {})}
           radius="card"

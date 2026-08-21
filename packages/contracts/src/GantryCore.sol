@@ -210,8 +210,12 @@ contract GantryCore is Ownable2Step {
     /// @notice Rewrites a merchant's display record. Relayer-only, deliberately: the
     ///         back-office has no login and no wallet, so a merchant-signed write would
     ///         need both, and a permissionless one would let anyone rename any shop.
-    ///         Operator-editable is therefore the honest description — the UI says
-    ///         "contact the operator" rather than offering a form that cannot write.
+    ///         Operator-editable is therefore the honest description of the CONTRACT.
+    ///         Off-chain, the relayer relays this for anyone who asks (21 Aug), bounded
+    ///         by per-IP and per-handle limits rather than by identity — so "anyone can
+    ///         rename any shop" is the live exposure, and it is bounded rather than
+    ///         prevented. It is survivable only because of the @dev note below: no money
+    ///         moves, and the real merchant can rewrite it back through the same route.
     /// @dev    Handle, payout and category are NOT touched here. The handle is permanent,
     ///         the payout rotates only through `setMerchantPayout` (gated on the payout
     ///         itself, so this relayer power cannot redirect anyone's money), and the

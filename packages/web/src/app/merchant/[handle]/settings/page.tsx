@@ -16,9 +16,14 @@ import { SettingsScreen } from "@/components/merchant/settings-screen";
  * The backend bounds it with a per-HANDLE cooldown (the shape defacement
  * actually takes — one shop, repeatedly), a per-IP cooldown, and a global
  * rolling-24h ceiling, with `PROFILE_EDITS=closed` as the incident switch. That
- * gate is dynamic, so a build-time branch can no longer express it, and the
- * `editable={false}` state survives only for the switch being thrown — where a
- * 403 on submit is what any rate-limited endpoint does.
+ * gate is dynamic, so a build-time branch can no longer express it.
+ *
+ * `SettingsScreen` still takes an `editable` prop and nothing passes `false` any
+ * more, so its locked variants are currently UNREACHABLE — including under
+ * `PROFILE_EDITS=closed`, which nothing reads client-side and which surfaces as
+ * a 403 on submit, the way any rate-limited endpoint refuses. Kept rather than
+ * deleted so a future server-side read of that switch has somewhere to land; do
+ * not read the prop as evidence a locked state is reachable today.
  *
  * `handle` and `category` remain locked for good and for their own reasons: the
  * handle is claimed permanently, and `GantryCore` has no setter for a category.
