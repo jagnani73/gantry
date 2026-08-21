@@ -177,9 +177,19 @@ interface AgentReads {
   unreadable: Address[];
 }
 
-/** Every per-wallet getter this read needs, in the order the single batch below
- * lays them out. The array IS the layout — add one here and it is read back by
- * position, so nothing has to be kept in step by hand. */
+/**
+ * Every per-wallet getter this read needs; the batch below is laid out in this
+ * order, field-major.
+ *
+ * The order is an implementation detail and nothing may depend on it — the slices
+ * are addressed by NAME (see `read` below), so this array can be reordered
+ * freely. That was not true when the slices were destructured positionally
+ * behind a tuple cast, and the cast suppressed the one error that would have
+ * caught a reorder.
+ *
+ * Adding an entry fetches and slices it automatically; it is then ignored until
+ * something reads it by name.
+ */
 const WALLET_READS = [
   "owner",
   "agentSigner",
@@ -207,9 +217,17 @@ const WALLET_READS = [
  * the rate-limited public node the sweep already leans on. `batchSize: 0` is
  * what makes it one request rather than several — viem otherwise splits on
  * calldata size and would quietly reintroduce the split it was collapsed to
- * avoid. Safe because the wallet set is always one owner's or one signer's, so
- * it is small; an unfiltered enumeration is refused a layer up for other
- * reasons.
+ * avoid.
+ *
+ * The wallet set is always one owner's or one signer's — an unfiltered
+ * enumeration is refused a layer up — but that is a SCOPE bound, not a size one,
+ * and the difference matters here: `walletsOf` is an unbounded array,
+ * `createWallet` has no idempotency, no wallet can ever be deleted, and a
+ * deployed build shares one demo key across every visitor, so the list grows
+ * monotonically. At 8 calls per wallet the ceiling is whatever the node accepts
+ * in one `eth_call`, and passing it does not degrade gracefully: `allowFailure`
+ * turns the rejected chunk into a failure for EVERY wallet at once. If that list
+ * ever gets long the answer is paging the wallet set, not restoring the split.
  *
  * Pinning a `blockNumber` was the other candidate and is worse here: on a
  * fallback chain a block some replica has not seen turns a stale read into a
@@ -217,9 +235,15 @@ const WALLET_READS = [
  * a scarier wrong answer than a slightly old one.
  *
  * `allowFailure` keeps two different failures apart — the same distinction
- * verifyPbm draws. A transport error rejects, and the caller gets a 5xx it can
- * retry. A per-entry failure is NOT self-describing, so each one costs a single
- * extra `getCode` to say which of the two it was.
+ * verifyPbm draws. A transport error does NOT reject and does not
+ * produce a 5xx, whatever this comment used to say: viem converts a rejected
+ * aggregate into a `failure` entry for every call in the chunk when
+ * `allowFailure` is set. So it marks every wallet failed, and each one costs a
+ * single extra `getCode` to say whether it is `absent` (no code, an honest "not
+ * an agent") or `unreadable` (holds code, did not answer). The route answers 200
+ * with those lists, and the payer app's UnreadableNotice is what stands between
+ * that and "you have no agents" — the answer that makes a caller mint a second
+ * wallet for one signer.
  */
 async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
   if (wallets.length === 0) return { agents: [], absent: [], unreadable: [] };
@@ -267,9 +291,31 @@ async function readAgents(wallets: readonly Address[]): Promise<AgentReads> {
   }
   const fieldAt = (index: number): BatchResult[] =>
     results.slice(index * wallets.length, (index + 1) * wallets.length);
-  const [owners, signers, policies, spent, stamps, labels] = WALLET_READS.map((_, i) =>
-    fieldAt(i),
-  ) as [BatchResult[], BatchResult[], BatchResult[], BatchResult[], BatchResult[], BatchResult[]];
+  /**
+   * Slices addressed by NAME, not by position.
+   *
+   * This was a positional destructure behind a six-element tuple `as`, which was
+   * two mistakes. The cast asserted an arity it never checked against
+   * `WALLET_READS.length` — and it was a no-op besides, since destructuring
+   * `BatchResult[][]` already yields `BatchResult[]` per name under this
+   * tsconfig. What it did do was suppress the error that would have caught the
+   * real hazard: REORDERING `WALLET_READS`. Move `label` above `owner` and
+   * `owners[i].result as Address` receives a decoded label string, `listAgents`
+   * filters on `sameAddress(a.owner, filter.owner)` and matches nothing, and the
+   * route answers **200 with an empty agents array** — the exact answer that
+   * makes a caller mint a second wallet for one signer.
+   *
+   * Keyed lookup makes the order of the array irrelevant, which is what the
+   * "the array IS the layout" claim above was reaching for.
+   */
+  const offsets = new Map(WALLET_READS.map((name, i) => [name, i]));
+  const read = (name: (typeof WALLET_READS)[number]): BatchResult[] => fieldAt(offsets.get(name)!);
+  const owners = read("owner");
+  const signers = read("agentSigner");
+  const policies = read("policy");
+  const spent = read("spentToday");
+  const stamps = read("policyUpdatedAt");
+  const labels = read("label");
   const balancesByToken = PAYABLE_TOKEN_IDS.map((_, i) => fieldAt(WALLET_READS.length + i));
 
   const agents: AgentSummary[] = [];
