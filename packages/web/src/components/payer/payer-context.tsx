@@ -1489,12 +1489,15 @@ export function PayerProvider({
     // The read that ENDED the wait also replaces the row, in the same update.
     //
     // Clearing the flag without the data is what let a confirmed rename read as
-    // ignored. The detail screen polls `api.agent(wallet)` into its own local
-    // state and then settles this store-wide flag, so the agents LIST — whose
-    // `Saving…` guard is keyed on exactly this flag, over the `agents` array
-    // that poll never touches — lost its guard while still holding a stale row.
-    // It then rendered the old name beside the new caps as fact, which is the
-    // precise state `isSuperseded` was written to prevent.
+    // ignored: the detail screen polls `api.agent(wallet)` into its own local
+    // state and then settles this store-wide flag, so every other consumer lost
+    // the flag while still holding the row from before the write, and rendered
+    // the old name beside the new caps as fact.
+    //
+    // The screen-level guard that comment used to name is gone — the store
+    // reconciles `agents` now, so there is no per-screen flag to lose — but the
+    // merge stays, because it is what makes the row the settling read agreed
+    // with the row every consumer sees.
     //
     // Only a read that MATCHED the fingerprint may be passed here. A read we
     // have just declared stale (the waited-out branch) must not be promoted

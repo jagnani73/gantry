@@ -265,9 +265,18 @@ const profileThrottle = throttle(
  *
  * Every other limit in this file is per-IP or global, and neither touches the
  * shape defacement actually takes: one shop, rewritten repeatedly. A per-IP
- * cooldown is escaped by rotating IPs (measured — 25 requests from 25 forwarded
- * IPs walked straight through it), and a global ceiling is escaped by spending
- * the whole budget on a single victim, which is the same attack with a receipt.
+ * cooldown is escaped by rotating IPs, and a global ceiling is escaped by
+ * spending the whole budget on a single victim — the same attack with a receipt,
+ * which is why the per-handle share above exists as well.
+ *
+ * The "25 requests from 25 forwarded IPs" figure recorded here previously was a
+ * LOCALHOST artefact and is withdrawn: with `trust proxy = 1` a real proxy
+ * appends the client address, so a forged `X-Forwarded-For` does not move
+ * `req.ip` on a deployed host. It moves it here, where nothing sits in front.
+ * The argument stands without the number — an attacker with genuinely distinct
+ * addresses defeats a per-IP bound by definition — and a measurement that only
+ * reproduces without the proxy should not be cited as if it were about
+ * production.
  *
  * A minute is chosen against the CONTEST, not against the inconvenience: a
  * merchant fixing their own blurb waits once, an attacker in a rewrite loop is

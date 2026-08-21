@@ -636,9 +636,11 @@ const armedHere = (body, expiry) =>
   body?.dailyCap === DEMO_POLICY.dailyCap.toString() &&
   body?.perTxCap === DEMO_POLICY.perTxCap.toString() &&
   // The one that was missing, and the one that decides whether the REJECTION
-  // beat still rejects. A test over caps alone passes on the pre-write read
-  // whenever the caps did not change — which is every run — so the retry loop
-  // exited on attempt zero and the line below printed the OLD categories.
+  // beat still rejects. The old test was caps plus `spentToday === 0`, which
+  // caught a stale read only when the agent had spent since the last UTC-day
+  // rollover — so a reset straight after a rehearsal did retry, and every other
+  // run exited on attempt zero and printed the OLD categories. Neither form
+  // could see a `categoryBitmap` change at all, which is the actual bug.
   // Observed live: a run that correctly armed food_beverage reported
   // "food_beverage, electronics" and called it ✓, one line above a cheat sheet
   // telling the presenter to demo a refusal that would no longer happen.
