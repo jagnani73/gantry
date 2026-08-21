@@ -134,10 +134,45 @@ function selectProvider(): Provider | null | { error: string } {
 class LiveRunError extends Error {
   readonly streamed: boolean;
   constructor(cause: unknown, streamed: boolean) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    // `describeStreamError`, not `cause.message`: an empty message here becomes
+    // an empty `detail` upstream, which index.ts reads as "the model finished"
+    // rather than "the model crashed" — and prints an empty parenthesis where
+    // the reason for falling back to an engine that PAYS should be.
+    super(describeStreamError(cause), { cause });
     this.name = "LiveRunError";
     this.streamed = streamed;
   }
+}
+
+/**
+ * A gateway failure in one line, and never the empty string.
+ *
+ * `error.message` alone is not enough: `@ai-sdk/openai-compatible` builds its
+ * message from the response body, and falls back to `response.statusText` when
+ * the body does not match `{error:{message}}`. Under HTTP/2 there is no reason
+ * phrase, so that fallback is `""` — the shape every CDN-fronted 502, 429 and
+ * 401 arrives in. An empty message then reaches `index.ts`, whose branch on
+ * `outcome.detail` reports a crash as a clean finish and prints an empty
+ * parenthesis where the reason for spending money should be.
+ *
+ * So the status and a slice of the body stand in when the message is blank, and
+ * the status leads when it is not — that is what identifies a 402 you must top
+ * up from a 401 you must rotate.
+ */
+export function describeStreamError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error) || "unknown stream error";
+  const detail = error as Error & {
+    statusCode?: number;
+    responseBody?: string;
+    url?: string;
+  };
+  const status = typeof detail.statusCode === "number" ? `${detail.statusCode} ` : "";
+  const body = typeof detail.responseBody === "string" ? detail.responseBody.slice(0, 300) : "";
+  const said = error.message.trim();
+  if (said) return `${status}${said}`;
+  // Nothing readable came back. The body is the only thing left that can tell a
+  // rate limit from a dead key, and the URL says which gateway said it.
+  return `${status || "gateway error"}${body ? `— ${body}` : ""}${detail.url ? ` (${detail.url})` : ""}`.trim();
 }
 
 async function runLive(prompt: string, provider: Provider): Promise<"done" | "timeout"> {
@@ -159,12 +194,23 @@ async function runLive(prompt: string, provider: Provider): Promise<"done" | "ti
       temperature: 0,
       // The SDK's default `onError` console.errors the whole error object —
       // stack, request body, response headers, ~40 lines — BEFORE the error
-      // part reaches the loop below. On a misconfigured model that buried the
-      // three `[agent]` lines saying what actually happened under a wall of
-      // machine detail, on the one output an operator reads mid-demo. Nothing
-      // is lost by silencing it: the same error arrives as a stream part, is
-      // rethrown, and its message is carried out as `detail`.
-      onError: () => undefined,
+      // part reaches the loop below, burying the three `[agent]` lines that say
+      // what happened under a wall of machine detail, on the one output an
+      // operator reads mid-demo.
+      //
+      // Replaced rather than silenced. Silencing it was wrong: `detail` comes
+      // from `error.message`, and `@ai-sdk/openai-compatible` falls back to
+      // `response.statusText` when a gateway's body does not match its error
+      // schema — which is EMPTY over HTTP/2, i.e. every CDN-fronted 502, 429 or
+      // 401. An empty detail makes `index.ts` print "the model finished without
+      // calling a single tool" for a crash, and the fallback line read
+      // "falling back to scripted narration ()" and exited 0 while the scripted
+      // engine spent real USDC. It also discarded the one field CLAUDE.md asks
+      // an operator to chase AIsa support with.
+      //
+      // One compact line: status, message and a slice of the body, never the
+      // stack or the request.
+      onError: ({ error }) => console.error(`\n[agent] ${describeStreamError(error)}`),
     });
     for await (const part of result.stream) {
       // A model that opens with a silent tool call (no text preamble) must
@@ -282,7 +328,7 @@ export async function runAgent(
     if (toolCallsStarted === 0) return { kind: "silent" };
     return { kind: "completed" };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = err instanceof Error ? err.message : describeStreamError(err);
     if (toolCallsStarted > 0) {
       return {
         kind: "abandoned",
