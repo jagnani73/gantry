@@ -145,6 +145,22 @@ export function revokedState(label: string, agentSigner: Address): ExpectedAgent
  */
 export function provenAgentFields(
   state: ExpectedAgentState,
+  /**
+   * Did a `setPolicy` or `revoke` land in this save?
+   *
+   * It changes what the receipt proves, and leaving it out was a bug. Both calls
+   * go through `AgentPBMWallet._setPolicy`, which writes `_spentToday = 0` and
+   * stamps `policyUpdatedAt` — so a mined policy receipt proves the day's spend
+   * is ZERO, and the earlier blanket "those move on their own" was true of the
+   * balance and the rate and false of `spentToday` for exactly the two writes
+   * that record an expectation. Overlaying new caps onto a stale spend rendered
+   * "S$30.00 of S$20.00 today", a state no block has ever held, and fed the same
+   * mixture to `checkSpend` on the denial-remedy card.
+   *
+   * `setLabel` and `setAgentSigner` deliberately do NOT reset the counter (the
+   * contract says so), so a name- or signer-only save must leave both alone.
+   */
+  policyWritten: boolean,
 ): Pick<
   AgentSummary,
   | "dailyCap"
@@ -155,8 +171,20 @@ export function provenAgentFields(
   | "label"
   | "agentSigner"
   | "revoked"
-> {
+> &
+  Partial<Pick<AgentSummary, "spentToday" | "policyUpdatedAt">> {
   return {
+    ...(policyWritten
+      ? {
+          spentToday: "0",
+          // We know it was re-stamped and we do NOT know to what — the block
+          // timestamp is not threaded back here. `0` is the wallet's own "never
+          // armed" value, which every render site already treats as "show
+          // nothing". Absent beats wrong, and the stale date is wrong: it is the
+          // one line on the screen whose whole job is to date the rules.
+          policyUpdatedAt: 0,
+        }
+      : {}),
     dailyCap: String(state.dailyCap),
     perTxCap: String(state.perTxCap),
     expiry: state.expiry,

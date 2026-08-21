@@ -400,12 +400,21 @@ function AgentFormFields({
         } = existing!;
         let expectedSigner = existing!.agentSigner;
         let expectedLabel = existing!.label;
+        /**
+         * Whether `setPolicy` has landed in THIS save, which decides what the
+         * receipt proves beyond the policy itself: `_setPolicy` zeroes
+         * `spentToday` and re-stamps `policyUpdatedAt`, and `setLabel` /
+         * `setAgentSigner` deliberately do neither. Read by `record()` on every
+         * subsequent call too — a rename after a policy write is still a save in
+         * which the counter was reset.
+         */
+        let policyWritten = false;
         const record = () =>
-          expectAgentPolicy(wallet, {
-            ...expectedPolicy,
-            label: expectedLabel,
-            agentSigner: expectedSigner,
-          });
+          expectAgentPolicy(
+            wallet,
+            { ...expectedPolicy, label: expectedLabel, agentSigner: expectedSigner },
+            policyWritten,
+          );
 
         if (!policyUnchanged) {
           setBusy("Updating the policy on-chain…");
@@ -416,6 +425,7 @@ function AgentFormFields({
           // payer was returned to the caps they had just replaced.
           landed.push("policy");
           expectedPolicy = policy;
+          policyWritten = true;
           record();
         }
         if (!signerUnchanged) {
@@ -459,7 +469,8 @@ function AgentFormFields({
       toast.success("Agent created and its rules armed.");
       // The signer went into the constructor, so it is the typed one by
       // definition — there is no `existing` on this path to read it from.
-      expectAgentPolicy(target, { ...policy, label, agentSigner: getAddress(signer.trim()) });
+      // The wallet was just armed, so `_setPolicy` ran.
+      expectAgentPolicy(target, { ...policy, label, agentSigner: getAddress(signer.trim()) }, true);
       refresh();
       replaceOverlay({ kind: "agent", wallet: target });
     } catch (err) {

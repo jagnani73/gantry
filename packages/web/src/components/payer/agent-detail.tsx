@@ -295,8 +295,22 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
    * licence to wait indefinitely.
    */
   const expected = agentExpectation(wallet);
+  /**
+   * Judged on THIS screen's own read, never on `listed`.
+   *
+   * `listed` now comes from the store's reconciled `agents`, which has already
+   * had `proven` overlaid onto it — and `proven` is built from the same state
+   * the fingerprint hashes, so `policyFingerprint(listed) === fingerprint` holds
+   * BY CONSTRUCTION and this could never fire on the pre-read frame. The guard
+   * looked intact and was dead.
+   *
+   * Comparing `fresh` alone is the honest version: the reconciled row is already
+   * current, so there is nothing to hide before the poll lands, and the wait
+   * below now means what it says — this screen's own read disagrees with a write
+   * we watched mine.
+   */
   const superseded =
-    agent !== undefined && expected !== null && policyFingerprint(agent) !== expected.fingerprint;
+    fresh !== null && expected !== null && policyFingerprint(fresh) !== expected.fingerprint;
 
   const history = useMemo(
     () => rows.filter((row) => belongsToWallet(row, wallet)),
@@ -458,7 +472,9 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     // Recorded before the re-read is triggered so the poll below can see it.
     // The wallet keeps its label through a revoke, so the expectation carries the
     // one already on-chain rather than claiming the name went too.
-    expectAgentPolicy(wallet, revokedState(agent.label, agent.agentSigner));
+    // `revoke` runs `_setPolicy`, so the counter is zeroed and the stamp
+    // rewritten — exactly the case the flag exists for.
+    expectAgentPolicy(wallet, revokedState(agent.label, agent.agentSigner), true);
     refresh();
     // Through the same effect as every other read, rather than a bare `api.agent`
     // here: that one-shot read was itself the too-early one, and it landed

@@ -250,7 +250,7 @@ export interface PayerStore {
    * derives the fingerprint, so what a screen renders while it waits and what
    * the wait compares against cannot be built from different fields. Cleared by
    * `settleAgentExpectation`. */
-  expectAgentPolicy(wallet: Address, written: ExpectedAgentState): void;
+  expectAgentPolicy(wallet: Address, written: ExpectedAgentState, policyWritten: boolean): void;
   /** Stop waiting: the read matched, or the wait was given up on. Both are
    * "no longer expecting", and neither is a claim about the chain.
    *
@@ -1445,10 +1445,11 @@ export function PayerProvider({
   );
 
 
-  const expectAgentPolicy = useCallback((wallet: Address, written: ExpectedAgentState) => {
+  const expectAgentPolicy = useCallback(
+    (wallet: Address, written: ExpectedAgentState, policyWritten: boolean) => {
     const entry: AgentExpectation = {
       fingerprint: policyFingerprint(written),
-      proven: provenAgentFields(written),
+      proven: provenAgentFields(written, policyWritten),
     };
     setExpectations((prev) => ({ ...prev, [wallet.toLowerCase()]: entry }));
   }, []);
