@@ -18,7 +18,13 @@ import { countMerchants, getMerchantRow, insertMerchant, listMerchants } from ".
 import { ApiError } from "../errors";
 import { indexerStatus } from "../indexer";
 import { sendRelayerTx } from "../relayer";
-import { emptyBudget, msUntilReset, release, reserve } from "./faucet-budget";
+import {
+  emptyBudget,
+  msUntilReset,
+  release,
+  reserve,
+  type BudgetState,
+} from "./faucet-budget";
 import {
   normalizeProfile,
   resolveProfile,
@@ -290,6 +296,34 @@ export const PUBLIC_PROFILE_EDITS_DAILY = 60n;
 let profileBudget = emptyBudget();
 
 /**
+ * A per-HANDLE share of that budget, and without it the global one is a weapon.
+ *
+ * The 60s cooldown paces a defacement loop; it does not bound its TOTAL. Sixty
+ * edits at one a minute is one hour to consume the entire deployment's 24-hour
+ * allowance on a single victim — after which every profile edit on the rail
+ * 429s for the remaining 23, INCLUDING the real owner's correction and every
+ * other merchant's. That makes the claim this route is written around — "an edit
+ * is reversible, the real merchant corrects it" — false under precisely the
+ * attack the limits exist for. A control that converts a defacement into a
+ * deployment-wide outage is worse than the thing it bounds.
+ *
+ * Ten leaves fifty for everyone else no matter what one shop attracts, and is
+ * far above any honest use: a merchant fixing a typo does it once or twice.
+ *
+ * Swept on read, like the throttle maps and for the same reason — the key space
+ * is every handle anyone has ever aimed at.
+ */
+const PER_HANDLE_EDITS_DAILY = 10n;
+const handleBudgets = new Map<string, BudgetState>();
+
+function handleBudgetOf(handle: string, now: number): BudgetState {
+  for (const [key, state] of handleBudgets) {
+    if (now - state.windowStart >= PROFILE_WINDOW_MS) handleBudgets.delete(key);
+  }
+  return handleBudgets.get(handle) ?? emptyBudget();
+}
+
+/**
  * Bounds CONCURRENT registrations per IP. The cooldown alone only rate-limits
  * strictly serial requests, because it is recorded after the tx confirms — so N
  * parallel requests all pass that check and enqueue N registrations against the
@@ -438,12 +472,20 @@ export async function registerMerchant(
   }
 
   registerInFlight.add(key);
-  /** Did this call actually put a NEW shop on the rail? Only that keeps its
-   * reservation. A revert creates nothing, and the `alreadyRegistered` branch
-   * finds a handle an EARLIER call claimed — charging the budget for either
-   * would let a loop of failures exhaust a ceiling that exists to bound how
-   * many merchants appear. */
-  let created = false;
+  /**
+   * Does this call keep its reservation?
+   *
+   * True when a shop was registered, and ALSO when the outcome is unknown — see
+   * the `alreadyRegistered` branch, which cannot tell an earlier caller's handle
+   * from this call's own late-mining transaction. Named for the accounting
+   * question rather than for "did it create one", because those two answers
+   * differ on exactly the branch that matters.
+   *
+   * A decodable revert creates nothing and releases: that one is a definite
+   * non-occurrence, so a loop of them cannot exhaust a ceiling that exists to
+   * bound how many merchants appear.
+   */
+  let charged = false;
   try {
     const { receipt } = await sendRelayerTx({
       address: config.addresses.gantryCore,
@@ -463,7 +505,7 @@ export async function registerMerchant(
     // Cooldown only after a successful register, so a reverted attempt still
     // surfaces its real error on retry rather than a bogus 429 (faucet precedent).
     if (!operator) armThrottle(registerThrottle, key);
-    created = true;
+    charged = true;
     primeRegistration(req.handle, req.categoryId, profile.value, receipt.blockNumber);
     console.log(
       `registered ${req.handle} → ${payout.address} (category ${req.categoryId}) in ${receipt.transactionHash}`,
@@ -485,6 +527,20 @@ export async function registerMerchant(
           `pointing at ${payout.address} — treating as already registered`,
       );
       if (!operator) armThrottle(registerThrottle, key);
+      // CHARGED, because this branch cannot tell whose write it was.
+      //
+      // `ownsHandle` matches on THIS request's own payout address, so it fires
+      // both for a handle an earlier call claimed AND for this call's own
+      // transaction mining just past the relayer's 20s receipt cap — which is
+      // the case the surrounding catch exists to detect. Releasing the
+      // reservation on the second one hands back budget for a permanent,
+      // undeletable registration, so the ceiling that bounds how many merchants
+      // appear is bypassed by whatever makes receipts slow.
+      //
+      // Ambiguity is charged, matching the same fail-closed rule `ownsHandle`
+      // and `isFactoryWallet` already follow. The cost of being wrong is one
+      // registration of headroom; the cost the other way is an unbounded one.
+      charged = true;
       // Primed from what the CHAIN holds, never from this request. On this branch
       // THIS transaction reverted (HandleTaken) — the one that landed was an
       // earlier attempt, and it carried whatever text that attempt sent. Echoing
@@ -500,7 +556,7 @@ export async function registerMerchant(
     throw err;
   } finally {
     registerInFlight.delete(key);
-    if (metered && !created) registerBudget = release(registerBudget, 1n);
+    if (metered && !charged) registerBudget = release(registerBudget, 1n);
   }
 }
 
@@ -613,16 +669,34 @@ export async function updateMerchantProfile(
   }
   const metered = !operator && config.profileEditsMetered;
   if (metered) {
-    const reservation = reserve(
-      profileBudget,
+    const now = Date.now();
+    // PER-HANDLE FIRST, and the order is the whole point: a shop that has used
+    // its own share must be refused WITHOUT touching the shared budget, or the
+    // per-handle cap achieves nothing — the attacker's refused attempts would
+    // still be the thing that drains everyone else's allowance.
+    const perHandle = reserve(
+      handleBudgetOf(handle, now),
       1n,
-      PUBLIC_PROFILE_EDITS_DAILY,
-      Date.now(),
+      PER_HANDLE_EDITS_DAILY,
+      now,
       PROFILE_WINDOW_MS,
     );
+    handleBudgets.set(handle, perHandle.state);
+    if (!perHandle.ok) {
+      const resetInMs = msUntilReset(perHandle.state, now, PROFILE_WINDOW_MS);
+      throw new ApiError(
+        429,
+        "ProfileEditHandleBudgetExhausted",
+        `this shop's profile has been changed ${PER_HANDLE_EDITS_DAILY} times today, which is as ` +
+          `many as this deployment relays for one shop; the window rolls in about ` +
+          `${Math.ceil(resetInMs / 60_000)} minutes. Nothing about its money is affected.`,
+      );
+    }
+    const reservation = reserve(profileBudget, 1n, PUBLIC_PROFILE_EDITS_DAILY, now, PROFILE_WINDOW_MS);
     profileBudget = reservation.state;
     if (!reservation.ok) {
-      const resetInMs = msUntilReset(profileBudget, Date.now(), PROFILE_WINDOW_MS);
+      handleBudgets.set(handle, release(perHandle.state, 1n));
+      const resetInMs = msUntilReset(profileBudget, now, PROFILE_WINDOW_MS);
       throw new ApiError(
         429,
         "ProfileEditBudgetExhausted",
@@ -663,10 +737,37 @@ export async function updateMerchantProfile(
     // the only thing that can settle it. Same rule registerMerchant applies with
     // `ownsHandle`; this path simply never had it.
       if (decodeGantryError(err).kind !== "unknown") throw err;
-      const landed = await readMerchantFresh(merchant.merchantId).catch(() => null);
+      const landed = await readMerchantFresh(merchant.merchantId).catch((probeErr: unknown) => {
+        // LOGGED, not swallowed. This read is the only thing that separates
+        // "definitely did not happen" from "may still land", and since the limits
+        // below turn on that verdict it now also decides whether an abuse budget
+        // is charged. A silent null makes a failing READ indistinguishable from a
+        // failing WRITE — different providers, different fixes — which is the one
+        // bare swallow the sibling probe (`ownsHandle`) was fixed to stop doing.
+        console.error(`profile confirmation read for ${handle} failed:`, probeErr);
+        return null;
+      });
       if (landed && sameProfile(landed, profile.value)) {
         console.warn(`profile write for ${handle} reported a failure but the chain already holds it`);
       } else {
+        // UNKNOWN, so charge it. Everything below this line — both cooldowns and
+        // the reservation — used to sit on the success path only, so a write that
+        // mined one second past the relayer's 20s receipt cap defaced a shop and
+        // cost the caller NOTHING: no per-handle cooldown, no per-IP cooldown, and
+        // a refunded reservation. The daily ceiling never moved, and the docblock
+        // above promising "sixty attempts an hour on one shop" was false on the
+        // one branch an attacker can reach on demand by making receipts slow.
+        //
+        // The same compensation invariant the money paths follow, applied to
+        // accounting rather than to refunds: `landed === null` here means the
+        // chain did not settle it either way, and ambiguity is charged, not
+        // forgiven. A DISPROVED write (`landed` present and different) falls to
+        // the release below, because that one is a definite non-occurrence.
+        if (!operator) {
+          armThrottle(profileThrottle, key);
+          armThrottle(handleThrottle, handle);
+        }
+        written = true;
         // 502 with a name the CLIENT can branch on. It used to fall through to
         // `InternalError`, which is exactly the name the screen's "may still have
         // been saved" hedge does not match — so the likeliest unknown outcome was
@@ -698,7 +799,13 @@ export async function updateMerchantProfile(
     return { ...merchant, ...profile.value };
   } finally {
     profileInFlight.delete(key);
-    if (metered && !written) profileBudget = release(profileBudget, 1n);
+    // Both reservations, or the per-handle share ratchets down on failed edits
+    // and a shop becomes uneditable by its own owner.
+    if (metered && !written) {
+      profileBudget = release(profileBudget, 1n);
+      const held = handleBudgets.get(handle);
+      if (held) handleBudgets.set(handle, release(held, 1n));
+    }
   }
 }
 
