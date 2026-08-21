@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { GANTRY_FEE_BPS, basescanAddress, formatBps, formatUnits6 } from "@gantry/shared";
 import { Card, Figure, Label, Mono } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
@@ -48,8 +49,7 @@ export function PayoutsScreen() {
         <Card radius="card" pad="lg">
           <Label size="lg">Paid out to date</Label>
           <p className="mt-3 max-w-[64ch] text-body text-muted">
-            The totals didn&apos;t load, so there is no figure to show. This says nothing about
-            what has settled. Every payment is final on-chain either way.
+            The totals didn&apos;t load. Nothing is wrong with what has settled.
           </p>
           <p className="mt-2 text-fine text-faint">{lifetime.error}</p>
           <Button variant="secondary" size="sm" className="mt-4 w-fit" onClick={lifetime.retry}>
@@ -122,9 +122,11 @@ export function PayoutsScreen() {
           {merchant?.payout}
         </Mono>
         <p className="mt-auto max-w-[80ch] pt-4.5 text-meta text-muted">
-          Every payment settles straight here inside the same transaction. Changing it is signed by
-          this address itself, so nobody else can point your takings somewhere new, including us.
-          You can change it in Settings.
+          Every payment settles here inside the same transaction.{" "}
+          <Link href={`/merchant/${handle}/settings`} className="focus-ring rounded-badge underline underline-offset-2">
+            Change it in Settings
+          </Link>
+          .
         </p>
         {merchant ? (
           <a
@@ -143,8 +145,7 @@ export function PayoutsScreen() {
         <div className="text-card-title-sm">By day</div>
         {days.length === 0 ? (
           <p className="mt-2 max-w-[64ch] text-body text-muted">
-            Nothing has settled yet. Each payment appears here on the day it landed, already paid
-            out.
+            Nothing has settled yet.
           </p>
         ) : (
           <>
@@ -194,9 +195,9 @@ export function PayoutsScreen() {
             {feed.hasMore && days.length > 0 ? (
               <div className="mt-3.5 flex flex-wrap items-center gap-3">
                 <p className="text-fine text-faint">
-                  Covers the {grouped(feed.rows.length)} most recent payments, of{" "}
-                  {grouped(feed.total)} — so {shortDate(days[days.length - 1]!.at)} is a partial day
-                  and earlier days are missing. The totals above cover all of them.
+                  {grouped(feed.rows.length)} of {grouped(feed.total)} payments loaded, so{" "}
+                  {shortDate(days[days.length - 1]!.at)} is partial. The totals above cover all of
+                  them.
                 </p>
                 <Button
                   variant="secondary"

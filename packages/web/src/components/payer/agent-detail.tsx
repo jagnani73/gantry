@@ -340,8 +340,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
           ) : (
             <>
               <p className="text-body text-muted">
-                We couldn&apos;t read this agent&apos;s policy. Its limits are on-chain and
-                unchanged. This is the reading, not the rules.
+                We couldn&apos;t read this agent&apos;s policy. Its limits are unchanged.
               </p>
               <p className="max-w-[34ch] text-fine text-faint break-words">{readError}</p>
               <button
@@ -666,10 +665,9 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
              operator instead. Anyone can cause it: wallet addresses are public
              and an ERC-20 transfer needs no cooperation. */
           <p className="px-1 text-fine text-faint">
-            <span className="text-ink">This wallet holds {agent.heldTokens.join(" and ")}.</span> Its
-            policy has one daily counter and one set of caps, so it cannot tell the two apart — the
-            figures above are in {agent.token} only, and payments through this agent are refused
-            until it holds just one. Withdrawing returns everything to you.
+            <span className="text-ink">This wallet holds {agent.heldTokens.join(" and ")}.</span>{" "}
+            The policy has one counter, so the figures above are in {agent.token} only and payments
+            are refused until it holds one token.
           </p>
         ) : (
           <p className="px-1 text-fine text-faint">
@@ -684,8 +682,8 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
             all, so nothing here is a merchant allowlist and it must not read as
             one. */}
         <p className="px-1 text-fine text-faint">
-          The wallet caps how much, when, and what kind of shop — not which shop. Turned away
-          lists the categories Gantry knows; a merchant sets its own at registration.
+          The wallet caps how much, when, and what kind of shop, not which shop. Turned away lists
+          the categories Gantry knows.
         </p>
 
         <Card radius="card-m" pad="md">
@@ -703,14 +701,13 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
               sits on its balance indefinitely and a payer who assumed otherwise
               would never come back for it. */}
           <p className="mt-3 text-meta text-muted">
-            This is your money, parked where the agent can reach it under the rules above. Revoking
-            stops it spending. It does not send anything back. Withdrawing returns the balance to{" "}
-            {shortAddress(agent.owner)}, the address that owns this wallet.
+            Revoking stops the agent spending. It sends nothing back. Withdrawing returns the
+            balance to {shortAddress(agent.owner)}.
             {/* `withdraw(address token, …)` moves ONE token, so on a wallet
                 holding two the sentence above would be read as emptying it and
                 would leave the other behind with no hint that it existed. */}
             {agent.ambiguous
-              ? ` One token at a time — this withdraws the ${agent.token}; repeat for the rest.`
+              ? ` One token at a time: this withdraws the ${agent.token}, so repeat for the rest.`
               : ""}
           </p>
           {balance > 0n && !readOnly ? (
@@ -732,8 +729,8 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
             // wallet screen", which does not exist. Funding is a transfer to
             // the wallet address, done outside this app.
             <p className="mt-4 text-meta text-faint">
-              Nothing to withdraw. This wallet holds no {agent.token}; funding it means sending
-              some to {shortAddress(agent.wallet)}.
+              Nothing to withdraw. Fund it by sending {agent.token} to{" "}
+              {shortAddress(agent.wallet)}.
             </p>
           )}
         </Card>
@@ -810,8 +807,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         {readOnly ? (
           <Card tone="sunken" radius="control-m" pad="none" className="px-4 py-3.5">
             <p className="text-meta-sm text-muted">
-              This agent belongs to {shortAddress(agent.owner)}, not to the wallet you are signing
-              with, so its rules are shown read-only. Only its owner can edit or revoke it — the
+              This agent belongs to {shortAddress(agent.owner)}, so its rules are read-only. The
               contract enforces that, not this app.
             </p>
           </Card>

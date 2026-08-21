@@ -131,8 +131,7 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
     <Card radius="card" pad="md">
       <div className="text-card-title-sm">Charge an amount</div>
       <p className="mt-2 mb-4 text-body text-muted">
-        A link for one sale. Show the code, or send the link — whoever is paying, the money
-        lands the same way.
+        A link for one sale. Show the code or send the link.
       </p>
 
       <label className="block">
@@ -161,7 +160,7 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
            an over-cap link is told so on their own screen, where the limit
            actually lives. */
         <p className="mt-2 text-fine text-danger">
-          Enter an amount in dollars and cents — digits, and at most two decimal places.
+          Digits only, at most two decimal places.
         </p>
       ) : null}
 
@@ -207,14 +206,12 @@ export function ChargeCard({ handle, backendOrigin }: { handle: string; backendO
                 </button>
               </div>
               <p className="mt-3.5 text-meta text-faint">
-                Open it on a phone and it is the payment page for S${price}. Fetch it as a
-                machine and it answers <Mono size="sm">402 Payment Required</Mono> for the same
-                S${price}. One link, both doors, one settlement.
+                On a phone it is the payment page for S${price}. To a machine it answers{" "}
+                <Mono size="sm">402 Payment Required</Mono> for the same amount.
               </p>
               {qr === "failed" ? (
                 <p className="mt-2 text-meta text-danger">
-                  The QR code could not be drawn on this device — the link above still works;
-                  copy it, or reload the page to try again.
+                  Couldn&apos;t draw the QR code. The link above still works.
                 </p>
               ) : null}
             </div>

@@ -464,10 +464,8 @@ export function OnboardClient() {
                 {serverIssue ?? blocker() ?? ""}
               </p>
               <p className="text-fine text-faint">
-                A real transaction on Base Sepolia: the relayer pays its gas, so you need no ETH.
-                Your name, location and description can be updated later from your settings. The handle is
-                the one thing that cannot change, and the payout address can only ever be changed
-                by itself.
+                A real transaction on Base Sepolia; the relayer pays the gas, so you need no ETH.
+                The handle can never change. Name, location and description can, in settings.
               </p>
             </div>
           </Card>
@@ -748,8 +746,7 @@ function PayerPreview({
         </Mono>
       </Card>
       <p className="mt-3.5 text-fine text-muted">
-        Payers open this from a receipt. Once you claim the handle it also carries “Registered
-        on-chain” and the date. It never shows your balance or your payouts.
+        Payers open this from a receipt. It never shows your balance or your payouts.
       </p>
     </Card>
   );

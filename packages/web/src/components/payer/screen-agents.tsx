@@ -111,16 +111,14 @@ export function AgentsScreen() {
         {noWallet ? (
           <Card radius="card-m" pad="m">
             <p className="text-body-sm text-muted">
-              Connect a wallet in Settings. An agent is a wallet you own on-chain, so there has to
-              be an owner first.
+              Connect a wallet in Settings first. An agent is a wallet you own.
             </p>
           </Card>
         ) : agentsError ? (
           <Card tone="danger" radius="card-m" pad="m">
             <p className="text-body-sm">
-              We couldn&apos;t list your agents. Any wallet you own is still on-chain with its
-              policy intact. This is the reading, not the rules. Don&apos;t create a new one until
-              this loads, or you&apos;ll end up with two.
+              We couldn&apos;t list your agents. Your wallets and their policies are unchanged.
+              Don&apos;t create a new one until this loads, or you&apos;ll have two.
             </p>
             <p className="mt-2.5 text-meta-sm break-words">{agentsError}</p>
             <button
@@ -152,8 +150,8 @@ export function AgentsScreen() {
               agentsUnreadable.length === 0 ? (
                 <Card radius="card-m" pad="m">
                   <p className="text-body-sm text-muted">
-                    You don&apos;t have an agent yet. Creating one deploys a wallet you own and arms
-                    it with a spend policy only you can change: two transactions, signed here.
+                    No agents yet. Creating one deploys a wallet you own and arms its policy. Two
+                    transactions, signed here.
                   </p>
                   <button
                     type="button"
@@ -215,7 +213,7 @@ export function AgentsScreen() {
                     <p className="text-body-sm text-muted">
                       {effectiveTab === "active"
                         ? agentsUnreadable.length > 0
-                          ? "None of the agents we could read can spend right now. The ones we couldn't read are not counted here and may well be active."
+                          ? "None of the agents we could read can spend right now. Unreadable ones aren't counted."
                           : "No agent can spend right now. The ones under Inactive were revoked or have expired; opening one and editing its rules arms it again."
                         : effectiveTab === "inactive"
                           ? "Nothing here. Every agent you own can still spend."
@@ -277,11 +275,9 @@ function UnreadableNotice({
   return (
     <Card tone="sunken" radius="card-m" pad="m">
       <p className="text-body-sm text-muted">
-        {wallets.length === 1 ? "1 agent" : `${wallets.length} agents`} could not be read. You own{" "}
-        {wallets.length === 1 ? "this wallet" : "these wallets"} on-chain and{" "}
-        {wallets.length === 1 ? "its policy is" : "their policies are"} unchanged. This is the
-        reading, not the rules. Don&apos;t create a replacement, or you&apos;ll have two for one
-        signer.
+        {wallets.length === 1 ? "1 agent" : `${wallets.length} agents`} could not be read.{" "}
+        {wallets.length === 1 ? "Its policy is" : "Their policies are"} unchanged. Don&apos;t
+        create a replacement, or you&apos;ll have two for one signer.
       </p>
       <div className="mt-3.5 flex flex-col gap-1">
         {wallets.map((wallet) => (

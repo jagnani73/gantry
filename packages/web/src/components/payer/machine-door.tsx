@@ -118,9 +118,8 @@ export function MachineDoor({ handle }: { handle: string }) {
     <Card radius="card-m" pad="md">
       <div className="text-card-title-xs">Machines can pay this shop</div>
       <p className="mt-2 text-body-sm text-quiet">
-        The same link you would open on a phone answers an AI agent with a bill it can settle
-        itself — same shop, same price, same contract. Here is that bill for a sample S$
-        {SAMPLE_SGD} order.
+        The same link answers an AI agent with a bill it can settle itself. Same shop, same price,
+        same contract. Here it is for a sample S${SAMPLE_SGD} order.
       </p>
 
       <div className="mt-4">

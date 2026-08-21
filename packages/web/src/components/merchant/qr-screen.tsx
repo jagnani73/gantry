@@ -83,8 +83,8 @@ export function QrScreen({
           <Card radius="card" pad="md">
             <div className="text-card-title-sm">Print it</div>
             <p className="mt-2 mb-4 text-body text-muted">
-              The code never expires and never needs replacing: it points at your handle, not at
-              an amount. Printing hides everything on this page except the standee.
+              Points at your handle, not an amount, so it never needs replacing. Printing hides
+              everything except the standee.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button type="button" onClick={() => window.print()}>
@@ -101,8 +101,7 @@ export function QrScreen({
             </div>
             {downloadFailed ? (
               <p className="mt-3 text-meta text-danger">
-                The image could not be generated on this device. Printing this page still works —
-                it is the same code.
+                Couldn&apos;t generate the image. Printing this page still works.
               </p>
             ) : null}
           </Card>
@@ -127,8 +126,7 @@ export function QrScreen({
                 be the machine door. The dual-door link is the charge link
                 below, which is why that card exists. */}
             <p className="mt-3.5 text-meta text-faint">
-              Names your shop, never a price — so it never needs reprinting. For a machine to
-              pay, an amount has to be in the link: use Charge an amount.
+              Names your shop, never a price. For a machine to pay, use Charge an amount.
             </p>
           </Card>
 

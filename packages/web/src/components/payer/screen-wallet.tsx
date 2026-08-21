@@ -3,7 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { formatUnits6, shortAddress } from "@gantry/shared";
-import { Card, Chip, cn, Figure, Label, Money, Mono, StatusDot, useToast } from "@/components/primitives";
+import {
+  Card,
+  Chip,
+  cn,
+  Figure,
+  Label,
+  Money,
+  Mono,
+  StatusDot,
+  useToast,
+} from "@/components/primitives";
 import { api } from "@/lib/api";
 import { ActivityRowItem } from "./activity-row";
 import { placesPaid } from "./activity";
@@ -40,9 +50,10 @@ export function WalletScreen() {
   /** The record of the last top-up, which the toast is only a reminder of. Its
    * tone is the verdict: a refused grant is a failure, a grant whose GAS leg was
    * refused is a partial success and must read as neither. */
-  const [topUpNote, setTopUpNote] = useState<{ tone: "danger" | "sunken"; text: string } | null>(
-    null,
-  );
+  const [topUpNote, setTopUpNote] = useState<{
+    tone: "danger" | "sunken";
+    text: string;
+  } | null>(null);
 
   const places = placesPaid(rows).slice(0, 4);
   const recent = rows.slice(0, 3);
@@ -63,7 +74,10 @@ export function WalletScreen() {
       // Say what arrived, not just that something did. The balance is at the top
       // of a screen the payer may have scrolled past, so the confirmation has to
       // carry the amount itself.
-      const added = `Added ${formatUnits6(BigInt(granted.funded), 2)} ${sendToken}`;
+      const added = `Added ${formatUnits6(
+        BigInt(granted.funded),
+        2,
+      )} ${sendToken}`;
       const gas = granted.gas?.error;
       if (gas) {
         // The USDC landed and the ETH leg did not. The route reports that leg
@@ -123,7 +137,12 @@ export function WalletScreen() {
         {balance === null ? (
           <Figure value="…" size="balance" tone="on-accent" className="mt-3" />
         ) : rate ? (
-          <Figure units={sgdUnits(balance, rate)} size="balance" tone="on-accent" className="mt-3" />
+          <Figure
+            units={sgdUnits(balance, rate)}
+            size="balance"
+            tone="on-accent"
+            className="mt-3"
+          />
         ) : (
           <Figure
             units={balance}
@@ -143,10 +162,10 @@ export function WalletScreen() {
             {balance !== null
               ? `${formatUnits6(balance, 6)} ${sendToken}`
               : noWallet
-                ? "no wallet"
-                : balanceError
-                  ? "balance unavailable"
-                  : "reading balance…"}
+              ? "no wallet"
+              : balanceError
+              ? "balance unavailable"
+              : "reading balance…"}
           </Mono>
           {identity.demo ? (
             <button
@@ -163,7 +182,7 @@ export function WalletScreen() {
             on FixedRateSwap and nothing arbitrages it. */}
         {rate ? (
           <p className="mt-2.5 text-fine text-on-accent-muted">
-            at the demo rate · 1 {sendToken} = {formatRate(rate)} XSGD, set by the swap&apos;s owner
+            at the demo rate · 1 {sendToken} = {formatRate(rate)} XSGD
           </p>
         ) : rateError ? (
           // Without the rate there is no S$ conversion at all, so the figure
@@ -171,7 +190,8 @@ export function WalletScreen() {
           // USDC — rather than letting the units change underneath the same
           // layout with nothing on screen saying so.
           <p className="mt-2.5 text-fine text-on-accent-muted">
-            showing {sendToken}: the swap&apos;s rate could not be read, so no S$ conversion is shown
+            showing {sendToken}: the swap&apos;s rate could not be read, so no
+            S$ conversion is shown
           </p>
         ) : (
           /* Neither read yet — the first load, or the gap after a currency
@@ -186,9 +206,17 @@ export function WalletScreen() {
       </Card>
 
       {topUpNote ? (
-        <Card tone={topUpNote.tone} radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+        <Card
+          tone={topUpNote.tone}
+          radius="control-m"
+          pad="none"
+          className="mt-2.5 px-4 py-3.5"
+        >
           <p
-            className={cn("text-meta-sm break-words", topUpNote.tone === "sunken" && "text-muted")}
+            className={cn(
+              "text-meta-sm wrap-break-word",
+              topUpNote.tone === "sunken" && "text-muted",
+            )}
           >
             {topUpNote.text}
           </p>
@@ -200,11 +228,15 @@ export function WalletScreen() {
           — the alternative is a transfer we were told was mined, a number that
           never moved, and nothing on screen connecting the two. */}
       {balanceWatch === "unconfirmed" ? (
-        <Card tone="sunken" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+        <Card
+          tone="sunken"
+          radius="control-m"
+          pad="none"
+          className="mt-2.5 px-4 py-3.5"
+        >
           <p className="text-meta-sm text-muted">
-            Your last payment or top-up hasn&apos;t reached the figure above yet. We stopped
-            re-checking after a few seconds; nothing is lost, the node answering us may just be
-            behind.
+            Your last payment or top-up hasn&apos;t reached the figure above
+            yet. Nothing is lost; the node answering us may just be behind.
           </p>
           <button
             type="button"
@@ -217,22 +249,33 @@ export function WalletScreen() {
       ) : null}
 
       {balanceError || rateError ? (
-        <Card tone="danger" radius="control-m" pad="none" className="mt-2.5 px-4 py-3.5">
+        <Card
+          tone="danger"
+          radius="control-m"
+          pad="none"
+          className="mt-2.5 px-4 py-3.5"
+        >
           <p className="text-meta-sm break-words">
-            Reading Base Sepolia failed. Your funds are untouched; this is the reading.{" "}
+            Couldn&apos;t read Base Sepolia. Your funds are untouched.{" "}
             {balanceError ?? rateError}
           </p>
         </Card>
       ) : null}
 
       {identity.demo ? (
-        <Card tone="sunken" radius="control-m" pad="none" className="mt-2.5 flex gap-3 px-4 py-3.5">
-          <Chip tone="accent" size="sm" mono className="shrink-0 self-start">
+        <Card
+          tone="sunken"
+          radius="control-m"
+          pad="none"
+          className="mt-2.5 flex gap-3 px-4 py-3.5 items-center"
+        >
+          <Chip tone="accent" size="sm" mono className="shrink-0 self-center">
             DEMO
           </Chip>
           <p className="text-meta-sm text-muted">
-            A shared demo wallet, funded for you. Anyone using this demo signs with the same
-            account, so this history is not private.
+            A funded, public demo wallet.
+            <br />
+            Everyone signs with the same account.
           </p>
         </Card>
       ) : null}
@@ -242,13 +285,19 @@ export function WalletScreen() {
         onClick={() => pushOverlay({ kind: "scan" })}
         className="focus-ring mt-4.5 flex h-14 w-full items-center justify-center gap-2.5 rounded-card bg-ink text-btn text-paper transition-colors hover:bg-ink-hover"
       >
-        <span className="size-3.5 rounded-xs border-2 border-paper" aria-hidden />
+        <span
+          className="size-3.5 rounded-xs border-2 border-paper"
+          aria-hidden
+        />
         Scan to pay
       </button>
 
       <div className="mt-6.5 flex items-baseline justify-between gap-3">
         <h2 className="text-card-title-sm">Recent</h2>
-        <Link href="/app/activity" className="focus-ring rounded-badge text-meta text-accent">
+        <Link
+          href="/app/activity"
+          className="focus-ring rounded-badge text-meta text-accent"
+        >
           All activity →
         </Link>
       </div>
@@ -261,7 +310,7 @@ export function WalletScreen() {
           <p className="py-4 text-body-sm text-muted">Loading your payments…</p>
         ) : recent.length === 0 ? (
           <p className="py-4 text-body-sm text-muted">
-            Nothing yet. Scan a shop&apos;s code and the payment lands here the moment it settles.
+            Nothing yet. Scan a shop&apos;s code to pay.
           </p>
         ) : (
           recent.map((row) => <ActivityRowItem key={row.key} row={row} />)
@@ -279,15 +328,26 @@ export function WalletScreen() {
                 <button
                   key={place.handle}
                   type="button"
-                  onClick={() => pushOverlay({ kind: "merchant", handle: place.handle })}
+                  onClick={() =>
+                    pushOverlay({ kind: "merchant", handle: place.handle })
+                  }
                   className="focus-ring flex items-center gap-3 rounded-control-m bg-surface px-4 py-3.5 text-left transition-colors hover:bg-fill-hover-card"
                 >
                   <MerchantTile name={name} size="sm" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-row-title">{name}</span>
+                    <span className="block truncate text-row-title">
+                      {name}
+                    </span>
                     <span className="mt-0.5 block truncate text-fine text-faint">
-                      {place.payments} {place.payments === 1 ? "payment" : "payments"} ·{" "}
-                      <Money units={place.total} prefix="S$" size="xs" tone="faint" className="text-fine" />
+                      {place.payments}{" "}
+                      {place.payments === 1 ? "payment" : "payments"} ·{" "}
+                      <Money
+                        units={place.total}
+                        prefix="S$"
+                        size="xs"
+                        tone="faint"
+                        className="text-fine"
+                      />
                     </span>
                   </span>
                   <span className="text-body-sm text-hint" aria-hidden>

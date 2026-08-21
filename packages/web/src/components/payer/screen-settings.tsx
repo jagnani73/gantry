@@ -154,9 +154,8 @@ export function SettingsScreen() {
               one screen whose whole job is to say which token signs. */}
           {payCurrencyReady ? (
             <>
-              You sign an authorization for {settlementSendToken(payCurrency)} — Circle&apos;s
-              own token — and the swap converts it to XSGD inside the settlement transaction, at
-              the owner-set rate.
+              You sign for {settlementSendToken(payCurrency)}, Circle&apos;s own token. The swap
+              converts it to XSGD at the owner-set rate.
             </>
           ) : (
             <>Checking which token you sign for…</>
@@ -218,12 +217,9 @@ export function SettingsScreen() {
       </Card>
 
       <p className="mt-5 px-1 text-fine text-faint">
-        Payments settle in real Circle stablecoins on Base Sepolia — USDC or EURC, whichever you
-        chose — and you sign an EIP-3009 authorization against Circle&apos;s own contract either
-        way. Neither is a mock. The payout is in XSGD, which here is a testnet mock
-        because XSGD exists on no testnet. The FX rate is set by the swap&apos;s owner, not sourced
-        from a market. The shop&apos;s currency is marked fixed rather than unbuilt: the settlement
-        token is immutable on the contract, so it cannot differ by shop, by payer or by screen.
+        USDC and EURC are real Circle tokens on Base Sepolia. XSGD here is a testnet mock, because
+        XSGD exists on no testnet, and the rate is set by the swap&apos;s owner rather than by a
+        market.
       </p>
       <Link href="/" className="focus-ring mt-3.5 block rounded-badge px-1 text-fine text-faint">
         ← Overview
@@ -245,17 +241,16 @@ export function SettingsScreen() {
  * this address owns on-chain. Neither is ours to move, and claiming to move
  * them would mean showing one account's payments under another's name.
  *
- * So the switch is exactly a switch, and the copy says what stays behind.
- * `switchSigner` reloads, which is what stops two screens from holding
- * different answers to "who am I".
+ * So the switch is exactly a switch, and nothing migrates. The copy no longer
+ * spells that out: it is a shared sandbox account, which the line above says,
+ * and a paragraph nobody reads is not a disclosure. `switchSigner` reloads,
+ * which is what stops two screens from holding different answers to "who am I".
  */
 function DemoAccount({ onSwitch }: { onSwitch: () => void }) {
   return (
     <>
       <p className="mt-3 text-meta text-muted">
-        A shared demo account this build is configured with, funded for you. It is not yours and
-        it is not private: everyone running this demo signs with the same key, so treat the
-        payments and agents here as a public sandbox.
+        A funded, public demo account is plugged in. Everyone here signs with the same key.
       </p>
       <button
         type="button"
@@ -264,10 +259,6 @@ function DemoAccount({ onSwitch }: { onSwitch: () => void }) {
       >
         Use my own wallet instead
       </button>
-      <p className="mt-2 text-center text-fine text-faint">
-        The demo account&apos;s payments and agents stay with the demo account: they belong to its
-        address on-chain, not to this app. You can switch back here.
-      </p>
     </>
   );
 }

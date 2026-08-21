@@ -93,8 +93,7 @@ export function DenialRemedy({
     <Card radius="card-m" pad="none" className="px-5.5 py-5">
       <p className="text-card-title-xs">Still refused today</p>
       <p className="mt-2 text-body-sm text-quiet">
-        {describe(verdict, denial, record)} These are your agent&apos;s rules, and you are the
-        only address that can change them.
+        {describe(verdict, denial, record)} Only you can change these rules.
       </p>
       <button
         type="button"
@@ -126,8 +125,8 @@ function NowAllowed() {
           agent's signature before any of this, and a policy that admits a
           payment is not a promise that one will be made. */}
       <p className="mt-2 text-body-sm text-quiet">
-        Nothing in this agent&apos;s current rules would stop this payment. The refusal above is
-        what happened at the time, and stays on record.
+        Nothing in this agent&apos;s current rules would stop this payment. The refusal above stays
+        on record.
       </p>
     </Card>
   );

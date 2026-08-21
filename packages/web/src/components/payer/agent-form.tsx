@@ -50,7 +50,13 @@ const DEFAULT_DAYS = "30";
 const MAX_DAYS = 365;
 const DAY_SECONDS = 86_400;
 
-export function AgentForm({ wallet, addCategory }: { wallet: Address | null; addCategory?: number }) {
+export function AgentForm({
+  wallet,
+  addCategory,
+}: {
+  wallet: Address | null;
+  addCategory?: number;
+}) {
   const { identity, popOverlay } = usePayer();
 
   // Read the wallet directly and use NOTHING else. The agents list is enumerated
@@ -83,7 +89,7 @@ export function AgentForm({ wallet, addCategory }: { wallet: Address | null; add
     };
   }, [wallet, reloadNonce]);
 
-  const existing = wallet ? (fresh ?? undefined) : undefined;
+  const existing = wallet ? fresh ?? undefined : undefined;
 
   /**
    * Somebody else's wallet, reached by URL.
@@ -122,12 +128,11 @@ export function AgentForm({ wallet, addCategory }: { wallet: Address | null; add
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
           <p className="text-body text-muted">
-            This agent belongs to another wallet, so its rules are not yours to change. Nothing
-            here was altered.
+            This agent belongs to another wallet, so its rules are not yours to
+            change. Nothing here was altered.
           </p>
           <p className="max-w-[34ch] text-fine text-faint">
-            The contract enforces this, not the app: every write on an agent wallet is
-            owner-only, so a save would have been rejected on-chain.
+            Every write on an agent wallet is owner-only, enforced on-chain.
           </p>
         </div>
       </OverlayScreen>
@@ -145,14 +150,19 @@ export function AgentForm({ wallet, addCategory }: { wallet: Address | null; add
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
           {readError === null ? (
-            <p className="text-body text-muted">Reading this agent&apos;s current rules…</p>
+            <p className="text-body text-muted">
+              Reading this agent&apos;s current rules…
+            </p>
           ) : (
             <>
               <p className="text-body text-muted">
-                We couldn&apos;t read this agent&apos;s current rules, and saving would overwrite
-                every one of them. Nothing has changed on-chain.
+                We couldn&apos;t read this agent&apos;s current rules, and
+                saving would overwrite all of them. Nothing has changed
+                on-chain.
               </p>
-              <p className="max-w-[34ch] text-fine text-faint break-words">{readError}</p>
+              <p className="max-w-[34ch] text-fine text-faint break-words">
+                {readError}
+              </p>
               <button
                 type="button"
                 onClick={() => setReloadNonce((n) => n + 1)}
@@ -175,7 +185,12 @@ export function AgentForm({ wallet, addCategory }: { wallet: Address | null; add
   // the derived `initialDays` / `preservedExpiry` / `writesNothing` are all
   // reading the same snapshot.
   return (
-    <AgentFormFields key={wallet ?? "new"} wallet={wallet} existing={existing} addCategory={addCategory} />
+    <AgentFormFields
+      key={wallet ?? "new"}
+      wallet={wallet}
+      existing={existing}
+      addCategory={addCategory}
+    />
   );
 }
 
@@ -197,7 +212,8 @@ function AgentFormFields({
     popOverlay,
     replaceOverlay,
   } = usePayer();
-  const { createWallet, setPolicy, setLabel, setAgentSigner, chainNow } = useAgentWrites();
+  const { createWallet, setPolicy, setLabel, setAgentSigner, chainNow } =
+    useAgentWrites();
   const toast = useToast();
 
   /**
@@ -242,7 +258,8 @@ function AgentFormFields({
   /** The absolute expiry already on-chain, when it is still in the future. An
    * untouched expiry field re-sends THIS rather than `now + days`, so opening
    * the form to add a category cannot quietly move the date. */
-  const preservedExpiry = existing && existing.expiry > openedAt ? existing.expiry : null;
+  const preservedExpiry =
+    existing && existing.expiry > openedAt ? existing.expiry : null;
 
   // From the wallet, not from this browser: the label is on-chain, so the form
   // must prefill from the same place `setLabel` will write.
@@ -261,8 +278,11 @@ function AgentFormFields({
    * wallet actually holds — so arriving from a refusal whose category is ALREADY
    * allowed ticks nothing new and leaves Save correctly inert. */
   const [categories, setCategories] = useState<number[]>(() => {
-    const onChain = existing ? categoryIdsOf(BigInt(existing.categoryBitmap)) : [1];
-    if (addCategory === undefined || onChain.includes(addCategory)) return onChain;
+    const onChain = existing
+      ? categoryIdsOf(BigInt(existing.categoryBitmap))
+      : [1];
+    if (addCategory === undefined || onChain.includes(addCategory))
+      return onChain;
     return [...onChain, addCategory].sort((a, b) => a - b);
   });
   const [days, setDays] = useState(initialDays);
@@ -282,9 +302,22 @@ function AgentFormFields({
   const [createdWallet, setCreatedWallet] = useState<Address | null>(null);
   /** A write that was broadcast and not confirmed. Never rendered as a failure —
    * see `UnknownOutcomeError`. */
-  const [unresolved, setUnresolved] = useState<{ text: string; txHash: Hex } | null>(null);
+  const [unresolved, setUnresolved] = useState<{
+    text: string;
+    txHash: Hex;
+  } | null>(null);
 
-  const problem = validate({ wallet, signer, name, dailyCap, perTxCap, categories, days, rate, capToken });
+  const problem = validate({
+    wallet,
+    signer,
+    name,
+    dailyCap,
+    perTxCap,
+    categories,
+    days,
+    rate,
+    capToken,
+  });
 
   const expiryUnchanged = preservedExpiry !== null && days === initialDays;
   /** Every field of the POLICY is identical to what the wallet already holds, so
@@ -305,14 +338,16 @@ function AgentFormFields({
     capUnitsFromSgd(perTxCap.trim(), rate) === BigInt(existing.perTxCap) &&
     categoryBitmapOf(categories) === BigInt(existing.categoryBitmap);
 
-  const labelUnchanged = existing !== undefined && name.trim() === existing.label;
+  const labelUnchanged =
+    existing !== undefined && name.trim() === existing.label;
   /** Compared checksum-insensitively, because the field is prefilled from a
    * chain read in EIP-55 and a payer who retypes the same address in lowercase
    * has not asked for a rotation — sending one would cost gas to write the value
    * already there. `isAddress` has already passed by the time this matters; an
    * unparseable string fails `validate` and never reaches a write. */
   const signerUnchanged =
-    existing !== undefined && signer.trim().toLowerCase() === existing.agentSigner.toLowerCase();
+    existing !== undefined &&
+    signer.trim().toLowerCase() === existing.agentSigner.toLowerCase();
   const writesNothing = policyUnchanged && labelUnchanged && signerUnchanged;
 
   // `setPolicy` zeroes `_spentToday`. That is deliberate — it is what makes the
@@ -320,7 +355,10 @@ function AgentFormFields({
   // it is stated BEFORE the payer taps Save rather than discovered afterwards.
   // Keyed on the POLICY write specifically: a rename alone leaves it standing.
   const resetsCounter =
-    existing !== undefined && !policyUnchanged && BigInt(existing.spentToday) > 0n && rate !== null;
+    existing !== undefined &&
+    !policyUnchanged &&
+    BigInt(existing.spentToday) > 0n &&
+    rate !== null;
 
   const submit = async () => {
     if (problem || !rate) return;
@@ -412,7 +450,11 @@ function AgentFormFields({
         const record = () =>
           expectAgentPolicy(
             wallet,
-            { ...expectedPolicy, label: expectedLabel, agentSigner: expectedSigner },
+            {
+              ...expectedPolicy,
+              label: expectedLabel,
+              agentSigner: expectedSigner,
+            },
             policyWritten,
           );
 
@@ -470,7 +512,11 @@ function AgentFormFields({
       // The signer went into the constructor, so it is the typed one by
       // definition — there is no `existing` on this path to read it from.
       // The wallet was just armed, so `_setPolicy` ran.
-      expectAgentPolicy(target, { ...policy, label, agentSigner: getAddress(signer.trim()) }, true);
+      expectAgentPolicy(
+        target,
+        { ...policy, label, agentSigner: getAddress(signer.trim()) },
+        true,
+      );
       refresh();
       replaceOverlay({ kind: "agent", wallet: target });
     } catch (err) {
@@ -478,7 +524,10 @@ function AgentFormFields({
         // Broadcast, outcome unknown. Never a red failure, and never a blind
         // retry: a second `createWallet` deploys a duplicate, and a second
         // `setPolicy` is at best pointless gas.
-        setUnresolved({ text: unresolvedText(err, target, landed), txHash: err.txHash });
+        setUnresolved({
+          text: unresolvedText(err, target, landed),
+          txHash: err.txHash,
+        });
         // The agents list is where a deploy that did land will appear.
         refresh();
       } else {
@@ -487,7 +536,9 @@ function AgentFormFields({
         // nothing about the write that succeeded a moment earlier.
         console.warn("gantry: agent write failed", err);
         const failure = describeWriteError(err).headline;
-        setError(landed.length > 0 ? `${landedText(landed)} ${failure}` : failure);
+        setError(
+          landed.length > 0 ? `${landedText(landed)} ${failure}` : failure,
+        );
       }
       // A partial save moved the chain, so the list this form was prefilled from
       // is now wrong — and `existing` is the frozen open-time snapshot, so
@@ -507,7 +558,9 @@ function AgentFormFields({
       <OverlayHeader
         onBack={popOverlay}
         backLabel="Back"
-        title={wallet ? (reArming ? "Arm this agent" : "Edit rules") : "New agent"}
+        title={
+          wallet ? (reArming ? "Arm this agent" : "Edit rules") : "New agent"
+        }
         subtitle={subject ? shortAddress(subject) : undefined}
       />
       <div className="flex flex-col gap-3.5 px-5 pt-6 pb-11">
@@ -515,15 +568,24 @@ function AgentFormFields({
             and they read differently in each case — empty after a revoke, fully
             populated after a lapse. */}
         {reArming ? (
-          <Card tone="sunken" radius="control-m" pad="none" className="px-4.5 py-4">
+          <Card
+            tone="sunken"
+            radius="control-m"
+            pad="none"
+            className="px-4.5 py-4"
+          >
             <p className="text-meta-sm text-muted">
               {status === "revoked"
-                ? "This agent is revoked and cannot spend. Its caps and categories were cleared, so they start empty here. Saving writes a new policy on-chain and lets it spend again from that moment."
-                : "This agent's policy has expired, so it cannot spend. Its old limits are still below, unchanged. Saving writes them again with a new expiry and lets it spend from that moment."}
+                ? "Revoked, so its caps and categories were cleared and start empty here. Saving arms it again."
+                : "Expired, so it cannot spend. Its old limits are below. Saving writes them again with a new expiry."}
             </p>
           </Card>
         ) : null}
-        <Card radius="card-m" pad="none" className="flex flex-col gap-4 px-5 py-5">
+        <Card
+          radius="card-m"
+          pad="none"
+          className="flex flex-col gap-4 px-5 py-5"
+        >
           {/* The hint here read "Yours alone. It stays in this browser and never
               leaves it." That was true of the localStorage map this replaced and
               is now the opposite of true: the name is stored on the wallet, so it
@@ -567,8 +629,8 @@ function AgentFormFields({
               createdWallet
                 ? "Set when this wallet was created a moment ago."
                 : wallet
-                  ? "Rotating this is its own transaction. It replaces who may spend and leaves the caps, categories and today's spend exactly as they are."
-                  : "The public address of the software that will act as this agent."
+                ? "Rotating this is its own transaction. It replaces who may spend and leaves the caps, categories and today's spend exactly as they are."
+                : "The public address of the software that will act as this agent."
             }
           >
             <Input
@@ -583,7 +645,11 @@ function AgentFormFields({
           </Field>
         </Card>
 
-        <Card radius="card-m" pad="none" className="flex flex-col gap-4 px-5 py-5">
+        <Card
+          radius="card-m"
+          pad="none"
+          className="flex flex-col gap-4 px-5 py-5"
+        >
           <div className="flex gap-3">
             <Field label="Daily cap" className="flex-1">
               <Input
@@ -603,31 +669,8 @@ function AgentFormFields({
             </Field>
           </div>
           <p className="text-fine text-faint">
-            In S$. The contract stores {capToken}, so these convert at the swap&apos;s owner-set
-            rate and the wallet enforces the converted figure.
+            In S$. Stored as {capToken}, converted at the demo rate.
           </p>
-          {/* Stated only when it costs something, and with the figure it costs.
-              `_setPolicy` zeroes the wallet's daily counter unconditionally —
-              `setPolicy` and `revoke` share that path — so ANY save here hands
-              the agent its whole allowance back, including a save that only
-              tightened the caps. That is a real consequence of pressing this
-              button and the form said nothing about it; the payer's own
-              rehearsal habit ("re-arm to reset the counter") is the same
-              mechanism seen from the other side.
-
-              A blanket sentence would be noise on the common path, where the
-              counter is already zero and nothing is given away. */}
-          {existing && BigInt(existing.spentToday) > 0n ? (
-            <p className="text-fine text-faint">
-              <span className="text-ink">
-                Saving resets today&apos;s spend, currently S$
-                {sgdFromCapUnits(existing.spentToday, BigInt(existing.rate))}, back to zero.
-              </span>{" "}
-              The wallet clears its daily counter whenever the policy is written, so the agent gets
-              a full allowance again today — even if you are lowering the cap.
-            </p>
-          ) : null}
-
           <Field label="Allowed at">
             <div className="flex flex-wrap gap-2">
               {CATEGORY_OPTIONS.map((option) => {
@@ -646,7 +689,9 @@ function AgentFormFields({
                     }
                     className={cn(
                       "focus-ring rounded-chip px-3 py-2 text-chip transition-colors",
-                      on ? "bg-accent-tint text-accent" : "bg-fill-subtle text-quiet",
+                      on
+                        ? "bg-accent-tint text-accent"
+                        : "bg-fill-subtle text-quiet",
                     )}
                   >
                     {option.label}
@@ -674,24 +719,41 @@ function AgentFormFields({
         </Card>
 
         {resetsCounter && existing && rate ? (
-          <Card tone="sunken" radius="control-m" pad="none" className="px-4.5 py-4">
+          <Card
+            tone="sunken"
+            radius="control-m"
+            pad="none"
+            className="px-4.5 py-4"
+          >
             <p className="text-meta-sm text-muted">
-              Saving replaces the whole policy on-chain, which also resets today&apos;s spend
-              counter. This agent has spent S${sgdFromCapUnits(existing.spentToday, rate)} today; a
-              save gives it the full daily cap again until the window rolls at 08:00 SGT.
+              Saving resets today&apos;s spend. This agent has spent S$
+              {sgdFromCapUnits(existing.spentToday, rate)} today, and a save
+              gives it the full daily cap again.
             </p>
           </Card>
         ) : null}
 
         {error ? (
-          <Card tone="danger" radius="control-m" pad="none" className="px-4.5 py-4">
+          <Card
+            tone="danger"
+            radius="control-m"
+            pad="none"
+            className="px-4.5 py-4"
+          >
             <p className="text-meta break-words">{error}</p>
           </Card>
         ) : null}
 
         {unresolved ? (
-          <Card tone="sunken" radius="control-m" pad="none" className="px-4.5 py-4">
-            <p className="text-meta-sm text-muted break-words">{unresolved.text}</p>
+          <Card
+            tone="sunken"
+            radius="control-m"
+            pad="none"
+            className="px-4.5 py-4"
+          >
+            <p className="text-meta-sm text-muted break-words">
+              {unresolved.text}
+            </p>
             <div className="mt-2.5 flex flex-col gap-1.5">
               <a
                 href={basescanTx(unresolved.txHash)}
@@ -699,12 +761,15 @@ function AgentFormFields({
                 rel="noreferrer"
                 className="focus-ring rounded-badge text-meta text-accent underline-offset-2 hover:underline"
               >
-                Check {shortAddress(unresolved.txHash)} on Basescan <span aria-hidden>↗</span>
+                Check {shortAddress(unresolved.txHash)} on Basescan{" "}
+                <span aria-hidden>↗</span>
               </a>
               {createdWallet ? (
                 <button
                   type="button"
-                  onClick={() => replaceOverlay({ kind: "agent", wallet: createdWallet })}
+                  onClick={() =>
+                    replaceOverlay({ kind: "agent", wallet: createdWallet })
+                  }
                   className="focus-ring self-start rounded-badge text-meta text-accent underline-offset-2 hover:underline"
                 >
                   Open this agent
@@ -725,18 +790,18 @@ function AgentFormFields({
               ? writesNothing
                 ? "Done"
                 : reArming
-                  ? "Arm this agent again"
-                  : "Save rules"
+                ? "Arm this agent again"
+                : "Save rules"
               : createdWallet
-                ? "Arm this wallet's policy"
-                : "Create agent")}
+              ? "Arm this wallet's policy"
+              : "Create agent")}
         </button>
         <p className="px-1 text-center text-fine text-faint">
           {problem ??
             (writesNothing
-              // Both halves of "Only the name is stored" died with the
-              // localStorage map: on this branch nothing is written anywhere.
-              ? "Nothing here differs from what we read off the wallet, so no transaction is sent."
+              ? // Both halves of "Only the name is stored" died with the
+                // localStorage map: on this branch nothing is written anywhere.
+                "Nothing here differs from what we read off the wallet, so no transaction is sent."
               : "You sign this yourself. No server can set or raise an agent's limits. Gas for it comes from the demo faucet.")}
         </p>
         {wallet ? null : (
@@ -773,23 +838,33 @@ function unresolvedText(
     // was — then advised re-sending, which would reset the daily counter for a
     // stalled rename.
     case "setLabel":
-      return `${landedText(landed)} The rename was submitted and we couldn't confirm it in time. It only changes the display name (the spend rules are unaffected either way), so open the agent and see which name the chain holds before sending it again.`;
+      return `${landedText(
+        landed,
+      )} The rename was submitted and we couldn't confirm it in time. It only changes the display name (the spend rules are unaffected either way), so open the agent and see which name the chain holds before sending it again.`;
     // The one unresolved write where doing nothing is not the safe default. If
     // the rotation was prompted by a leaked key, the old key keeps spending for
     // as long as this stays unresolved — so the advice is to look now.
     case "setAgentSigner":
-      return `${landedText(landed)} The session-key rotation was submitted and we couldn't confirm it in time. Open the agent and check which signer the chain holds: if the old key is still there and you were replacing one you don't trust, revoke the policy, which stops every key at once, and rotate afterwards.`;
+      return `${landedText(
+        landed,
+      )} The session-key rotation was submitted and we couldn't confirm it in time. Open the agent and check which signer the chain holds: if the old key is still there and you were replacing one you don't trust, revoke the policy, which stops every key at once, and rotate afterwards.`;
     case "setPolicy":
       return created
-        ? `The wallet is deployed at ${shortAddress(created)} and the policy write was submitted without being confirmed in time. An unarmed wallet can't spend anything, because every authorization reverts, so open it and see what the chain says before sending another.`
-        : `${landedText(landed)} The policy write was submitted and we couldn't confirm it in time. Open the agent to see what the chain holds before sending it again.`;
+        ? `The wallet is deployed at ${shortAddress(
+            created,
+          )} and the policy write was submitted without being confirmed in time. An unarmed wallet can't spend anything, because every authorization reverts, so open it and see what the chain says before sending another.`
+        : `${landedText(
+            landed,
+          )} The policy write was submitted and we couldn't confirm it in time. Open the agent to see what the chain holds before sending it again.`;
     // This form sends none of these, so reaching them means a caller changed.
     // A true, unspecific sentence rather than a confident wrong one — and the
     // union is what guarantees this list stays complete.
     case "revoke":
     case "withdraw":
     case "setMerchantPayout":
-      return `${landedText(landed)} That transaction was submitted and we couldn't confirm it in time. Open the agent and see what the chain holds before sending it again.`;
+      return `${landedText(
+        landed,
+      )} That transaction was submitted and we couldn't confirm it in time. Open the agent and see what the chain holds before sending it again.`;
   }
 }
 
@@ -851,7 +926,10 @@ function landedText(landed: readonly FormWrite[]): string {
  * date worth preserving, so it falls back to the default rather than prefilling
  * a spent one.
  */
-function daysRemaining(existing: AgentSummary | undefined, now: number): string {
+function daysRemaining(
+  existing: AgentSummary | undefined,
+  now: number,
+): string {
   if (!existing) return DEFAULT_DAYS;
   const remaining = Math.ceil((existing.expiry - now) / DAY_SECONDS);
   if (!Number.isFinite(remaining) || remaining < 1) return DEFAULT_DAYS;
@@ -909,7 +987,8 @@ function validate(input: {
   rate: bigint | null;
   capToken: TokenId;
 }): string | null {
-  if (!input.rate) return "The swap's rate could not be read, so caps cannot be converted yet.";
+  if (!input.rate)
+    return "The swap's rate could not be read, so caps cannot be converted yet.";
   // Checked on an existing wallet too, now that the field is editable there.
   // Gated on `!wallet` it validated only the create path, so an edit could send
   // `setAgentSigner` whatever had been typed — and the contract's only guard is
@@ -937,12 +1016,19 @@ function validate(input: {
   // Compared as the CONTRACT will see them: both caps are ceiled into token
   // units before `authorizeSpend` ever compares them.
   if (perTx > daily) {
-    return `The per-payment cap cannot exceed the daily cap (${formatUnits6(perTx, 6)} > ${formatUnits6(daily, 6)} ${input.capToken}).`;
+    return `The per-payment cap cannot exceed the daily cap (${formatUnits6(
+      perTx,
+      6,
+    )} > ${formatUnits6(daily, 6)} ${input.capToken}).`;
   }
   if (input.categories.length === 0) {
     return "Pick at least one category. An agent allowed nowhere can never spend.";
   }
-  if (!/^\d+$/.test(input.days) || Number(input.days) < 1 || Number(input.days) > MAX_DAYS) {
+  if (
+    !/^\d+$/.test(input.days) ||
+    Number(input.days) < 1 ||
+    Number(input.days) > MAX_DAYS
+  ) {
     return `Expiry must be between 1 and ${MAX_DAYS} days.`;
   }
   return null;

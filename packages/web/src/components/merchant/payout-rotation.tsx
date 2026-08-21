@@ -183,8 +183,8 @@ export function PayoutRotationCard() {
       </Mono>
       {unresolved ? (
         <p className="mt-2 text-fine text-danger">
-          A change to {shortAddress(unresolved.attempted)} was submitted and is unconfirmed, so this
-          may no longer be current. Check the transaction below.
+          A change to {shortAddress(unresolved.attempted)} is unconfirmed, so this may not be
+          current.
         </p>
       ) : null}
       <a
@@ -197,9 +197,8 @@ export function PayoutRotationCard() {
       </a>
 
       <p className="mt-4.5 text-meta text-muted">
-        Every payment settles straight to this address inside the same transaction. Changing it is
-        signed by the address itself, so nobody else can point your takings somewhere new —
-        including us.
+        Every payment settles here inside the same transaction. Changing it is signed by this
+        address itself, so nobody else can redirect your takings, including us.
       </p>
 
       {/* The receipt for a confirmed change, kept until the screen is left. */}
@@ -239,7 +238,7 @@ export function PayoutRotationCard() {
                   only one that can rotate again. */}
               <p className="mt-2 text-fine text-faint">
                 Check it character by character. Once this lands, only the new address can change
-                it again, and a valid address you do not control cannot be undone by anyone.
+                it again.
               </p>
               <div className="mt-3.5 flex gap-2.5">
                 <Button size="sm" onClick={() => void submit()} disabled={busy || next.trim() === ""}>

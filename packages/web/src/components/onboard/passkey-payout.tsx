@@ -118,8 +118,8 @@ export function PasskeyPayout({
       </div>
       <p className={cn("text-fine", failure ? "text-danger" : "text-faint")}>
         {failure ??
-          "No wallet? Make one with your face or fingerprint — no app, no seed phrase. " +
-            "Gantry never holds the key, and you move money out from the Base app rather than here."}
+          "No wallet? Make one with your face or fingerprint. No app, no seed phrase, and " +
+            "Gantry never holds the key."}
       </p>
     </div>
   );

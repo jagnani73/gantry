@@ -222,9 +222,8 @@ export function TransactionsScreen() {
       {stalled ? (
         <Card tone="danger" radius="control-m" pad="none" className="px-4.5 py-3.5">
           <p className="text-meta">
-            The history stopped loading, so this is a search over the{" "}
-            {grouped(feed.rows.length)} payments already loaded, not the whole book. Anything
-            older has not been checked.
+            The history stopped loading, so this searches the {grouped(feed.rows.length)} payments
+            already loaded, not the whole book.
           </p>
         </Card>
       ) : null}

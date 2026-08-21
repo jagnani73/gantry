@@ -233,7 +233,7 @@ export function CurrencyPill() {
         >
           <CurrencyPicker onSelect={() => close(true)} />
           <p className="mt-2.5 text-fine text-faint">
-            You sign for {settlementSendToken(payCurrency)} — Circle&apos;s own token. The shop is
+            You sign for {settlementSendToken(payCurrency)}, Circle&apos;s own token. The shop is
             paid in XSGD either way.
           </p>
         </div>

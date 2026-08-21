@@ -147,18 +147,18 @@ export function PendingReceipt({ receipt }: { receipt: PendingReceiptState }) {
               ? "Looking for this receipt"
               : unavailable
                 ? "We couldn’t finish reading this wallet’s history"
-                : "That payment isn’t in this wallet’s history"}
+                : "That payment isn't in this wallet's history"}
           </p>
           <p className="mt-2 text-body-sm text-quiet">
             {looking
-              ? "Reading this wallet’s payments and refusals. A receipt opened from a link has to be found in that history before it can be shown."
+              ? "Reading this wallet's payments and refusals."
               : unavailable
-                ? "So we can’t say whether this payment is in it. Nothing here means the payment did or didn’t happen — only that the history request failed. Try again below."
-                : "It isn’t among the payments loaded for this account — which is not the same as it never having happened. This app reads the most recent page of history, so an older payment may simply not be loaded here, and a receipt made while signing with a different wallet belongs to that wallet’s history rather than this one."}
+                ? "So we can't say whether this payment is in it. Try again below."
+                : "Not among the payments loaded for this account. It may be older than the loaded page, or belong to a different wallet."}
           </p>
           {!looking && failure ? (
             <p className="mt-3 text-body-sm text-quiet">
-              {unavailable ? "The history request failed:" : "One of the history requests also failed, so what was loaded is incomplete:"}{" "}
+              {unavailable ? "The history request failed:" : "One request also failed, so this is incomplete:"}{" "}
               <span className="font-mono text-mono-sm break-all text-faint">{failure}</span>
             </p>
           ) : null}
@@ -236,8 +236,7 @@ function SettledBody({ settlement, at }: { settlement: SettlementEvent; at: numb
         </KeyValueList>
       </Card>
       <p className="px-1 text-fine text-faint">
-        The shop is paid in XSGD, a testnet mock. XSGD exists on no testnet. The rate is set by the
-        swap&apos;s owner, not sourced from a market.
+        Paid in XSGD, a testnet mock, at the swap owner&apos;s rate.
       </p>
     </>
   );
@@ -268,8 +267,7 @@ function DeclinedBody({
         </Mono>
         <p className="mt-2 text-body-sm">{reading.explanation}</p>
         <p className="mt-3 text-meta-sm text-danger">
-          The wallet reverted the payment on-chain. No money moved, and no server was asked. The
-          rule is the contract.
+          The wallet reverted it on-chain. No money moved.
         </p>
       </Card>
 
@@ -315,8 +313,7 @@ function DeclinedBody({
         </KeyValueList>
       </Card>
       <p className="px-1 text-fine text-faint">
-        Recorded at {clockTime(at)}. Nothing was mined, so this attempt has no block. The only
-        transaction it produced is the cancel.
+        Recorded at {clockTime(at)}. Nothing was mined; the only transaction is the cancel.
       </p>
     </>
   );

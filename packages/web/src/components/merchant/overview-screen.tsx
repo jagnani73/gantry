@@ -126,8 +126,7 @@ export function OverviewScreen() {
         {failedSummary ? (
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-fine text-faint">
-              This month&apos;s totals didn&apos;t load, so the figures above may be behind. This
-              says nothing about what has settled — every payment is final on-chain either way.
+              This month&apos;s totals didn&apos;t load, so the figures above may be behind.
               {summary.error ? ` ${summary.error}` : ""}
             </p>
             <Button variant="secondary" size="sm" onClick={summary.retry}>
