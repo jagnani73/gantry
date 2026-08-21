@@ -39,10 +39,14 @@ export function MerchantSidebar() {
   // are not the same KIND of number, and the window change made that bite. The
   // Transactions figure is the server's total and exact; the Overview one counts
   // only the rows this browser has loaded, capped at one page. A seven-day window
-  // routinely fills a page (the demo book sits at 50 loaded of 74), so without the
-  // "+" the sidebar would read a flat "50" beside "74" on all five screens, with no
-  // way to tell it is truncated. The Overview screen says so in a full sentence and
-  // offers "Load older"; this badge has room for one character.
+  // can fill a page, and without the "+" the sidebar would then read a flat page
+  // size beside an exact total on all five screens, with no way to tell it is
+  // truncated. The Overview screen says so in a full sentence and offers "Load
+  // older"; this badge has room for one character. Raising `PAGE_SIZE` to 100 put
+  // the demo book inside one page, so the "+" no longer fires in a rehearsal —
+  // which makes it MORE load-bearing, not less: it is now a case nobody sees
+  // until a real shop trades past a page, and an unnoticed missing "+" reads as
+  // an exact count.
   const windowPartial = windowIsPartial(windowRows.length, feed.rows.length, feed.hasMore);
   const count: Partial<Record<MerchantScreen, string>> = {
     overview:

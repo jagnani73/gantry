@@ -24,7 +24,22 @@ import { backendUrl } from "@/lib/env";
  * the stream pushed while it was in flight.
  */
 
-const PAGE_SIZE = 50;
+/**
+ * One page, and it is the unit every merchant screen's figures are cut to
+ * before anyone touches "Load older": Payouts' "Paid out to date" and its "By
+ * day" table sum the rows loaded, Overview's rolling window can only see the
+ * rows loaded, and the Transactions search cascades the rest of the book in a
+ * page at a time. So this number is not a fetch detail — it decides how much of
+ * a shop's takings a merchant is looking at when they first land.
+ *
+ * 100 rather than 50 because the demo book already outgrew the smaller page, and
+ * a total that stops short is the one figure on Payouts a merchant would read as
+ * final. It stays under the backend's `MAX_SETTLEMENT_LIMIT` of 200, which
+ * clamps silently rather than refusing — so a page size raised past it would be
+ * cut with nothing on screen to say so. The cost is one larger SQLite scan on
+ * the connection the indexer sweep is also writing through.
+ */
+const PAGE_SIZE = 100;
 
 /** The replay burst on connect is history, not news. Rows inside this window of
  * a fresh connection must not tint or ring — a dashboard opened at 4pm would
