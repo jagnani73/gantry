@@ -43,10 +43,15 @@ const REREAD_POLL_MS = 2_000;
  *
  * `setMerchantPayout` is gated on `msg.sender == merchant.payout`, so it is
  * signed by the wallet already being paid and the relayer cannot help. That is
- * worth stating plainly, because everything else here is unauthenticated:
- * anyone with the URL can read a shop's takings, and the reason they cannot
- * redirect its money is this line in the contract rather than anything in front
- * of it.
+ * worth stating plainly, because the back-office is still open to READ: anyone
+ * with the URL can see a shop's takings, and the reason they cannot redirect its
+ * money is this line in the contract rather than anything in front of it.
+ *
+ * It is no longer the ONLY authenticated action here. Since 21 Aug a profile edit
+ * carries a signature from this same address (`profile-writes.ts`), which the
+ * backend checks before relaying — the difference being that this one is a
+ * transaction the merchant sends and pays for, and that one is a signature the
+ * relayer acts on.
  *
  * It lives on Settings rather than Payouts because it is a configuration
  * change, not a view of what has been paid — and because a destructive,

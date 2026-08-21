@@ -430,7 +430,7 @@ export function OnboardClient() {
                 mono
                 placeholder="0x…"
                 error={payout === "" || payoutCheck.ok ? null : payoutCheck.message}
-                hint={`Every payment lands here as XSGD, minus the ${formatBps(GANTRY_FEE_BPS)} protocol fee. Only this address can ever change it. Check it against your wallet.`}
+                hint={`Every payment lands here as XSGD, minus the ${formatBps(GANTRY_FEE_BPS)} protocol fee. This address is also the only one that can change it, or edit your shop's details, so use a wallet you control. Check it against your wallet.`}
                 onChange={edited((value: string) => setPayout(value.trim()))}
               />
               {/* Under the field, not instead of it: pasting an address stays
@@ -465,7 +465,8 @@ export function OnboardClient() {
               </p>
               <p className="text-fine text-faint">
                 A real transaction on Base Sepolia; the relayer pays the gas, so you need no ETH.
-                The handle can never change. Name, location and description can, in settings.
+                The handle can never change. Name, location and description can, in settings, signed
+                by your payout address.
               </p>
             </div>
           </Card>

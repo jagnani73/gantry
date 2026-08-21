@@ -13,10 +13,13 @@ import { confirmTx } from "@/lib/confirm-tx";
  *
  * `setMerchantPayout` is gated on `msg.sender == merchant.payout`, so this is
  * signed by the merchant's own wallet and the relayer cannot help. That is worth
- * stating plainly, because everything else in this back-office is
- * unauthenticated: anyone with the URL can read a shop's takings, and the reason
- * they cannot redirect its money is this line in the contract rather than
- * anything in front of it.
+ * stating plainly, because the back-office is still open to READ: anyone with the
+ * URL can see a shop's takings, and the reason they cannot redirect its money is
+ * this line in the contract rather than anything in front of it.
+ *
+ * The other write on this surface, a profile edit, is authenticated by the same
+ * address but not by the contract — `setMerchantProfile` is `onlyRelayer`, so the
+ * check lives in the backend. See `profile-writes.ts`.
  *
  * Deliberately NOT routed through the backend. A relayer-paid rotation would
  * have to be gated by something the backend knows, and it knows nothing about

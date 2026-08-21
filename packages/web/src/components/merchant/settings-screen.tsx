@@ -18,9 +18,11 @@ import { Card, Chip, Label, Mono, useToast } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { api, ApiClientError } from "@/lib/api";
+import { describeWriteError } from "@/lib/write-error";
 import { shortDate } from "./format";
 import { useMerchantContext } from "./merchant-context";
 import { PayoutRotationCard } from "./payout-rotation";
+import { useProfileWrites } from "./profile-writes";
 import { ScreenHeader } from "./screen-header";
 import { ShopTile } from "./shop-tile";
 import { Toggle } from "./toggle";
@@ -97,6 +99,22 @@ type SaveState =
 export function SettingsScreen({ editable }: { editable: boolean }) {
   const { handle, merchant, chime, replace } = useMerchantContext();
   const toast = useToast();
+  const { signer, signProfileEdit } = useProfileWrites();
+
+  /**
+   * Whether THIS browser can change the shop's details, which since 21 Aug is a
+   * question about the wallet rather than about the host.
+   *
+   * The backend relays a rename only against a signature from the shop's payout
+   * address, so an unconnected or mismatched wallet cannot produce a save that
+   * would succeed. Rendering the form anyway would ship the failure `/onboard`
+   * already refuses to: someone rewriting their shop name and losing it to a
+   * toast. `merchant === null` is its own answer — the payout is not known yet,
+   * so neither is this.
+   */
+  const owns =
+    merchant !== null && signer !== null && signer.toLowerCase() === merchant.payout.toLowerCase();
+  const canEdit = editable && owns;
 
   /**
    * Keyed on the three profile FIELDS, never on the merchant object.
@@ -143,9 +161,18 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
       setSave({ kind: "error", message: result.message, field: result.field });
       return;
     }
+    // Unreachable, and a narrowing rather than a guard: the Card only becomes a
+    // `<form>` when `canEdit`, which already requires a loaded merchant. The
+    // signature needs `merchantId` from it, so there is nothing to attempt here.
+    if (merchant === null) return;
     setSave({ kind: "saving" });
     try {
-      const saved = await api.updateMerchantProfile(handle, result.value);
+      // Signed over the NORMALIZED value, which is also what gets sent. The
+      // backend re-normalizes and rebuilds the same message, so signing the raw
+      // draft would put a stray space in the digest and nowhere else, and the
+      // recovered address would miss for a reason nothing on screen could show.
+      const proof = await signProfileEdit(merchant.merchantId, result.value);
+      const saved = await api.updateMerchantProfile(handle, { ...result.value, proof });
       // The response's PAYOUT is not to be trusted, and only the payout. The
       // route builds it as `{ ...merchant, ...profile }` from a `getMerchant`
       // read taken BEFORE the write and served from a 60s TTL cache — and a
@@ -168,8 +195,15 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
       // status, no error name and no shop in the console to work from.
       console.warn(`gantry: profile save failed for ${handle}`, err);
       // The API's messages are written for a person to read (the disabled-host
-      // one explains why it is off), so they are surfaced verbatim.
-      const message = err instanceof ApiClientError || err instanceof Error ? err.message : String(err);
+      // one explains why it is off), so they are surfaced verbatim. A WALLET
+      // failure is not: declining the signature prompt raises a viem error whose
+      // `message` is the sentence plus request arguments, a contract address, a
+      // docs URL and a version string. `describeWriteError` is what turns that
+      // back into one line, and it only applies to the errors this screen can
+      // now raise before the request is ever sent.
+      // `describeWriteError` already passes an ApiClientError through verbatim,
+      // so one call covers both halves.
+      const message = describeWriteError(err).headline;
       // A transport failure is NOT a verdict. The server does a chain-touching
       // read before it writes, and on a cold host that read is the slow part —
       // so "client gave up at 12s" and "the write landed" are the SAME run, not
@@ -234,12 +268,15 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[1fr_392px]">
         {/* No `as="form"` and no onSubmit when editing is off: an inert form is
             still a form, and Enter in a text field would post it. There are no
-            text fields in that branch, which is the point — the decision is
-            made on the server, so the editable version is never sent — NO LONGER TRUE
-              since 21 Aug: the page hardcodes `editable`, and the gate is a
-              runtime limit the backend applies. See the note on that page. */}
+            text fields in that branch, which is the point.
+
+            `canEdit` is now mostly a question about the WALLET rather than the
+            host — the backend refuses a rename without a signature from this
+            shop's payout address, so a visitor without that key sees the same
+            locked rows a closed host would show, for a different reason the
+            copy below spells out. */}
         <Card
-          {...(editable ? ({ as: "form", onSubmit: submit } as const) : {})}
+          {...(canEdit ? ({ as: "form", onSubmit: submit } as const) : {})}
           radius="card"
           pad="lg"
           className="flex flex-col gap-5.5"
@@ -258,7 +295,7 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
                 className="sm:size-auto sm:aspect-square"
               />
               <div className="min-w-56 flex-1">
-                {editable ? (
+                {canEdit ? (
                   <Field
                     field="displayName"
                     label="Display name"
@@ -293,7 +330,7 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
               }
               help="Written to GantryCore at registration and read by agent spend policies. The contract has no setter for it, so it cannot be changed from here."
             />
-            {editable ? (
+            {canEdit ? (
               <Field
                 field="location"
                 label="Location"
@@ -306,7 +343,7 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
             )}
           </div>
 
-          {editable ? (
+          {canEdit ? (
             <Field
               field="blurb"
               label="One line about the shop"
@@ -324,7 +361,7 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
             </p>
           ) : null}
 
-          {editable ? (
+          {canEdit ? (
             <div className="flex items-center gap-2 pt-1">
               <Button type="submit" disabled={!dirty || save.kind === "saving"}>
                 {save.kind === "saving" ? "Saving…" : "Save changes"}
@@ -344,12 +381,17 @@ export function SettingsScreen({ editable }: { editable: boolean }) {
           ) : (
             /* The alternative was a Save button that 403s, which is the failure
                /onboard already refuses to ship: the worst version is someone
-               rewriting their shop name and losing it to a toast. Whatever
-               closes editing, it is emphatically NOT a review, because nothing
-               in Gantry reviews a merchant. Unreachable today; see the note on
-               `editable` in app/merchant/[handle]/settings/page.tsx. */
+               rewriting their shop name and losing it to a toast. Whichever
+               reason applies, it is emphatically NOT a review, because nothing
+               in Gantry reviews a merchant. */
             <p className="border-t border-hairline pt-5.5 text-fine text-quiet">
-              Editing is closed on this host. Nothing here reviews or approves a shop.
+              {!editable
+                ? "Editing is closed on this host. Nothing here reviews or approves a shop."
+                : merchant === null
+                  ? "Reading this shop's record."
+                  : signer === null
+                    ? "Changes to a shop's details are signed by the address its payouts go to. Connect that wallet to edit."
+                    : `You are connected as ${shortAddress(signer)}, which is not the address this shop's payouts go to. Only that address can change these details.`}
             </p>
           )}
         </Card>
