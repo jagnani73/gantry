@@ -29,13 +29,16 @@ prompt (#80) and the mismatched-account lock (#79). That last part matters,
 because every other passing row in that phase is a refusal and a gate that
 refused everything would have passed them all.
 
-**One known hole, not a blocker.** A merchant who onboards with the **passkey**
+**One path is built but UNTESTED.** A merchant who onboards with the **passkey**
 button gets a Base Smart Account, whose signature is EIP-1271 rather than
 ECDSA-recoverable and whose address is counterfactual until its first outgoing
-transaction — so `assertOwnsShop` refuses it and that merchant cannot edit their
-own shop. Nobody is stuck (U1 has never been completed by a human), but it is the
-production story in Q&A #9. The fix is a fallback to viem's `verifyTypedData`,
-which handles EIP-1271 and ERC-6492 through the universal validator. The three unverified fixes were driven by the owner and
+transaction. `assertOwnsShop` handles that with a second tier (viem's
+`verifyTypedData`, whose universal validator covers EIP-1271 and ERC-6492), so it
+is no longer a hole — but nothing has ever exercised it, which is row **85**
+below. It matters because it is the production story in Q&A #9, and U1 records
+that passkey onboarding has never been completed by a human at all.
+
+The three unverified fixes were driven by the owner and
 pass (**25l**, **25m**, **25n** — the last being the originally reported bug), and
 the two open decisions have been made and implemented.
 
@@ -352,10 +355,13 @@ is the part no unit test can reach.
 **Read this before signing the phase off: every row that passes is a REFUSAL.**
 The API rows prove the gate says no to an unsigned edit, a wrongly-signed one, a
 stale one and a malformed one, and the browser rows prove the form locks itself
-rather than offering a Save that would 403. **What no row here proves is that a
-real merchant can edit their own shop** — #78, #80 and #81 all need a browser
-wallet holding a shop's payout key, which is the same blocker as U2, and none of
-them has ever run. A gate that refuses everything would pass this table.
+rather than offering a Save that would 403. A gate that refused everything would
+pass all of those. **#78 is the row that breaks the symmetry** — a real merchant
+editing their own shop — and it is why the phase can be signed off at all. Do not
+sign it off on the refusals alone if #78 is ever reset to blank.
+
+What is still unproven is the CONTRACT-ACCOUNT tier (#85): every row here was
+driven by an EOA payout.
 
 Incidental finding, since it contradicted a note in `CLAUDE.md`: the RainbowKit
 connect control is on **Settings**, not Payouts — `PayoutRotationCard` is imported
@@ -369,14 +375,16 @@ screen serves both merchant writes.
 | 75  | Same, signed by a key that is not the shop's payout | 403 `NotMerchantPayout`. This is the whole feature: it must refuse even though the signature itself is perfectly valid | **PASS (21 Aug)** — 403 `NotMerchantPayout`. Signed by Anvil account #0 over the correct merchantId, correct text and a fresh `issuedAt`; the signature verifies perfectly and is refused solely for not being the payout |
 | 76  | Same, with a valid signature and `issuedAt` set 10 minutes back | 403 `ProofExpired` | **PASS (21 Aug)** — 403 `ProofExpired`. Signed correctly for its own old timestamp, so the freshness check is what refused it, and it refused BEFORE the chain read |
 | 76b | Same, with `signature: "0xdeadbeef"` | 400 `ProofMalformed`, not the 403 a wrong signer gets — an unusable request is a different answer from a refused one | **PASS (21 Aug)** — 400 `ProofMalformed` |
-| 77  | Same, with `x-admin-token` and no proof | 200. The operator path `demo-reset` seeds through must be untouched | **PASS ON RETRY (21 Aug), and the first attempt is worth keeping.** First call returned 502 `ProfileWriteUnresolved` and the text did not change over 30s of polling; the relayer nonce had NOT moved, so nothing was broadcast. Ladder followed rather than reading the calldata: nonce `latest == pending` (1201, nothing stuck) and `eth_getCode` `0x` (no 7702 delegation), then re-ran — 200 in 1.7s, nonce 1201 → 1202. The documented transient, on the one path this change does not touch (`assertOwnsShop` is skipped for an operator). **Side effect worth noting:** the shop's blurb had drifted to `"Hainanese chicken rice since 1978."` from earlier edit testing; this wrote the canonical `DEMO_MERCHANTS` text back |
+| 77  | Same, with `x-admin-token` and no proof | 200. The operator escape hatch must survive. Note it has NO in-repo caller: `demo-reset` ships display text inside `registerMerchant` and never PATCHes, so this exists for an operator correcting a shop by hand | **PASS ON RETRY (21 Aug), and the first attempt is worth keeping.** First call returned 502 `ProfileWriteUnresolved` and the text did not change over 30s of polling; the relayer nonce had NOT moved, so nothing was broadcast. Ladder followed rather than reading the calldata: nonce `latest == pending` (1201, nothing stuck) and `eth_getCode` `0x` (no 7702 delegation), then re-ran — 200 in 1.7s, nonce 1201 → 1202. The documented transient, on the one path this change does not touch (`assertOwnsShop` is skipped for an operator). **Side effect worth noting:** the shop's blurb had drifted to `"Hainanese chicken rice since 1978."` from earlier edit testing; this wrote the canonical `DEMO_MERCHANTS` text back |
 | 78  | Onboard a shop at `/onboard` with a payout address held in MetaMask, then edit it at `/merchant/<handle>/settings` | Connect that wallet, edit the name, one signature prompt (no gas — the relayer still sends the transaction), success toast, and `/m/<handle>` plus `/merchants` show the new name | **PASS (21 Aug, owner-reported)** — shop `siong-sheng` onboarded with payout `0xC89a88fdbF613F68AD5a4E03B918610Ff0373c43` (an owner-held EOA, not the relayer) and edited successfully. This is the row the whole phase turns on: every other passing row is a REFUSAL, and a gate that refused everything would have passed them all |
 | 79  | Same screen, wallet disconnected, then connected as a different account | Fields render as locked rows, no Save button, and the line below names the reason: "connect that wallet" when disconnected, and the connected address plus "not the address this shop's payouts go to" when mismatched | **PASS (21 Aug) — both branches.** Disconnected branch verified on `/merchant/ah-hock-chicken-rice/settings`: all three fields render as locked rows with a `locked` badge and `read_page filter=interactive` returns **zero** input elements, so it is structurally locked rather than just styled that way; no Save and no Discard control exists; the line reads verbatim `Changes to a shop's details are signed by the address its payouts go to. Connect that wallet to edit.` **Mismatched branch now PASSES too (21 Aug, owner-reported)** on `siong-sheng` with a non-payout account connected, so the `shortAddress(signer)` sentence renders. Both branches verified |
 | 80  | Decline the signature prompt in MetaMask | One sentence inline ("You declined this in your wallet, so nothing was sent."), never a viem block. The draft must survive so the merchant can retry | **PASS (21 Aug, owner-reported)** on `siong-sheng` — `describeWriteError`'s `REJECTED` branch is reachable from this screen |
 | 81  | Sign, wait six minutes without saving, then save | `ProofExpired`, explained as needing a fresh signature. Reachable because signing and saving are two steps | **NOT RUN (no longer blocked).** A payout wallet exists now (`siong-sheng`), so this is only skipped for costing six minutes of waiting. The server half is #76 and passes; what is untested is that the SCREEN explains it rather than showing a bare error |
 | 82  | `/merchant/ah-hock-chicken-rice/settings` | Locked, since `demo-reset` registers the canonical shops with the RELAYER as payout. Accepted, not a bug — do NOT import the relayer key into a browser wallet to work around it, because MetaMask can add a 7702 delegation and a delegated relayer breaks the `exact` bridge | **PASS (21 Aug, browser)** — locked, with the payout-signature reason rather than the host-closed one. It never says "Editing is closed on this host" |
-| 84  | Nothing adjacent broke | Overview and Payouts still render; console carries no errors | **PASS (21 Aug, browser)** — Overview shows all three KPI tiles (S$491.53 collected, 105 agent / 49 human split, S$11.36 saved) over a 10-row live feed including a `via facilitator` row; Payouts shows its KPI grid, By day table and the partial-coverage caveat. Console on all three screens carries exactly two warnings and no errors: `@metamask/sdk`'s optional `@react-native-async-storage/async-storage` peer, and `Lit is in dev mode` from the WalletConnect modal. Handle and Category rows still locked with their own reasons |
 | 83  | `pnpm demo:reset` after all of the above | Still registers both shops, still under 30s — it goes through the admin-token path and never signs | **PASS (21 Aug)** — `done in 2.8s`, exit 0. Both shops present, agent wallet armed at S$50/day · food_beverage · 10.00 USDC, gadgethub-sg registered. Nothing to top up, which is the fast case |
+| 84  | Nothing adjacent broke | Overview and Payouts still render; console carries no errors | **PASS (21 Aug, browser)** — Overview shows all three KPI tiles (S$491.53 collected, 105 agent / 49 human split, S$11.36 saved) over a 10-row live feed including a `via facilitator` row; Payouts shows its KPI grid, By day table and the partial-coverage caveat. Console on all three screens carries exactly two warnings and no errors: `@metamask/sdk`'s optional `@react-native-async-storage/async-storage` peer, and `Lit is in dev mode` from the WalletConnect modal. Handle and Category rows still locked with their own reasons |
+| 85  | A shop whose payout is a PASSKEY (Base Smart Account) edits its profile | The slow tier settles it: recovery declines an ERC-6492 signature, `verifyTypedData`'s universal validator accepts it, the edit lands. Watch the wallet actually returns a WRAPPED 6492 signature — viem cannot build the wrapper without `factory`/`factoryData`, which this call site does not pass, so that is the first thing to check on a refusal | **NOT RUN.** Needs U1 (passkey onboarding) completed first, which no human has ever done. Every row above used an EOA payout, so this tier has never executed |
+| 86  | An unreachable RPC during a contract-account check | 503 `OwnershipUnverifiable`, never 403 `NotMerchantPayout`. viem returns `false` for a failed `eth_call` rather than throwing (measured against a dead port), so without the liveness probe an outage accuses the merchant of forgery | **NOT RUN in the app.** The viem behaviour itself is measured; the probe branch is not exercised. Reproduce by pointing `BASE_SEPOLIA_RPC_URL` at a dead port and editing a contract-account shop |
 
 ---
 

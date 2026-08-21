@@ -18,7 +18,7 @@ import {
  * What this pins is the shop's public identity. These three strings are what a
  * payer sees on a receipt and on the merchant page, they hang off a handle that
  * is claimed on-chain and permanent, and the PATCH that writes them is
- * unauthenticated by decision — so "what is a legal name" has to be one answer,
+ * signed by the shop's payout address since 21 Aug — so "what is a legal name" has to be one answer,
  * checked here rather than re-derived per surface.
  */
 

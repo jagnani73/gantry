@@ -6,24 +6,19 @@ import { SettingsScreen } from "@/components/merchant/settings-screen";
  *
  * This page used to branch on `process.env.NODE_ENV` in the server component, so
  * a production build shipped the fields permanently locked. The argument was
- * that the route is unauthenticated and anyone with the URL could rewrite a
- * shop's identity — true, and weaker than it sounds: `setMerchantProfile`
- * provably cannot touch payout, handle or category, so an edit moves no money
- * and redirects no payment, and unlike a registration it is REVERSIBLE, because
- * the real merchant corrects it through the same open route. Defacement, not
- * theft, and self-healing.
+ * that the route was unauthenticated and anyone with the URL could rewrite a
+ * shop's identity. That is no longer true: since 21 Aug an edit carries an
+ * EIP-712 signature from the shop's payout address, which the backend checks
+ * against a fresh registry read before relaying anything. The per-handle and
+ * per-IP cooldowns and the rolling-24h ceiling stay underneath as a gas bound,
+ * with `PROFILE_EDITS=closed` as the incident switch.
  *
- * The backend bounds it with a per-HANDLE cooldown (the shape defacement
- * actually takes — one shop, repeatedly), a per-IP cooldown, and a global
- * rolling-24h ceiling, with `PROFILE_EDITS=closed` as the incident switch. That
- * gate is dynamic, so a build-time branch can no longer express it.
- *
- * `SettingsScreen` still takes an `editable` prop and nothing passes `false` any
- * more, so its locked variants are currently UNREACHABLE — including under
- * `PROFILE_EDITS=closed`, which nothing reads client-side and which surfaces as
- * a 403 on submit, the way any rate-limited endpoint refuses. Kept rather than
- * deleted so a future server-side read of that switch has somewhere to land; do
- * not read the prop as evidence a locked state is reachable today.
+ * `SettingsScreen` still takes an `editable` prop and nothing passes `false`,
+ * but its locked variants are NOT unreachable any more and this docblock said
+ * they were: `canEdit = editable && owns`, so every visitor without the payout
+ * key sees them. That is now the common case rather than a landing pad. The prop
+ * survives for a future server-side read of `PROFILE_EDITS`, which nothing reads
+ * client-side today and which still surfaces as a 403 on submit.
  *
  * `handle` and `category` remain locked for good and for their own reasons: the
  * handle is claimed permanently, and `GantryCore` has no setter for a category.

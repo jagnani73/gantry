@@ -20,8 +20,10 @@ import { cn } from "@/lib/utils";
  * WHY THIS IS SAFE TO DO HERE, and why it is not the merchant back-office's
  * payout rotation wearing a different hat: registration is RELAYER-PAID. The
  * form sends an address to `POST /api/merchants` and the backend's gas key
- * makes the transaction, so this account never signs anything and never needs
- * ETH. That is what keeps `confirm-tx.ts` out of this path entirely — its
+ * makes the transaction, so this account never SENDS anything and never needs
+ * ETH. It does sign: since 21 Aug a profile edit is authorised by a signature
+ * from this address, which is why the backend's ownership check has a
+ * contract-account tier at all. That is what keeps `confirm-tx.ts` out of this path entirely — its
  * receipt discipline is built on EOA nonce semantics (`onReplaced` scans for a
  * transaction with the same `from` and `nonce`), which a 4337 account does not
  * have. Rotating a payout FROM a smart account is a different problem and is

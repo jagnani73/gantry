@@ -379,7 +379,7 @@ gaps list in `CLAUDE.md`, not hidden.
   relaying. It is authentication with no account, no password and nothing new for
   us to secure, because the chain already holds the identity. What it proves is
   who wrote the text, never that the text is true.
-- *How many tests?* 577 — 201 Foundry, 183 shared, 189 backend, 4 agent. Five of
+- *How many tests?* 581 — 201 Foundry, 187 shared, 189 backend, 4 agent. Five of
   the Foundry ones are fork tests that skip without a fork RPC, so CI runs 196 of
   the 201; don't let a slide imply otherwise. Four are invariants, not unit
   tests. `packages/web` has no suite at all.
