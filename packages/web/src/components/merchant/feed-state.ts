@@ -1,4 +1,3 @@
-import { rowsInOverviewWindow, type SettlementEvent } from "@gantry/shared";
 import type { FeedConnection } from "./use-merchant-feed";
 
 export interface FeedStatus {
@@ -14,11 +13,11 @@ export interface FeedStatus {
  * in the window is still live, so the amber "Waiting" that used to sit on that
  * case is gone — it read as a fault in the connection rather than as a quiet
  * week, and on a demo day it is the first thing on a cold screen. On Overview an
- * empty window is already said in the two places that are actually about money,
- * the "Nothing settled…" figure and the "No payments…" feed body — both of which
- * name the window length from `OVERVIEW_WINDOW_DAYS`, so this comment does not
- * quote them; on the other five merchant screens the sidebar carries this badge
- * alone, and there an empty window is simply not the badge's subject.
+ * empty month is already said in the two places that are actually about money,
+ * the "Nothing settled since…" figure and the "No payments yet" feed body, so
+ * this comment does not quote them; on the other five merchant screens the
+ * sidebar carries this badge alone, and there an empty month is simply not the
+ * badge's subject.
  *
  * `disconnected` is deliberately its own entry rather than a quieter kind of
  * empty. Payments keep settling on-chain while this screen cannot see them, and
@@ -38,20 +37,4 @@ const FEED_STATUS = {
 
 export function feedStatusOf(connection: FeedConnection): FeedStatus {
   return FEED_STATUS[connection];
-}
-
-/**
- * The window's rows, or none before the clock has mounted.
- *
- * A thin wrapper: the arithmetic lives in `@gantry/shared/overviewWindow`,
- * where it can be tested, and the `null` handled here is a client-render
- * concern rather than part of it — `useNowSeconds` returns null until mount so
- * that the server and the first client paint agree.
- */
-export function rowsForOverviewWindow(
-  rows: readonly SettlementEvent[],
-  nowSeconds: number | null,
-): readonly SettlementEvent[] {
-  if (nowSeconds === null) return [];
-  return rowsInOverviewWindow(rows, (row) => row.blockTime, nowSeconds);
 }

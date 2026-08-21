@@ -17,7 +17,7 @@ export * from "./dashboardScope";
 export * from "./directory";
 export * from "./time";
 export * from "./days";
-export * from "./overviewWindow";
+export * from "./monthWindow";
 export * from "./cursor";
 export * from "./payerFilter";
 export * from "./agentStatus";

@@ -5,6 +5,8 @@ import type { MerchantResponse, SettlementEvent } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
 import { useChime, type ChimeControl } from "./use-chime";
 import { useMerchantFeed, type MerchantFeed } from "./use-merchant-feed";
+import { useMerchantSummary, type MerchantSummary } from "./use-merchant-summary";
+import { useNowSeconds } from "./use-now";
 
 /**
  * Everything the five screens share, held once at the shell.
@@ -27,6 +29,13 @@ interface MerchantContextValue {
   /** After a profile save, so the sidebar's shop name updates without a refetch. */
   replace(next: MerchantResponse): void;
   feed: MerchantFeed;
+  /**
+   * The Overview's KPI figures. Held here beside `feed` rather than inside the
+   * Overview screen because the sidebar's nav count reads it on every screen —
+   * and because the two must be built from the same clock and the same rows, or
+   * a badge and a tile would name different totals.
+   */
+  summary: MerchantSummary;
   chime: ChimeControl;
   /** The row the transaction drawer is showing; null when it is closed. */
   selected: SettlementEvent | null;
@@ -93,6 +102,10 @@ export function MerchantProvider({
   ringRef.current = chime.ring;
   const onLive = useCallback(() => ringRef.current(), []);
   const feed = useMerchantFeed(handle, onLive);
+  // One clock for both, so the month the tiles sum and the month the header
+  // names cannot be a tick apart across a boundary.
+  const now = useNowSeconds();
+  const summary = useMerchantSummary(handle, feed.rows, now);
 
   const reload = useCallback(() => setAttempt((previous) => previous + 1), []);
   const replace = useCallback((next: MerchantResponse) => {
@@ -115,11 +128,12 @@ export function MerchantProvider({
       reload,
       replace,
       feed,
+      summary,
       chime,
       selected,
       select: setSelected,
     }),
-    [handle, merchant, status, error, reload, replace, feed, chime, selected],
+    [handle, merchant, status, error, reload, replace, feed, summary, chime, selected],
   );
 
   return <MerchantContext.Provider value={value}>{children}</MerchantContext.Provider>;

@@ -15,6 +15,7 @@ import type {
   SettleRequest,
   SettleResponse,
   SettlementListResponse,
+  SettlementSummaryResponse,
   UpdateMerchantProfileRequest,
 } from "@gantry/shared";
 import type { Address } from "viem";
@@ -164,6 +165,25 @@ export const api = {
         payer: params.payer?.length ? params.payer.join(",") : undefined,
         before: params.before,
         limit: params.limit,
+      })}`,
+      { timeoutMs: 12_000 },
+    ),
+
+  /**
+   * Totals over the whole matching book from `since` — the merchant Overview's
+   * KPI tiles.
+   *
+   * Deliberately NOT derived from `settlements()` above. Those rows are a page,
+   * and summing a page while labelling the result as a span of time is the bug
+   * this replaced: the figures moved when the page size changed. `since` is
+   * chosen by the caller because the window belongs beside the label naming it.
+   */
+  settlementSummary: (params: { handle?: string; payer?: readonly string[]; since: number }) =>
+    call<SettlementSummaryResponse>(
+      `/api/settlements/summary${query({
+        handle: params.handle,
+        payer: params.payer?.length ? params.payer.join(",") : undefined,
+        since: params.since,
       })}`,
       { timeoutMs: 12_000 },
     ),

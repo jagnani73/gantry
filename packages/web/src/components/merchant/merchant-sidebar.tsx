@@ -5,12 +5,10 @@ import { usePathname } from "next/navigation";
 import { CATEGORY_LABELS, shortAddress } from "@gantry/shared";
 import { Card, GantryMark, Label, Mono, StatusDot } from "@/components/primitives";
 import { cn } from "@/lib/utils";
-import { windowIsPartial } from "@gantry/shared";
-import { feedStatusOf, rowsForOverviewWindow } from "./feed-state";
+import { feedStatusOf } from "./feed-state";
 import { shopName, useMerchantContext } from "./merchant-context";
 import { MERCHANT_SCREENS, SCREEN_LABEL, merchantHref, type MerchantScreen } from "./screens";
 import { grouped } from "./format";
-import { useNowSeconds } from "./use-now";
 
 const STATUS_TEXT = {
   accent: "text-accent",
@@ -27,30 +25,22 @@ const STATUS_TEXT = {
  * this shell, and a nav column is not part of what goes on a counter.
  */
 export function MerchantSidebar() {
-  const { handle, merchant, feed } = useMerchantContext();
+  const { handle, merchant, feed, summary } = useMerchantContext();
   const pathname = usePathname();
-  const now = useNowSeconds();
 
-  const windowRows = rowsForOverviewWindow(feed.rows, now);
   const status = feedStatusOf(feed.connection);
 
-  // Overview counts the rolling window, Transactions the whole book. Two counts,
-  // because they answer different questions and a merchant reads both — but they
-  // are not the same KIND of number, and the window change made that bite. The
-  // Transactions figure is the server's total and exact; the Overview one counts
-  // only the rows this browser has loaded, capped at one page. A seven-day window
-  // can fill a page, and without the "+" the sidebar would then read a flat page
-  // size beside an exact total on all five screens, with no way to tell it is
-  // truncated. The Overview screen says so in a full sentence and offers "Load
-  // older"; this badge has room for one character. Raising `PAGE_SIZE` to 100 put
-  // the demo book inside one page, so the "+" no longer fires in a rehearsal —
-  // which makes it MORE load-bearing, not less: it is now a case nobody sees
-  // until a real shop trades past a page, and an unnoticed missing "+" reads as
-  // an exact count.
-  const windowPartial = windowIsPartial(windowRows.length, feed.rows.length, feed.hasMore);
+  // Overview counts this month, Transactions the whole book. Two counts, because
+  // they answer different questions and a merchant reads both.
+  //
+  // Both are now EXACT, which is new: the Overview badge used to count the rows
+  // this browser had paged in and carry a "+" when that was a floor. Both
+  // figures come from the server now — one a SUM over the month, one a COUNT
+  // over everything — so the badge is a fact rather than a lower bound and the
+  // "+" is gone with the thing it was hedging. Nothing here should reintroduce a
+  // count derived from `feed.rows`: that array's length is a page size.
   const count: Partial<Record<MerchantScreen, string>> = {
-    overview:
-      windowRows.length > 0 ? `${grouped(windowRows.length)}${windowPartial ? "+" : ""}` : "",
+    overview: summary.totals.count > 0 ? grouped(summary.totals.count) : "",
     transactions: feed.total > 0 ? grouped(feed.total) : "",
   };
 

@@ -4,19 +4,15 @@ import Link from "next/link";
 import {
   CARD_FEE_BPS,
   GANTRY_FEE_BPS,
-  OVERVIEW_WINDOW_DAYS,
-  dayKey,
   formatBps,
-  overviewWindowStart,
-  windowIsPartial,
   type SettlementEvent,
 } from "@gantry/shared";
 import { Card, Figure, Label, StatusDot } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EmptyPanel } from "./empty-panel";
-import { feedStatusOf, rowsForOverviewWindow } from "./feed-state";
-import { dayRangeLabel, grouped, plural, totalsOf } from "./format";
+import { feedStatusOf } from "./feed-state";
+import { grouped, monthLabel, monthStartLabel, plural } from "./format";
 import { useMerchantContext } from "./merchant-context";
 import { ScreenHeader } from "./screen-header";
 import { SettlementFeedRow } from "./settlement-feed-row";
@@ -24,11 +20,22 @@ import { merchantHref } from "./screens";
 import { settlementKey } from "./use-merchant-feed";
 import { useNowSeconds } from "./use-now";
 
-/** The counter view shows a rolling week, not the book. Anything longer lives one click
- * away on Transactions. Eight is the count that was measured to reach the fold
- * on the 1440-wide window the design is drawn for, not a number the layout
- * enforces: a shorter viewport cuts the list off earlier. */
-const FEED_LIMIT = 8;
+/**
+ * How many settlements the live feed shows before "All transactions".
+ *
+ * A COUNT, deliberately, and no longer filtered to the window above it. The
+ * tiles answer "how has this month gone" and the feed answers "what just
+ * happened" — two different questions, which is exactly what the old shared
+ * array got wrong. Keeping the feed on the month would also empty it at 00:00 on
+ * the 1st, blanking the one panel on the screen whose job is to show the shop is
+ * still trading.
+ *
+ * Ten rather than the previous eight: eight was measured to reach the fold on
+ * the 1440-wide window the design is drawn for, and a couple of rows past the
+ * fold is the right side to err on for a list that is scrolled rather than
+ * counted.
+ */
+const FEED_LIMIT = 10;
 
 const STATUS_TEXT = {
   accent: "text-accent",
@@ -37,13 +44,15 @@ const STATUS_TEXT = {
 } as const;
 
 export function OverviewScreen() {
-  const { handle, feed, select } = useMerchantContext();
+  const { handle, feed, summary, select } = useMerchantContext();
   const now = useNowSeconds();
 
-  const windowRows = rowsForOverviewWindow(feed.rows, now);
   const status = feedStatusOf(feed.connection);
-  const totals = totalsOf(windowRows, CARD_FEE_BPS);
-  const partial = windowIsPartial(windowRows.length, feed.rows.length, feed.hasMore);
+  const totals = summary.totals;
+  // A failed summary must not become a confident S$0.00. The figures are summed
+  // over the whole book on the server, so there is no local fallback that would
+  // be anything but a smaller, wrong number — say so and offer the retry.
+  const failedSummary = summary.status === "error";
 
   return (
     <>
@@ -66,9 +75,7 @@ export function OverviewScreen() {
           </div>
         }
       >
-        {now === null ? null : (
-          <>{dayRangeLabel(overviewWindowStart(now), dayKey(now))} · </>
-        )}
+        {now === null ? null : <>{monthLabel(now)} · </>}
         every payment lands as XSGD
       </ScreenHeader>
 
@@ -76,12 +83,21 @@ export function OverviewScreen() {
         <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr]">
           <Card tone="accent" radius="card" pad="lg">
             <Label size="lg" tone="on-accent-muted">
-              Collected, last {OVERVIEW_WINDOW_DAYS} days
+              Collected, this month
             </Label>
             <Figure units={totals.net} size="kpi" tone="on-accent" className="mt-4" />
             <div className="mt-3.5 text-body-sm text-on-accent-body">
+              {/* The empty state names the BOUNDARY rather than saying "no
+                  payments". A calendar window resets itself, so at 09:00 on the
+                  1st this reads zero over a shop that traded all last month —
+                  which is true, and indistinguishable from a broken dashboard
+                  unless the sentence says where the window starts. That
+                  ambiguity was the whole objection to a calendar window; naming
+                  the date is what answers it. */}
               {totals.count === 0
-                ? `Nothing settled in the last ${OVERVIEW_WINDOW_DAYS} days`
+                ? now === null
+                  ? "Nothing settled yet this month"
+                  : `Nothing settled since ${monthStartLabel(now)}`
                 : `${plural(totals.count, "payment")} · net of the ${formatBps(GANTRY_FEE_BPS)} fee`}
             </div>
           </Card>
@@ -102,23 +118,20 @@ export function OverviewScreen() {
           </Card>
         </div>
 
-        {/* Every figure above sums the rows this browser holds. Past one page
-            that is a floor, not the window's total, and a merchant has no way
-            to tell — so say it, and hand them the control that fixes it. */}
-        {partial ? (
+        {/* There is no "loaded so far" caveat here any more, and its absence is
+            the point: these figures are summed over the whole book on the
+            server, so they are exact at any size and no amount of paging in the
+            feed below can change them. The only thing that can now make them
+            wrong is the request failing, which is what this says. */}
+        {failedSummary ? (
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-fine text-faint">
-              Covers the {grouped(feed.rows.length)} most recent payments, out of{" "}
-              {grouped(feed.total)} all time. Earlier payments inside this window are not in
-              these figures yet.
+              This month&apos;s totals didn&apos;t load, so the figures above may be behind. This
+              says nothing about what has settled — every payment is final on-chain either way.
+              {summary.error ? ` ${summary.error}` : ""}
             </p>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={feed.loadMore}
-              disabled={feed.loadingMore}
-            >
-              {feed.loadingMore ? "Loading…" : "Load older"}
+            <Button variant="secondary" size="sm" onClick={summary.retry}>
+              Try again
             </Button>
           </div>
         ) : null}
@@ -134,7 +147,9 @@ export function OverviewScreen() {
             All transactions →
           </Link>
         </div>
-        <FeedBody limit={FEED_LIMIT} rows={windowRows} nowSeconds={now} onOpen={select} />
+        {/* `feed.rows`, not the month's rows: the newest payments, whichever
+            month they fell in. See FEED_LIMIT. */}
+        <FeedBody limit={FEED_LIMIT} rows={feed.rows} nowSeconds={now} onOpen={select} />
       </Card>
     </>
   );
@@ -174,7 +189,7 @@ function DoorSplit({ agentCount, count }: { agentCount: number; count: number })
         role="img"
         aria-label={
           count === 0
-            ? `No payments in the last ${OVERVIEW_WINDOW_DAYS} days`
+            ? "No payments this month"
             : `${agentCount} of ${count} payments came through the agent door, ${humanCount} through the human door`
         }
       >
@@ -240,7 +255,7 @@ function FeedBody({
   if (feed.historyStatus === "error") {
     return (
       <EmptyPanel
-        title={`Couldn't load the last ${OVERVIEW_WINDOW_DAYS} days`}
+        title="Couldn't load recent payments"
         body={feed.historyError ?? "The settlement history request did not come back."}
         action={
           <Button variant="secondary" size="sm" onClick={feed.retry}>
@@ -252,15 +267,16 @@ function FeedBody({
   }
 
   if (feed.historyStatus === "loading" && rows.length === 0) {
-    return (
-      <EmptyPanel glyph={false} title={`Loading the last ${OVERVIEW_WINDOW_DAYS} days…`} body="" />
-    );
+    return <EmptyPanel glyph={false} title="Loading recent payments…" body="" />;
   }
 
+  // This is the whole book being empty, not the month — the feed is no longer
+  // filtered to the window, so a shop that traded last month but not this one
+  // shows its last payments here rather than an empty panel contradicting them.
   if (rows.length === 0) {
     return (
       <EmptyPanel
-        title={`No payments in the last ${OVERVIEW_WINDOW_DAYS} days`}
+        title="No payments yet"
         body="Settlements appear here the moment they land. Put the standee on the counter, or send an agent at your pay link."
       />
     );

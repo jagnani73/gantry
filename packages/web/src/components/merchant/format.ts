@@ -2,6 +2,7 @@ import {
   DISPLAY_TIME_ZONE,
   dayKey,
   dayKeyMiddayUnixSeconds,
+  monthStartDayKey,
   relativeDayLabel,
   type DayKey,
   type SettlementEvent,
@@ -36,10 +37,11 @@ const MONTH_DAY = new Intl.DateTimeFormat("en-SG", {
   month: "long",
 });
 
-/** "4" — the opening end of a range whose month is written once, at the close. */
-const DAY_ONLY = new Intl.DateTimeFormat("en-SG", {
+/** "August 2026" — the Overview's window heading. */
+const MONTH_YEAR = new Intl.DateTimeFormat("en-SG", {
   timeZone: DISPLAY_TIME_ZONE,
-  day: "numeric",
+  month: "long",
+  year: "numeric",
 });
 
 /** "8 Aug 2026" — registration dates and the drawer's timestamp. */
@@ -90,25 +92,26 @@ export function feedDay(atUnixSeconds: number, nowUnixSeconds: number | null): s
 }
 
 /**
- * "4–10 August" — the span the Overview tiles cover.
+ * "August 2026" — the window the Overview tiles cover.
  *
- * The month is written once when both ends share it, which is the common case
- * for a seven-day window and the difference between a date range and a mouthful
- * ("4 August – 10 August"). Both ends come from DayKeys built from the same
- * clock reading the tiles use, so the header cannot drift from the START day
- * they count. The top end is looser by design — see `rowsInOverviewWindow`.
+ * The YEAR is written out, unlike the day labels below. A month name alone reads
+ * as "the August that just happened" on a back-office someone opens in January,
+ * and this is the heading over a figure a merchant may be reconciling against a
+ * statement.
  */
-export function dayRangeLabel(startDay: DayKey, endDay: DayKey): string {
-  const start = dayKeyMiddayUnixSeconds(startDay);
-  const end = dayKeyMiddayUnixSeconds(endDay);
-  if (startDay === endDay) return monthDay(end);
-  // Compare the month component of the key itself rather than a formatted
-  // string: the keys are already in the display zone, and re-parsing a rendered
-  // date to find out what month it was in is how zones get lost.
-  const sameMonth = startDay.slice(0, 7) === endDay.slice(0, 7);
-  return sameMonth
-    ? `${DAY_ONLY.format(start * 1000)}–${monthDay(end)}`
-    : `${monthDay(start)} – ${monthDay(end)}`;
+export function monthLabel(nowSeconds: number): string {
+  return MONTH_YEAR.format(nowSeconds * 1000);
+}
+
+/**
+ * "1 August" — where the current month's window opens.
+ *
+ * Formatted from the same boundary the tiles sum from rather than from a `1`
+ * glued onto a month name, so the empty state cannot name a different date than
+ * the query used.
+ */
+export function monthStartLabel(nowSeconds: number): string {
+  return monthDay(dayKeyMiddayUnixSeconds(monthStartDayKey(nowSeconds)));
 }
 
 export function shortDate(unixSeconds: number): string {
