@@ -5,9 +5,6 @@ import {
   CARD_FEE_BPS,
   decodeCursor,
   isAfterCursor,
-  isInMonth,
-  monthKey,
-  monthStartUnixSeconds,
   type SettlementEvent,
   type SettlementSummaryResponse,
 } from "@gantry/shared";
@@ -15,15 +12,20 @@ import { api } from "@/lib/api";
 import { totalsOf, type FeedTotals } from "./format";
 
 /**
- * The merchant Overview's KPI figures: this calendar month, summed on the
- * server, kept current from the live feed.
+ * Settlement totals from `since`, summed on the server, kept current from the
+ * live feed.
  *
- * The shape is the point. The tiles used to sum `feed.rows` — whatever this
- * browser had paged in — under a heading that named a span of TIME, so a page
- * size and a window were describing the same numbers and only agreed while a
- * shop's takings happened to fit in one page. Widening the page made that worse,
- * not better. So the total now comes from SQL over the whole book and the feed's
- * page size cannot move it.
+ * The shape is the point. These figures used to sum `feed.rows` — whatever the
+ * browser had paged in — under headings that named a span of TIME or "to date",
+ * so a page size was silently deciding a merchant's takings and only agreed with
+ * the label while a shop's book happened to fit in one page. Widening the page
+ * made that worse, not better. The total now comes from SQL over the whole book,
+ * and the feed's page size cannot move it.
+ *
+ * `since` is the caller's, which is what lets ONE hook serve both merchant
+ * questions: Overview passes the month boundary, Payouts passes 0 for lifetime.
+ * They differ in a number and in nothing else — no second endpoint, no second
+ * fold, no second place for the two to drift apart.
  *
  * The live half is DERIVED, never accumulated, and that is what makes it safe.
  * A running counter incremented per arriving row would double-count on every
@@ -35,8 +37,8 @@ import { totalsOf, type FeedTotals } from "./format";
  *
  * "Did not already contain" is a POSITION comparison against the mark the server
  * reported, not a timestamp one. `latest` is the newest row the server saw for
- * this filter even when the month's window is empty, so a shop that has not
- * traded yet this month still has a floor to compare against.
+ * this filter even when the window is empty, so a shop that has not traded since
+ * `since` still has a floor to compare against.
  */
 
 export type SummaryStatus = "loading" | "ready" | "error";
@@ -44,17 +46,15 @@ export type SummaryStatus = "loading" | "ready" | "error";
 export interface MerchantSummary {
   status: SummaryStatus;
   error: string | null;
-  /** The month these figures cover, as a `YYYY-MM` key — what the header names
-   * and what a stale tab is checked against. */
-  month: string;
   /** Server totals plus anything the live feed has seen since. */
   totals: FeedTotals;
-  /** How many of `totals` arrived live rather than in the server's sum. Not for
-   * display: it is what lets a screen tell "the server said zero" apart from
-   * "nothing has happened", which are different sentences. */
-  liveCount: number;
   retry(): void;
 }
+
+/** Lifetime: every settlement this merchant has ever taken. Named rather than
+ * written as a bare `0` at the call site, because `0` there reads like a
+ * placeholder for a bound nobody got round to computing. */
+export const SINCE_ALL_TIME = 0;
 
 const EMPTY: FeedTotals = {
   count: 0,
@@ -92,30 +92,12 @@ function combine(snapshot: SettlementSummaryResponse | null, live: FeedTotals): 
 export function useMerchantSummary(
   handle: string,
   rows: readonly SettlementEvent[],
-  nowSeconds: number | null,
+  since: number | null,
 ): MerchantSummary {
   const [snapshot, setSnapshot] = useState<SettlementSummaryResponse | null>(null);
   const [status, setStatus] = useState<SummaryStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-
-  // The month, not the clock. `nowSeconds` ticks every second, and everything
-  // downstream of it is derived from this key instead so that a tick produces no
-  // new values: refetching per second would be a request per second per open
-  // tab, and a `totals` object rebuilt per second would change the shell's
-  // context value under all five merchant screens for no new information. The
-  // key changes once a month — exactly when the `since` bound below goes stale
-  // under a tab someone left open overnight.
-  const month = nowSeconds === null ? null : monthKey(nowSeconds);
-  const monthStart = month === null ? null : `${month}-01`;
-  const since = useMemo(
-    () => (nowSeconds === null ? null : monthStartUnixSeconds(nowSeconds)),
-    // Intentionally keyed on the month, not on `nowSeconds` — every instant
-    // inside one month yields the same bound, so recomputing it per tick is
-    // wasted Intl work. eslint cannot see that `month` determines it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [month],
-  );
 
   useEffect(() => {
     if (since === null) return;
@@ -142,12 +124,13 @@ export function useMerchantSummary(
     return () => {
       cancelled = true;
     };
-    // `month` is in the deps so a rollover refetches; `since` is derived from it
-    // and would be enough on its own, but naming both keeps the intent readable.
-  }, [handle, month, since, attempt]);
+    // `since` is a number, so a caller recomputing it from a per-second clock
+    // still compares equal and does not refire this. It changes when the window
+    // does — at a month rollover under a tab left open overnight.
+  }, [handle, since, attempt]);
 
   const live = useMemo(() => {
-    if (!snapshot || monthStart === null) return EMPTY;
+    if (!snapshot || since === null) return EMPTY;
     const mark = snapshot.latest === null ? null : decodeCursor(snapshot.latest);
     const fresh = rows.filter((row) => {
       // No mark means this filter had never matched anything when the snapshot
@@ -155,22 +138,24 @@ export function useMerchantSummary(
       if (mark && !isAfterCursor({ blockNumber: row.blockNumber, logIndex: row.logIndex }, mark)) {
         return false;
       }
-      return isInMonth(row.blockTime, monthStart);
+      // The SAME bound the server summed from, rather than a second expression
+      // of the same window. A DayKey comparison alongside a unix-second one
+      // would be two things to keep in step across midnight on the 1st, where
+      // disagreeing by a second counts a payment twice or not at all.
+      //
+      // No upper bound, deliberately. `since` comes from a periodic tick, so for
+      // a moment after a rollover it is behind the chain BY CONSTRUCTION; a
+      // closed top would drop the newest payment at exactly the moment a
+      // merchant is watching it land, and nothing arrives from the future.
+      return row.blockTime >= since;
     });
     return totalsOf(fresh, CARD_FEE_BPS);
-  }, [rows, snapshot, monthStart]);
+  }, [rows, snapshot, since]);
 
   const retry = useCallback(() => setAttempt((previous) => previous + 1), []);
 
   return useMemo(
-    () => ({
-      status,
-      error,
-      month: month ?? "",
-      totals: combine(snapshot, live),
-      liveCount: live.count,
-      retry,
-    }),
-    [status, error, month, snapshot, live, retry],
+    () => ({ status, error, totals: combine(snapshot, live), retry }),
+    [status, error, snapshot, live, retry],
   );
 }

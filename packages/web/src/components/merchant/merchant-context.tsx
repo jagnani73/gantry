@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { MerchantResponse, SettlementEvent } from "@gantry/shared";
+import { monthStartUnixSeconds, type MerchantResponse, type SettlementEvent } from "@gantry/shared";
 import { api, ApiClientError } from "@/lib/api";
 import { useChime, type ChimeControl } from "./use-chime";
 import { useMerchantFeed, type MerchantFeed } from "./use-merchant-feed";
@@ -102,10 +102,13 @@ export function MerchantProvider({
   ringRef.current = chime.ring;
   const onLive = useCallback(() => ringRef.current(), []);
   const feed = useMerchantFeed(handle, onLive);
-  // One clock for both, so the month the tiles sum and the month the header
-  // names cannot be a tick apart across a boundary.
+  // One clock, so the month the tiles sum and the month the header names cannot
+  // be a tick apart across a boundary. Recomputed per tick and not memoised: it
+  // is a number, so every instant inside one month yields a value that compares
+  // equal, and nothing downstream refires until the month actually rolls.
   const now = useNowSeconds();
-  const summary = useMerchantSummary(handle, feed.rows, now);
+  const monthStart = now === null ? null : monthStartUnixSeconds(now);
+  const summary = useMerchantSummary(handle, feed.rows, monthStart);
 
   const reload = useCallback(() => setAttempt((previous) => previous + 1), []);
   const replace = useCallback((next: MerchantResponse) => {

@@ -54,31 +54,18 @@ export function monthStartUnixSeconds(nowSeconds: number): number {
 }
 
 /**
- * Identifies the month itself (`"2026-08"`) — what a client watches to notice
- * the boundary pass under it, so a tab left open overnight on the 31st refetches
- * instead of showing last month's total under this month's heading.
- */
-export function monthKey(nowSeconds: number): string {
-  return dayKey(nowSeconds).slice(0, 7);
-}
-
-/**
- * Is this row inside the month opening on `monthStart`?
+ * There is deliberately NO `isInMonth(row, month)` predicate here.
  *
- * Takes the BOUNDARY rather than a `now`, which is a performance decision as
- * much as a correctness one: the caller's clock ticks every second, and a
- * predicate reading it would make every derived total a fresh object once a
- * second — on the merchant surface that is a context value changing under five
- * screens for no new information. The boundary changes once a month.
+ * There was one, and it was a second expression of a boundary
+ * `monthStartUnixSeconds` already defines — a DayKey comparison in the browser
+ * beside a `block_time >= ?` in SQLite, two things to keep in step across
+ * midnight on the 1st, where disagreeing by one second counts a payment twice or
+ * not at all. Clients filter live rows on `blockTime >= monthStartUnixSeconds()`
+ * instead: the same number the server summed from, so the two cannot drift.
  *
- * Deliberately OPEN at the top end, inherited from the rolling window this
- * replaced for a reason that still applies: the boundary comes from a periodic
- * tick, so for a moment either side of midnight on the 1st it is behind the
- * chain BY CONSTRUCTION. An upper bound would drop the newest payment off the
- * screen at exactly the moment a merchant is watching it land, and nothing can
- * legitimately arrive from the future, so it buys nothing and costs that.
+ * Keep the comparison OPEN at the top end wherever it is written. The bound
+ * comes from a periodic clock tick, so just after a rollover it is behind the
+ * chain BY CONSTRUCTION; a closed top would drop the newest payment at exactly
+ * the moment a merchant is watching it land, and nothing arrives from the
+ * future.
  */
-export function isInMonth(atSeconds: number, monthStart: DayKey): boolean {
-  // Lexical order is chronological order for `YYYY-MM-DD`; see the DayKey type.
-  return dayKey(atSeconds) >= monthStart;
-}
