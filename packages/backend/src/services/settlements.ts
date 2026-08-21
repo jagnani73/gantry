@@ -8,9 +8,11 @@ import {
   parsePayerFilter,
   type CursorPosition,
   type Door,
+  UNIX_SECONDS_CEILING,
   type SettlementCursor,
   type SettlementEvent,
   type SettlementListResponse,
+  type SettlementSummaryResponse,
   type TokenId,
 } from "@gantry/shared";
 import { ApiError } from "../errors";
@@ -141,6 +143,22 @@ export interface SettlementReader {
   countSettlements(filter: SettlementFilter): number;
 }
 
+/** The one call the summary needs. Split from `SettlementReader` rather than
+ * bolted onto it so a caller wanting totals cannot accidentally be handed the
+ * ability to page, and so a test can supply a two-line stub. */
+export interface SettlementSummer {
+  sumSettlements(
+    filter: SettlementFilter,
+    sinceUnixSeconds: number,
+  ): {
+    count: number;
+    gross: string;
+    fees: string;
+    agentCount: number;
+    latest: CursorPosition | null;
+  };
+}
+
 export interface SettlementHistoryDeps {
   store: SettlementReader;
   /** `settlementEventOf` from the indexer — `toSettlementEvent` above, bound to
@@ -176,9 +194,14 @@ function parseLimit(raw: string | undefined): number {
   return Math.min(Number(trimmed), MAX_SETTLEMENT_LIMIT);
 }
 
-/** Pure: query string in, the three things the store needs out. Every rejection
- * here is a 400 — none of them can be guessed at without lying to a screen. */
-export function parseSettlementQuery(params: QueryParams): SettlementPageQuery {
+/**
+ * The filter half of a settlement query, shared by the paged read and the
+ * summary below so the two can never disagree about what a caller asked for. A
+ * summary whose filter parsed differently from the list's would report totals
+ * over a different set of rows than the feed underneath it shows — visible only
+ * as a number that looks slightly wrong.
+ */
+function parseSettlementFilter(params: QueryParams): SettlementFilter {
   const handle = single(params, "handle");
   // `?handle=` would fall through db-core's truthiness check and quietly widen a
   // merchant screen to every shop on the rail — strangers' takings under this
@@ -194,6 +217,76 @@ export function parseSettlementQuery(params: QueryParams): SettlementPageQuery {
   if (!payer.ok) {
     throw new ApiError(400, "InvalidPayerFilter", payer.message, [payer.reason]);
   }
+
+  return {
+    ...(handle !== undefined ? { handle } : {}),
+    ...(payer.payers ? { payers: [...payer.payers] } : {}),
+  };
+}
+
+/**
+ * `since` is REQUIRED and never defaulted.
+ *
+ * A default would have to be a window, and this endpoint deliberately has no
+ * opinion about windows — the caller's label names one and the caller's bound
+ * must match it. Guessing here means a screen headed "This month" quietly
+ * showing all time, which reads as a merchant having taken far more than they
+ * did and cannot be spotted from the screen.
+ */
+function parseSince(raw: string | undefined): number {
+  if (raw === undefined) {
+    throw new ApiError(400, "ValidationError", "since is required (unix seconds)");
+  }
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new ApiError(
+      400,
+      "ValidationError",
+      `since must be an integer number of unix seconds, got ${JSON.stringify(raw)}`,
+    );
+  }
+  const value = Number(trimmed);
+  // The millisecond trap `assertUnixSeconds` exists for, as a 400 rather than a
+  // 500: a caller passing Date.now() would otherwise sum an empty window and be
+  // told, with a 200, that the shop has taken nothing.
+  if (!Number.isSafeInteger(value) || value > UNIX_SECONDS_CEILING) {
+    throw new ApiError(
+      400,
+      "ValidationError",
+      `since looks like milliseconds, not unix seconds: ${trimmed}`,
+    );
+  }
+  return value;
+}
+
+export interface SettlementSummaryQuery {
+  filter: SettlementFilter;
+  since: number;
+}
+
+export function parseSettlementSummaryQuery(params: QueryParams): SettlementSummaryQuery {
+  return { filter: parseSettlementFilter(params), since: parseSince(single(params, "since")) };
+}
+
+export function summariseSettlements(
+  store: SettlementSummer,
+  params: QueryParams,
+): SettlementSummaryResponse {
+  const { filter, since } = parseSettlementSummaryQuery(params);
+  const { latest, ...totals } = store.sumSettlements(filter, since);
+  return {
+    since,
+    ...totals,
+    // Minted through `encodeCursor` so a row that cannot name a position fails
+    // here rather than travelling out as a mark no client could compare against.
+    latest: latest ? encodeCursor(latest) : null,
+  };
+}
+
+/** Pure: query string in, the three things the store needs out. Every rejection
+ * here is a 400 — none of them can be guessed at without lying to a screen. */
+export function parseSettlementQuery(params: QueryParams): SettlementPageQuery {
+  const filter = parseSettlementFilter(params);
 
   const rawCursor = single(params, "before");
   let before: CursorPosition | null = null;
@@ -211,14 +304,7 @@ export function parseSettlementQuery(params: QueryParams): SettlementPageQuery {
     }
   }
 
-  return {
-    filter: {
-      ...(handle !== undefined ? { handle } : {}),
-      ...(payer.payers ? { payers: [...payer.payers] } : {}),
-    },
-    before,
-    limit: parseLimit(single(params, "limit")),
-  };
+  return { filter, before, limit: parseLimit(single(params, "limit")) };
 }
 
 export function listSettlementHistory(

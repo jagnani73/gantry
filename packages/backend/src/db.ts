@@ -24,6 +24,7 @@ export const {
   settlementsAfter,
   listSettlements,
   countSettlements,
+  sumSettlements,
   insertDenial,
   listDenials,
   countDenials,

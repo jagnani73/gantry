@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { Door } from "@gantry/shared";
 
 /** Statuses ever STORED — "expired"/"unknown" are computed at read time, never written. */
 export type DbIntentStatus = "pending" | "settled" | "cancelled";
@@ -530,6 +531,61 @@ export function createDatabase(path: string) {
         n: number;
       };
       return row.n;
+    },
+
+    /**
+     * Totals over every matching row from `sinceUnixSeconds` (INCLUSIVE), for
+     * the merchant Overview's tiles — see `SettlementSummaryResponse`.
+     *
+     * Two details in the SQL are load-bearing:
+     *
+     * `CAST(x AS INTEGER)` because the amount columns are TEXT. They hold 6dp
+     * unit integers as decimal strings, so the cast is exact — but SUM over TEXT
+     * would coerce through REAL and start rounding a takings figure at the
+     * fifteenth digit. The result is cast back to TEXT so it reaches the wire as
+     * the decimal string every other amount is, rather than as a JS number that
+     * silently rounds past 2^53.
+     *
+     * `latest` deliberately IGNORES the `since` bound: it is the newest matching
+     * row, not the newest row in the window. A client folds a live row into
+     * these totals only when its position is after this mark, so during a month
+     * whose window is still empty the mark has to be the last row from BEFORE it
+     * — otherwise a null mark would let the client re-add rows it had already
+     * counted. Its ordering mirrors `listSettlements`, and `isAfterCursor` in
+     * shared mirrors it a third time; all three have to agree.
+     */
+    sumSettlements(
+      filter: SettlementFilter,
+      sinceUnixSeconds: number,
+    ): {
+      count: number;
+      gross: string;
+      fees: string;
+      agentCount: number;
+      latest: { blockNumber: number; logIndex: number } | null;
+    } {
+      const { sql: where, params } = settlementWhere(filter);
+      const totals = prepared(
+        `SELECT
+           COUNT(*) AS count,
+           CAST(COALESCE(SUM(CAST(xsgd_out AS INTEGER)), 0) AS TEXT) AS gross,
+           CAST(COALESCE(SUM(CAST(fee_xsgd AS INTEGER)), 0) AS TEXT) AS fees,
+           COALESCE(SUM(CASE WHEN door = ? THEN 1 ELSE 0 END), 0) AS agentCount
+         FROM settlements ${where} ${where ? "AND" : "WHERE"} block_time >= ?`,
+      ).get(Door.Agent, ...params, sinceUnixSeconds) as {
+        count: number;
+        gross: string;
+        fees: string;
+        agentCount: number;
+      };
+      const newest = prepared(
+        `SELECT block_number, log_index FROM settlements ${where}
+         ORDER BY block_number DESC, log_index DESC LIMIT 1`,
+      ).get(...params) as { block_number: number; log_index: number } | undefined;
+      return {
+        ...totals,
+        latest: newest ? { blockNumber: newest.block_number, logIndex: newest.log_index } : null,
+      };
     },
 
     /** Lowercased on write, exactly like every other address column: these arrive

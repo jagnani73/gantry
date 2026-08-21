@@ -533,6 +533,48 @@ export interface SettlementListResponse {
 }
 
 /**
+ * GET /api/settlements/summary?handle=&payer=&since=
+ *
+ * Totals over the WHOLE matching book from `since` — not over a page of it.
+ *
+ * This exists because the merchant Overview's tiles were summing whatever rows
+ * the browser had paged in while labelling the result as a span of time, so a
+ * page size and a window were describing the same numbers and only agreed by
+ * luck. Summing in SQLite decouples them: the tiles are exact at any book size,
+ * and changing the feed's page size can no longer move a merchant's takings.
+ *
+ * `since` is a unix-second lower bound, INCLUSIVE, chosen by the caller — the
+ * window is a product decision and belongs beside the label that names it, so
+ * this endpoint has no opinion about months.
+ */
+export interface SettlementSummaryResponse {
+  /** Echoed back, so a client can tell which window it is holding after a
+   * boundary passes under a tab that was left open. */
+  since: number;
+  count: number;
+  /** Sums of the 6dp XSGD units, as decimal strings — the same wire convention
+   * every other amount uses, and the reason they are not JSON numbers: past
+   * 2^53 a number silently rounds, and a takings total is the last figure that
+   * should do that quietly. */
+  gross: string;
+  fees: string;
+  /** Of `count`, how many came through the agent door. The human count is the
+   * remainder, so the two can never disagree about the total. */
+  agentCount: number;
+  /**
+   * The newest row included — or, when the window is empty, the newest matching
+   * row outside it. null only when this filter has never matched anything.
+   *
+   * This is what makes "server totals plus live updates" safe. A client folds in
+   * a streamed row only when its position is strictly after this mark
+   * (`isAfterCursor`); at or before it, the row is already in the sums. Without
+   * it the SSE replay burst on every reconnect would be added to a total that
+   * already contained it.
+   */
+  latest: SettlementCursor | null;
+}
+
+/**
  * An agent payment the PBM wallet REFUSED. The policy revert is caught in
  * simulation, before anything is broadcast (services/pbm.ts), so there is no
  * settlement and no transfer: the refusal is recorded on the CANCEL, whose

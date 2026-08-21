@@ -35,6 +35,21 @@ export function encodeCursor(position: CursorPosition): SettlementCursor {
 }
 
 /**
+ * Is `position` strictly newer than `mark`?
+ *
+ * Mirrors `ORDER BY block_number DESC, log_index DESC` in db-core's settlement
+ * queries, and must keep mirroring it: this is what lets a client fold live rows
+ * into a server-computed total without double-counting one. The summary reports
+ * the newest row it summed; anything after that mark is not in the sum yet, and
+ * anything at or before it already is. Get the tie-break wrong and two
+ * settlements sharing a block silently count twice or not at all.
+ */
+export function isAfterCursor(position: CursorPosition, mark: CursorPosition): boolean {
+  if (position.blockNumber !== mark.blockNumber) return position.blockNumber > mark.blockNumber;
+  return position.logIndex > mark.logIndex;
+}
+
+/**
  * null means MALFORMED, and only that — an absent `before` is the caller's own
  * business to detect. Keep them apart: a missing cursor means "give me the
  * newest page", while an unparseable one means the client asked for a position

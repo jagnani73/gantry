@@ -14,6 +14,7 @@ import { ApiError } from "../src/errors";
 import {
   listSettlementHistory,
   parseSettlementQuery,
+  summariseSettlements,
   toSettlementEvent,
   type SettlementHistoryDeps,
 } from "../src/services/settlements";
@@ -111,6 +112,17 @@ function refusal(params: Record<string, unknown>): ApiError {
     return err;
   }
   return assert.fail("expected a 400, got a page of rows");
+}
+
+/** The same, for the summary endpoint. */
+function summaryRefusal(params: Record<string, unknown>): ApiError {
+  try {
+    summariseSettlements(store, params);
+  } catch (err) {
+    assert.ok(err instanceof ApiError, `expected an ApiError, got ${String(err)}`);
+    return err;
+  }
+  return assert.fail("expected a 400, got a summary");
 }
 
 test("rows come back newest-first, ordered within a block too", () => {
@@ -360,4 +372,111 @@ test("an unlisted token renders as no symbol, never as a guess", () => {
   const [oldest] = listSettlementHistory(deps, { before: "10:2" }).rows;
   assert.equal(oldest?.tokenIn, UNLISTED_TOKEN);
   assert.equal(oldest?.tokenSymbol, null);
+});
+
+/*
+ * GET /api/settlements/summary — the merchant Overview's KPI tiles.
+ *
+ * The fixture above holds four rows for AH_HOCK (blocks 10×2, 11, 13) and one
+ * for GADGETHUB, each 1500000 gross / 7500 fee, with block_time = 1785900000 +
+ * block. One of AH_HOCK's four came through the agent door.
+ */
+
+const BEFORE_ALL = 1_785_900_000;
+
+test("the summary sums the whole matching book, not a page of it", () => {
+  // The entire point of the endpoint: these figures must not move when the
+  // feed's page size changes, which is what they did when the tiles summed
+  // whatever rows the browser had paged in.
+  const summary = summariseSettlements(store, { handle: AH_HOCK, since: String(BEFORE_ALL) });
+  assert.equal(summary.count, 4);
+  assert.equal(summary.gross, "6000000");
+  assert.equal(summary.fees, "30000");
+  assert.equal(summary.agentCount, 1);
+});
+
+test("amounts come back as decimal strings, not JSON numbers", () => {
+  // Past 2^53 a number silently rounds, and a takings total is the last figure
+  // that should do that quietly. The SQL casts back to TEXT for this reason.
+  const summary = summariseSettlements(store, { handle: AH_HOCK, since: String(BEFORE_ALL) });
+  assert.equal(typeof summary.gross, "string");
+  assert.equal(typeof summary.fees, "string");
+});
+
+test("since is an INCLUSIVE lower bound", () => {
+  // Block 13's row sits exactly on the bound and must be counted. An exclusive
+  // bound would drop the first payment of every month, silently.
+  const onTheEdge = summariseSettlements(store, {
+    handle: AH_HOCK,
+    since: String(BEFORE_ALL + 13),
+  });
+  assert.equal(onTheEdge.count, 1);
+  assert.equal(onTheEdge.gross, "1500000");
+
+  const wider = summariseSettlements(store, { handle: AH_HOCK, since: String(BEFORE_ALL + 11) });
+  assert.equal(wider.count, 2, "blocks 11 and 13");
+  assert.equal(wider.agentCount, 1, "block 11 came through the agent door");
+});
+
+test("an empty window sums to zero without reporting null amounts", () => {
+  const summary = summariseSettlements(store, { handle: AH_HOCK, since: String(BEFORE_ALL + 999) });
+  assert.equal(summary.count, 0);
+  // COALESCE, not SUM's natural null over an empty set: the client does bigint
+  // arithmetic on these, and BigInt(null) throws.
+  assert.equal(summary.gross, "0");
+  assert.equal(summary.fees, "0");
+  assert.equal(summary.agentCount, 0);
+});
+
+test("`latest` ignores the since bound, so live rows cannot be double-counted", () => {
+  // The guard the whole "server totals + live updates" design rests on. A client
+  // folds a streamed row in only when its position is after this mark. If the
+  // mark went null on an empty window, a month that has not opened yet would let
+  // the client re-add every row the SSE replay delivers — including ones already
+  // inside a later refetch's sums.
+  const empty = summariseSettlements(store, { handle: AH_HOCK, since: String(BEFORE_ALL + 999) });
+  assert.equal(empty.count, 0);
+  assert.equal(empty.latest, "13:1", "the newest matching row, even from outside the window");
+
+  // And it is the newest row for THIS filter, not the newest on the rail.
+  const gadgethub = summariseSettlements(store, { handle: GADGETHUB, since: String(BEFORE_ALL) });
+  assert.equal(gadgethub.latest, "12:0");
+});
+
+test("`latest` is null only when the filter has never matched anything", () => {
+  const summary = summariseSettlements(store, { handle: "nobody-at-all", since: String(BEFORE_ALL) });
+  assert.equal(summary.count, 0);
+  assert.equal(summary.latest, null);
+});
+
+test("the summary filters exactly as the list does", () => {
+  // Same parser, so a payer filter narrows the totals the same way it narrows
+  // the rows. A summary over a different set than the feed below it shows would
+  // surface only as a number that looks slightly wrong.
+  const summary = summariseSettlements(store, { payer: AGENT_WALLET, since: String(BEFORE_ALL) });
+  assert.equal(summary.count, 1);
+  assert.equal(summary.latest, "12:0");
+});
+
+test("since is required, never defaulted to all time", () => {
+  // A default would have to be a window, and guessing one means a screen headed
+  // "This month" quietly showing every payment the shop has ever taken.
+  const err = summaryRefusal({ handle: AH_HOCK });
+  assert.equal(err.status, 400);
+  assert.match(err.message, /since is required/);
+});
+
+test("a millisecond clock in `since` is a 400, not an empty month", () => {
+  // Date.now() here would sum nothing and answer 200, telling a merchant with a
+  // straight face that they have taken nothing this month.
+  const err = summaryRefusal({ handle: AH_HOCK, since: String(Date.now()) });
+  assert.equal(err.status, 400);
+  assert.match(err.message, /milliseconds/);
+});
+
+test("a present-but-empty handle is refused here too, never widened", () => {
+  // Widening is invisible: it would report every shop's takings on one shop's
+  // Overview. Pinned on both entry points because both reach the same store.
+  const err = summaryRefusal({ handle: "", since: String(BEFORE_ALL) });
+  assert.equal(err.status, 400);
 });

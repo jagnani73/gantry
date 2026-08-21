@@ -70,10 +70,9 @@ export function previousDayKey(day: DayKey): DayKey {
  * Walks back through `previousDayKey` rather than converting to an instant and
  * subtracting `days × 86400`: month, year and leap-day rollover are things the
  * calendar already knows, and a DayKey carries no zone to convert through
- * safely. The three rollovers are pinned in `days.test.ts`.
- *
- * Used for the merchant Overview's rolling window — see `OVERVIEW_WINDOW_DAYS`
- * for why rolling rather than a calendar week.
+ * safely. The three rollovers are pinned in `days.test.ts` because none of them
+ * is reachable from a demo day's data — a shop trading inside one month
+ * exercises exactly none of this.
  */
 export function minusDaysKey(day: DayKey, days: number): DayKey {
   if (!Number.isInteger(days) || days < 0) {
@@ -100,6 +99,61 @@ export function dayKeyMiddayUnixSeconds(day: DayKey): number {
   const match = DAY_KEY.exec(day);
   if (!match) throw new Error(`invalid day key: ${JSON.stringify(day)}`);
   return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) / 1000;
+}
+
+/**
+ * How far `timeZone` runs ahead of UTC at a given instant, in seconds.
+ *
+ * Read off `Intl` rather than hardcoded, even though `DISPLAY_TIME_ZONE` is
+ * UTC+8 with no DST: the offset is derived by formatting the instant in the zone
+ * and reading the result back as if it were UTC, so it stays right for whatever
+ * zone a caller passes. The `hour12: false` guard is real — some ICU versions
+ * render midnight as hour 24 under that flag, which would push the offset a full
+ * day out.
+ */
+function zoneOffsetSeconds(unixSeconds: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US-u-ca-gregory-nu-latn", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(unixSeconds * 1000);
+  const field = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value);
+  const hour = field("hour") % 24;
+  const asIfUtc =
+    Date.UTC(field("year"), field("month") - 1, field("day"), hour, field("minute"), field("second")) /
+    1000;
+  return asIfUtc - unixSeconds;
+}
+
+/**
+ * The instant a DayKey BEGINS, as unix seconds — the bound a range query needs.
+ *
+ * `dayKeyMiddayUnixSeconds` above is for formatting and is deliberately not this:
+ * it lands somewhere inside the day, which is all a formatter needs and is
+ * exactly wrong as the lower edge of a window. This one is the edge, so a
+ * `block_time >= ?` filter on the server buckets rows into the same days the
+ * browser groups them into.
+ *
+ * Resolved TWICE against the zone offset. The first pass converts the day's
+ * midnight-read-as-UTC using the offset at that naive instant, which is the
+ * offset on the wrong side of a DST boundary for the handful of days a year
+ * where the two differ; the second pass re-reads it at the corrected instant.
+ * Singapore has no DST so both passes always agree here — but this function
+ * takes a zone, and a caller passing one that does have DST would otherwise get
+ * a window edge an hour out with nothing to show for it.
+ */
+export function dayKeyStartUnixSeconds(day: DayKey, timeZone: string = DISPLAY_TIME_ZONE): number {
+  const match = DAY_KEY.exec(day);
+  if (!match) throw new Error(`invalid day key: ${JSON.stringify(day)}`);
+  const naive = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 1000;
+  const firstPass = naive - zoneOffsetSeconds(naive, timeZone);
+  return naive - zoneOffsetSeconds(firstPass, timeZone);
 }
 
 /**
