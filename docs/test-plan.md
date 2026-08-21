@@ -52,7 +52,11 @@ are both driven and passing, and the demo policy is verified back to
 two ways in. Not blocking: the worst outcome is a keypad the customer retypes
 into.
 
-**Not yet driven:** Phase 11 only. Phases 1-10 are complete.
+**Not yet driven:** Phase 11's two build checks (#70, #72), whose expectations
+were INVERTED on 21 Aug when merchant registration and profile editing were
+opened on every host — both used to assert that a production build hid a form,
+and now assert it ships one. #73 (the limits that replaced those gates) is
+driven and passing. Phases 1-10 are complete.
 
 ## Findings register
 
@@ -284,9 +288,10 @@ it.
 | #   | What                                   | Expected                                                                                                          | Result |
 | --- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------ |
 | 69  | `/merchant/<handle>/settings` in dev   | Editable profile; handle + category locked, each with its own reason                                              | —      |
-| 70  | Same, built with `NODE_ENV=production` | Every profile field locked, **no submit path at all**; payer preview, payout rotation and chime toggle still work | —      |
+| 70  | Same, built with `NODE_ENV=production`                                                                 | **Expectation INVERTED 21 Aug.** It used to be "every field locked, no submit path". Profile editing is open on every host now, so the check is that the production build renders the SAME editable form as dev — i.e. no build-time branch survived. Handle and category stay locked, for their own reasons | —      |
 | 71  | `/onboard` in dev                      | "permanently" appears once, on the handle tag; name/location/blurb say they can be updated, mechanism is "ask us" | —      |
-| 72  | `/onboard` in production               | Form not shipped at all                                                                                           | —      |
+| 72  | `/onboard` in production                                                                               | **Expectation INVERTED 21 Aug.** It used to be "form not shipped at all". The form now ships and works; the gate is a runtime limit, not a build-time branch | —      |
+| 73  | The merchant-write limits, against a `NODE_ENV=production` backend | Registration: per-IP 30s cooldown, in-flight guard, global 20/24h ceiling, `ONBOARDING=closed` switch. Edits: per-IP 10s, **per-handle 60s**, global 60/24h, `PROFILE_EDITS=closed` switch. Reservations released when nothing is written | **PASS** — driven 20–21 Aug. Register with no admin token → 201 (`0x0cab929b…`). 25 requests from 25 forwarded IPs → all through, which is the measurement that justifies the global ceiling at all, and all released (a broken release would have 429'd at #21). Ceiling forced to 0 → `OnboardingBudgetExhausted` before any chain write. `ONBOARDING=closed` → `OnboardingDisabled`. Edits: one lands, then three more to the SAME shop from three different IPs → `ProfileEditHandleCooldown`, while a different handle passes straight to its own 404 |
 
 ---
 
