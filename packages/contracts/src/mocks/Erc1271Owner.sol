@@ -28,9 +28,18 @@ contract Erc1271Owner {
     bytes4 private constant MAGIC = 0x1626ba7e;
     bytes4 private constant INVALID = 0xffffffff;
 
+    error ZeroOwner();
+
     address public immutable owner;
 
     constructor(address owner_) {
+        // Not ceremony, and not only to satisfy slither's missing-zero-check:
+        // `ecrecover` returns the zero address on failure, so a zero owner turns
+        // `isValidSignature` into a function that accepts malformed signatures.
+        // The guard below catches that at the point of use as well, but a wallet
+        // that can never be validly owned should not be deployable in the first
+        // place.
+        if (owner_ == address(0)) revert ZeroOwner();
         owner = owner_;
     }
 
