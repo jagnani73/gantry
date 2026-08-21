@@ -30,9 +30,9 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 |            |                                                                                                                                                                                                                                                                                                                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Try it** | [Pay Ah Hock](https://gantry-innovatex.vercel.app/pay/ah-hock-chicken-rice) · [merchant back-office](https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview) · [payer app](https://gantry-innovatex.vercel.app/app) · [merchant directory](https://gantry-innovatex.vercel.app/merchants) · [printable QR](https://gantry-innovatex.vercel.app/qr/ah-hock-chicken-rice) |
+| **Try it** | [Pay Ah Hock](https://gantry-innovatex.vercel.app/pay/ah-hock-chicken-rice) · [register your own shop](https://gantry-innovatex.vercel.app/onboard) · [merchant back-office](https://gantry-innovatex.vercel.app/merchant/ah-hock-chicken-rice/overview) · [payer app](https://gantry-innovatex.vercel.app/app) · [merchant directory](https://gantry-innovatex.vercel.app/merchants) · [printable QR](https://gantry-innovatex.vercel.app/qr/ah-hock-chicken-rice) |
 | **API**    | <https://gantry-backend.onrender.com> and [`/health`](https://gantry-backend.onrender.com/health), which reports the indexer cursor, chain head and lag                                                                                                                                                                                                                                     |
-| **Deck**   | [Pitch deck (PDF, 10 slides)](docs/gantry-deck.pdf) — the problem, the architecture, both payer doors, and an explicit list of what is real and what is mocked                                                                                                                                                                                                                              |
+| **Deck**   | [Pitch deck (PDF, 10 slides)](docs/gantry-deck.pdf): the problem, the architecture, both payer doors, and an explicit list of what is real and what is mocked                                                                                                                                                                                                                              |
 
 <sub>The backend is a free Render instance, kept awake by an external health ping every 10 minutes. If that ping ever lapses, the first request after an idle period waits about 50s while the instance wakes.</sub>
 
@@ -40,7 +40,7 @@ Built for [NTU InnovateX Hackathon 2026](https://ntu-cctf-snz-innovatex-2026.dev
 
 PayNow works well if you hold a Singapore bank account. Roughly 16 million people visit Singapore each year without one, and they fall back to cards at 2–3% merchant fees, or to cash.
 
-Those visitors do not arrive holding Singapore dollars, so the payer chooses what to pay **in** — dollars or euros today, and the hawker is paid in Singapore dollars either way. That is one contract call, not two integrations: `GantryCore.XSGD` is `immutable`, so the output cannot vary by screen, by payer or by currency.
+Those visitors do not arrive holding Singapore dollars, so the payer chooses what to pay **in**: dollars or euros today, and the hawker is paid in Singapore dollars either way. That is one contract call, not two integrations: `GantryCore.XSGD` is `immutable`, so the output cannot vary by screen, by payer or by currency.
 
 AI agents have it worse, because they cannot open a bank account at all. [x402](https://github.com/x402-foundation/x402) launched in May 2025 and went to the Linux Foundation, with the x402 Foundation operational by July 2026, so agents finally have a standard way to pay. What they still lacked was anywhere to spend. That gap is what Gantry fills.
 
@@ -49,7 +49,7 @@ Agent money also needs rules rather than trust. Every spend here runs inside an 
 ## How it works
 
 1. A payment is an **intent**: _merchant M requests S$X_.
-2. A QR code and an HTTP `402 Payment Required` response are **two encodings of the same intent** — and since they are, one URL can be both. `GET /pay/<handle>?sgd=4.50` redirects a browser into the payment page and answers everything else with the 402.
+2. A QR code and an HTTP `402 Payment Required` response are **two encodings of the same intent**, so one URL can be both. `GET /pay/<handle>?sgd=4.50` redirects a browser into the payment page and answers everything else with the 402.
 3. One settlement contract consumes both, atomically swapping whatever stablecoin arrived into XSGD. Pay in dollars or in euros; the hawker is paid in Singapore dollars either way, because `GantryCore.XSGD` is `immutable`.
 
 ```mermaid
@@ -117,15 +117,15 @@ The same order endpoint answers a machine with `402 Payment Required` and an x40
 | `exact`      | Any vanilla x402 client, unmodified  | The relayer                | One hop, PSP-style. Spec clients generate their own EIP-3009 nonce, so a facilitator bridge collects the payment and re-signs it |
 | `gantry-pbm` | Agents with an on-chain spend policy | The agent's own PBM wallet | None. The wallet pays the merchant directly                                                                                      |
 
-Each scheme is offered **once per payable currency**, so a single challenge carries four entries — `exact/USDC`, `exact/EURC`, `gantry-pbm/USDC`, `gantry-pbm/EURC` — priced by one function against one merchant. `exact/USDC` is first, because an unmodified client takes the first entry without choosing.
+Each scheme is offered **once per payable currency**, so a single challenge carries four entries (`exact/USDC`, `exact/EURC`, `gantry-pbm/USDC`, `gantry-pbm/EURC`), priced by one function against one merchant. `exact/USDC` is first, because an unmodified client takes the first entry without choosing.
 
 An unmodified [`@x402/fetch`](https://github.com/x402-foundation/x402) client pays this endpoint end to end, which is the interop proof. The second path is the more interesting one.
 
 ### An agent can find the shop, too
 
-Every other surface here assumes a human already picked the merchant — they scanned its code or tapped it in a list. An agent has no counter to stand at, so `GET /discovery/resources` lists every registered shop as a payable resource, in the [x402 Bazaar's](https://github.com/x402-foundation/x402) `DiscoveryResourcesResponse` shape. Each listing carries its own price and is payable **verbatim**; a placeholder amount would be refused at settle, which would make discovery decoration.
+Every other surface here assumes a human already picked the merchant, having scanned its code or tapped it in a list. An agent has no counter to stand at, so `GET /discovery/resources` lists every registered shop as a payable resource, in the [x402 Bazaar's](https://github.com/x402-foundation/x402) `DiscoveryResourcesResponse` shape. Each listing carries its own price and is payable **verbatim**; a placeholder amount would be refused at settle, which would make discovery decoration.
 
-That closes the loop: list the shops, pick one, pay it, with no human at any point. It is not a Bazaar registry — the shape is theirs, the index is ours, and nothing publishes to or mirrors anyone else's catalog.
+That closes the loop: list the shops, pick one, pay it, with no human at any point. It is not a Bazaar registry: the shape is theirs, the index is ours, and nothing publishes to or mirrors anyone else's catalog.
 
 ### Spend policies that are contracts, not config
 
@@ -150,6 +150,26 @@ flowchart TD
 
 Every refusal there is a contract revert, not a backend `if`. In the demo an agent holding a `food_beverage`-only allowance tries to buy a S$4 phone cable from an electronics merchant, comfortably inside every cap it has, and dies as `CategoryNotAllowed(2)`. The error name travels back to the agent verbatim as the x402 `errorReason`, and the refusal is written to the chain so the payer can see it in their app.
 
+### A refusal you can check without asking us
+
+A denial record is relayer-**attested**, which is a weaker thing than it looks. `IntentDenied` carries bytes we supply, and `authorizeSpend` checks the agent's signature first, and that signature is never stored or emitted, so anyone re-simulating the call gets `InvalidAgentSignature` whatever the real reason was. The refusal is real; the record of it is our word.
+
+`verify:denial` closes the half that can be closed.
+
+```bash
+pnpm --filter @gantry/backend verify:denial -- --tx <cancelTxHash>
+```
+
+From one cancel transaction it reads the policy, the day's spend, the wallet balance and the merchant's category **at that block**, recomputes what `authorizeSpend` would have decided, and compares that to the reason we published. It asks no Gantry API for an opinion. Every input is a public getter or a log, so anyone holding any RPC URL gets the same answer. That includes **`contradicted`**, if we ever publish a reason the chain does not support, which is the only reason a checker is worth having.
+
+It runs the same `checkSpend` a declined receipt runs in the payer app, so the prediction and the audit cannot disagree. What it cannot do is check the signature: it proves the wallet **would have refused**, never that the agent asked. It prints that limit on every run.
+
+## Joining the rail
+
+There is no application to fill in and nobody to approve it. One form (handle, payout address, category, and the text payers see) registers a shop on-chain in a single transaction, and [`/onboard`](https://gantry-innovatex.vercel.app/onboard) is open to anyone. A shop is printing its QR about two minutes after deciding to.
+
+That is the registry being permissionless rather than us being generous. `registerMerchant` needs no permission from Gantry, so a door that asked for one would be telling a story the contract does not. What genuinely needs bounding is that a registration is **permanent and public**, since nothing deletes a handle, so the control is a rolling 24-hour ceiling plus a cooldown, with an environment kill switch, and never a question about who is asking.
+
 ## Deployed on Base Sepolia
 
 `eip155:84532`. All four contracts went out in one run and share a floor block of **45328301**.
@@ -163,9 +183,9 @@ Every refusal there is a contract revert, not a backend `if`. In the demo an age
 
 Deploying them together is what lets the indexer sweep settlements, denials, merchant registrations and agent-wallet creations in a single `getLogs` pass over both addresses. Six event types in one topic filter cost what one would.
 
-Payments settle in Circle's real testnet stablecoins — USDC ([`0x036CbD53…8f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)) or EURC ([`0x80845665…77359F`](https://sepolia.basescan.org/address/0x808456652fdb597867f38412077A9182bf77359F)), whichever the payer chooses — signed against Circle's own contracts. USDC is fork-tested against the live token; EURC is proven by a real settlement on Base Sepolia rather than by a fork test. No mock was added for the euro: both are FiatToken v2 with a byte-identical EIP-3009 typehash, so there is no second signing path, and `MockXSGD` remains the only mocked token in the system. Demo merchants `ah-hock-chicken-rice` and `gadgethub-sg` are registered on-chain.
+Payments settle in Circle's real testnet stablecoins: USDC ([`0x036CbD53…8f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e)) or EURC ([`0x80845665…77359F`](https://sepolia.basescan.org/address/0x808456652fdb597867f38412077A9182bf77359F)), whichever the payer chooses, signed against Circle's own contracts. USDC is fork-tested against the live token; EURC is proven by a real settlement on Base Sepolia rather than by a fork test. No mock was added for the euro: both are FiatToken v2 with a byte-identical EIP-3009 typehash, so there is no second signing path, and `MockXSGD` remains the only mocked token in the system. Demo merchants `ah-hock-chicken-rice` and `gadgethub-sg` are registered on-chain.
 
-> **Prototype scope.** The FX rate is owner-set rather than market-derived; the `IGantrySwap` interface is the part meant to survive, with real XSGD liquidity behind it in production. One relayer key pays all gas. Merchant registration is permissionless and self-attested, and nothing here reviews or verifies a merchant, which is why every badge reads _"Registered on-chain"_ and never _"Verified"_. A production deployment would operate under a licensed PSP within Singapore's Payment Services Act.
+> **Prototype scope.** The FX rate is owner-set rather than market-derived; the `IGantrySwap` interface is the part meant to survive, with real XSGD liquidity behind it in production. One relayer key pays all gas. Merchant registration is permissionless and self-attested, and nothing here reviews or verifies a merchant, which is why every badge reads _"Registered on-chain"_ and never _"Verified"_. There is no merchant login: registering a shop and rewriting its public profile are both open on the live deployment, bounded by rate ceilings rather than by identity. An edit provably cannot reach a payout address, a handle or a category, so the exposure is defacement rather than theft, and the real merchant reverses it through the same open route. A production deployment would operate under a licensed PSP within Singapore's Payment Services Act.
 
 ## FAQ
 
@@ -193,7 +213,7 @@ The attacker gets exactly what the policy allows: up to S$50 a day, at food merc
 <details>
 <summary><strong>Where does the FX rate come from?</strong></summary>
 
-On testnet, from us. They are owner-set fixed rates — 1.3421 XSGD per USDC and 1.5100 per EURC — labelled as such everywhere, because XSGD exists on no testnet. That is why settlement talks to an `IGantrySwap` interface rather than to a pool: production swaps in real XSGD liquidity through an aggregator or an RFQ quote. `GantryCore` enforces its own minimum-out by measuring its balance delta, so that guarantee does not depend on trusting whatever sits behind the interface.
+On testnet, from us. They are owner-set fixed rates (1.3421 XSGD per USDC and 1.5100 per EURC), labelled as such everywhere, because XSGD exists on no testnet. That is why settlement talks to an `IGantrySwap` interface rather than to a pool: production swaps in real XSGD liquidity through an aggregator or an RFQ quote. `GantryCore` enforces its own minimum-out by measuring its balance delta, so that guarantee does not depend on trusting whatever sits behind the interface.
 
 </details>
 
@@ -230,7 +250,7 @@ Correct, and that is a real limitation of settlement finality rather than someth
 <details>
 <summary><strong>How does a hawker who has never held crypto actually get paid?</strong></summary>
 
-Today the onboarding form asks for a payout address, which is the least realistic step in the whole flow. The production answer is a passkey smart account: the merchant creates a wallet with FaceID at signup, no seed phrase and no app to install, and Gantry never holds the key. What we deliberately did not do is generate and hold the merchant's key, which would make Gantry the custodian of hawker revenue and turn a non-custodial rail into an unlicensed money service.
+The onboarding form asks for a payout address, which would be the least realistic step in the whole flow if pasting hex were the only way to supply one. It is not: the form also offers a passkey smart account, so the merchant creates a wallet with whatever unlocks their phone, no seed phrase and no app to install, and the address drops into the field. Gantry never holds the key. What we deliberately did not do is generate and hold the merchant's key, which would make Gantry the custodian of hawker revenue and turn a non-custodial rail into an unlicensed money service.
 
 </details>
 
@@ -245,6 +265,17 @@ No, and that is the point. We wrote the server and the facilitator. The client i
 <summary><strong>Is the LLM making the payment?</strong></summary>
 
 No. The model chooses and narrates. The signing and the HTTP live in tools it cannot reach, and if the model times out, a scripted path sends identical wire traffic.
+
+</details>
+
+<details>
+<summary><strong>Which model runs the agent, and where?</strong></summary>
+
+`qwen-flash`, on **[AIsa](https://aisa.one)'s** OpenAI-compatible gateway. The model id is required and undefaulted, because it has to support native tool calling and a default that fails mid-demo is worse than a startup error.
+
+The division of labour is worth being precise about: AIsa's gateway is where the agent *reasons*, and it is not in the payment path. Every payment settles on Gantry's own rail. Their own paid endpoints are not payable over x402 either: a discovery challenge there comes back as `method="tempo"` on chain 4217, a different protocol on a different chain. The agent reasons in one place and spends in another, by design rather than by accident.
+
+Set `GOOGLE_GENERATIVE_AI_API_KEY` instead and the same agent runs on Gemini. Set neither and it runs the scripted path, which sends identical wire traffic, so the demo survives a dead key or a cold gateway.
 
 </details>
 
@@ -289,6 +320,7 @@ pnpm demo:reset                                        # provision a rehearsal: 
 pnpm --filter @gantry/backend e2e:pay                  # human door, end to end
 pnpm --filter @gantry/backend e2e:pay -- --token EURC  # the same door, paid in euros
 pnpm --filter @gantry/backend x402:buy                 # vanilla @x402/fetch pays the agent door
+pnpm --filter @gantry/backend x402:buy -- --token EURC # …the standards door, paid in euros
 pnpm --filter @gantry/backend x402:buy -- --link       # …through the dual-door pay link
 pnpm --filter @gantry/backend x402:buy -- --discover   # …after finding the shop itself
 pnpm --filter @gantry/agent   e2e:pbm                  # the LLM agent pays through its policy
