@@ -104,7 +104,28 @@ export type PendingReceiptState = {
 export interface AgentExpectation {
   fingerprint: string;
   proven: ReturnType<typeof provenAgentFields>;
+  /** When the write was recorded, so the overlay can give up. See `EXPECTATION_TTL_MS`. */
+  at: number;
 }
+
+/**
+ * How long a receipt may outrank a read.
+ *
+ * The overlay has no other exit: only `AgentDetail` settles an expectation, and
+ * a save reached by URL (`?edit=0x…`) pops an emptied stack straight to `/app`
+ * without ever mounting it. The entry then lives for the session — inert while
+ * the read agrees, and silently reactivating the moment the wallet changes from
+ * anywhere else, which on a build where every visitor shares one demo key and
+ * `demo:reset` re-arms wallets is an ordinary event rather than an exotic one.
+ * The worst shape of that is a **Revoked chip with Revoke disabled over a live
+ * wallet**, because `agentStatus` reads the overlaid row.
+ *
+ * Sized against the detail screen's own give-up (6 × 1.2s) with room for a
+ * replica several blocks behind. Past it the read wins: it may be stale, but a
+ * stale read is a stale read, whereas an expectation nothing can clear is an
+ * assertion with no expiry.
+ */
+const EXPECTATION_TTL_MS = 60_000;
 
 export interface PayerStore {
   identity: PayerIdentity;
@@ -424,9 +445,15 @@ export function PayerProvider({
   const agents = useMemo(() => {
     if (agentsRead === null) return null;
     if (Object.keys(expectations).length === 0) return agentsRead;
+    const now = Date.now();
     return agentsRead.map((agent) => {
       const pending = expectations[agent.wallet.toLowerCase()];
-      if (!pending || policyFingerprint(agent) === pending.fingerprint) return agent;
+      // Expiry BEFORE the fingerprint: past the TTL the read wins whether it
+      // agrees or not. `agentsRead` changing is what re-runs this, which is also
+      // the only moment an overlay could newly be wrong — so an expired entry is
+      // always dropped before its values are used, without a timer.
+      if (!pending || now - pending.at >= EXPECTATION_TTL_MS) return agent;
+      if (policyFingerprint(agent) === pending.fingerprint) return agent;
       return { ...agent, ...pending.proven };
     });
   }, [agentsRead, expectations]);
@@ -440,9 +467,12 @@ export function PayerProvider({
    */
   const agentAhead = useCallback(
     (wallet: Address) => {
-      const pending = expectations[wallet.toLowerCase()];
-      if (!pending || agentsRead === null) return false;
       const key = wallet.toLowerCase();
+      const pending = expectations[key];
+      if (!pending || agentsRead === null) return false;
+      // The same expiry the memo applies, or the badge outlives the overlay it
+      // names — "Just changed · reading it back" over a plain read.
+      if (Date.now() - pending.at >= EXPECTATION_TTL_MS) return false;
       const read = agentsRead.find((agent) => agent.wallet.toLowerCase() === key);
       return read !== undefined && policyFingerprint(read) !== pending.fingerprint;
     },
@@ -1450,6 +1480,7 @@ export function PayerProvider({
     const entry: AgentExpectation = {
       fingerprint: policyFingerprint(written),
       proven: provenAgentFields(written, policyWritten),
+      at: Date.now(),
     };
     setExpectations((prev) => ({ ...prev, [wallet.toLowerCase()]: entry }));
   }, []);
