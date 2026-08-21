@@ -1,22 +1,29 @@
 import { SettingsScreen } from "@/components/merchant/settings-screen";
 
 /**
- * Profile editing is a demo affordance, not a public one — the backend gates
- * PATCH /api/merchants/:handle on the same NODE_ENV signal that closes
- * self-service onboarding. The decision is made HERE rather than inside the
- * screen, for the reason `/onboard` already documents: a deployed host must
- * never ship a working-looking form that 403s on submit, and the worst version
- * of that is a merchant rewriting their shop name and losing it to an error
- * toast.
+ * Profile editing is open on every host since 21 Aug 2026, alongside
+ * self-service registration.
  *
- * Server component, so `process.env.NODE_ENV` is the build's own value and the
- * editable form is never sent. Unlike `/onboard` the screen is not replaced —
- * a shop's own settings should still show what the chain holds — so the fields
- * render locked beside the two that are locked for good (handle, category) and
- * the save controls become an explanation.
+ * This page used to branch on `process.env.NODE_ENV` in the server component, so
+ * a production build shipped the fields permanently locked. The argument was
+ * that the route is unauthenticated and anyone with the URL could rewrite a
+ * shop's identity — true, and weaker than it sounds: `setMerchantProfile`
+ * provably cannot touch payout, handle or category, so an edit moves no money
+ * and redirects no payment, and unlike a registration it is REVERSIBLE, because
+ * the real merchant corrects it through the same open route. Defacement, not
+ * theft, and self-healing.
+ *
+ * The backend bounds it with a per-HANDLE cooldown (the shape defacement
+ * actually takes — one shop, repeatedly), a per-IP cooldown, and a global
+ * rolling-24h ceiling, with `PROFILE_EDITS=closed` as the incident switch. That
+ * gate is dynamic, so a build-time branch can no longer express it, and the
+ * `editable={false}` state survives only for the switch being thrown — where a
+ * 403 on submit is what any rate-limited endpoint does.
+ *
+ * `handle` and `category` remain locked for good and for their own reasons: the
+ * handle is claimed permanently, and `GantryCore` has no setter for a category.
+ * Those two are the screen's business, not this file's.
  */
-const profileEditingEnabled = process.env.NODE_ENV !== "production";
-
 export default function MerchantSettingsPage() {
-  return <SettingsScreen editable={profileEditingEnabled} />;
+  return <SettingsScreen editable />;
 }

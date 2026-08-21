@@ -55,6 +55,13 @@ const EnvSchema = z.object({
    * spelled out rather than inferred.
    */
   ONBOARDING: z.string().optional(),
+  /**
+   * The same switch for profile edits, and SEPARATE from `ONBOARDING` on
+   * purpose: the two abuse shapes are different, so an incident in one should
+   * not close the other. Someone defacing shop names is a reason to stop edits
+   * and no reason at all to stop new shops joining.
+   */
+  PROFILE_EDITS: z.string().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -227,6 +234,27 @@ export const config = {
    * repeatedly and any sane public ceiling would stop it mid-run.
    */
   onboardingMetered: !isDemoHost,
+  /**
+   * Whether strangers may edit a shop's display record. Open everywhere since
+   * 21 Aug, alongside registration.
+   *
+   * This route is unauthenticated and stays that way for now, which sounds worse
+   * than it is: `setMerchantProfile` provably cannot touch payout, handle or
+   * category, so an edit moves no money and redirects no payment — and unlike a
+   * registration it is REVERSIBLE, because the real merchant corrects it through
+   * the same open route. Defacement, not theft, and self-healing.
+   *
+   * The bound that fits it is per-HANDLE rather than per-caller (see
+   * `handleThrottle`): defacement is aimed at one shop, and both a per-IP
+   * cooldown and a global count are escaped by an attacker who simply spends
+   * everything on a single victim.
+   *
+   * The real fix is authentication, and the chain already offers the identity:
+   * `setMerchantPayout` is gated on `msg.sender == merchant.payout`. Verify a
+   * signature from that address and the limits become belt and braces.
+   */
+  profileEditsEnabled: env.PROFILE_EDITS !== "closed",
+  profileEditsMetered: !isDemoHost,
   /* The historical demo AgentPBMWallet used to be pinned here. It is gone: the
    * read path is owner-driven and answers for any wallet, the admin re-arm was
    * deleted with the rest of the server-side policy writes, and the wallet

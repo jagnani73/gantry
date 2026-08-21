@@ -255,6 +255,41 @@ const profileThrottle = throttle(
 );
 
 /**
+ * The bound that fits an AIMED attack, keyed by HANDLE rather than by caller.
+ *
+ * Every other limit in this file is per-IP or global, and neither touches the
+ * shape defacement actually takes: one shop, rewritten repeatedly. A per-IP
+ * cooldown is escaped by rotating IPs (measured — 25 requests from 25 forwarded
+ * IPs walked straight through it), and a global ceiling is escaped by spending
+ * the whole budget on a single victim, which is the same attack with a receipt.
+ *
+ * A minute is chosen against the CONTEST, not against the inconvenience: a
+ * merchant fixing their own blurb waits once, an attacker in a rewrite loop is
+ * reduced to sixty attempts an hour on one shop, and the real owner's correction
+ * competes on the same footing instead of being drowned out.
+ *
+ * Deliberately NOT applied to an operator, and deliberately not shared with the
+ * per-IP bucket: onboarding a shop and then naming it is one continuous action
+ * that must not 429 halfway.
+ */
+const handleThrottle = throttle(
+  60_000,
+  "ProfileEditHandleCooldown",
+  "this shop's profile was edited moments ago; try again shortly",
+);
+
+/**
+ * The same global ceiling registration carries, for the same reason: the per-IP
+ * cooldown bounds one browser and never one attacker. Higher than the
+ * registration ceiling because an edit is reversible and legitimately repeated —
+ * a merchant tuning their own blurb should not be competing for budget with a
+ * room full of other merchants doing the same.
+ */
+const PROFILE_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const PUBLIC_PROFILE_EDITS_DAILY = 60n;
+let profileBudget = emptyBudget();
+
+/**
  * Bounds CONCURRENT registrations per IP. The cooldown alone only rate-limits
  * strictly serial requests, because it is recorded after the tx confirms — so N
  * parallel requests all pass that check and enqueue N registrations against the
@@ -518,9 +553,27 @@ function assertAffordable(profile: MerchantProfile): void {
  * therefore OPERATOR-owned, the UI says so, and the honest-labels list carries
  * it. The contract cannot touch payout, handle or category through this path.
  *
- * Still gated: it spends the relayer's gas, so the same host-class rule and
- * per-IP cooldown as self-service onboarding apply, and a valid admin token
- * means an operator is calling (demo-reset) and is exempt from both.
+ * OPEN on every host since 21 Aug, alongside registration, and bounded the same
+ * way — but with one control registration does not have, because the two abuse
+ * shapes differ. Registration is spread thin (many handles, each claimed once)
+ * and its risk is PERMANENCE. An edit is aimed (one shop, over and over) and its
+ * risk is a re-deface loop, which a global count does nothing about: an attacker
+ * simply spends the whole daily budget on one victim. So edits carry a per-HANDLE
+ * cooldown as well, which bounds the loop where it actually happens and leaves
+ * every other merchant unaffected.
+ *
+ * What is NOT at risk here, and it is why this can be open at all: the contract
+ * cannot touch payout, handle or category through this path, so an edit moves no
+ * money and redirects no payment — the payer arrived at a handle they scanned off
+ * the shop's own code, and the payout behind it is unreachable from here. And
+ * unlike a registration an edit is REVERSIBLE: the real merchant edits it back
+ * through the same open route. Defacement, not theft, and self-healing.
+ *
+ * The real fix remains authentication rather than rate limiting, and it exists
+ * already one function away: `setMerchantPayout` is gated on
+ * `msg.sender == merchant.payout`, so a merchant CAN prove ownership. Verify a
+ * signature from the payout address here and every limit below becomes belt and
+ * braces. `PROFILE_EDITS=closed` is the switch until then.
  */
 export async function updateMerchantProfile(
   handle: string,
@@ -530,12 +583,12 @@ export async function updateMerchantProfile(
 ): Promise<MerchantResponse> {
   const operator = adminToken !== undefined && adminToken === config.adminToken;
 
-  if (!operator && config.hostClass !== "demo") {
+  if (!operator && !config.profileEditsEnabled) {
     throw new ApiError(
       403,
       "ProfileEditingDisabled",
-      "profile editing is off on this deployment: the route is unauthenticated, so anyone with " +
-        "the URL could rewrite any shop's identity. Edit on the demo host, or call with x-admin-token.",
+      "profile editing is switched off on this deployment right now. Nothing about a shop's " +
+        "money is affected either way — this route cannot touch a payout, a handle or a category.",
     );
   }
   if (!isValidHandle(handle)) {
@@ -548,12 +601,42 @@ export async function updateMerchantProfile(
   assertAffordable(profile.value);
 
   const key = ip ?? "unknown";
-  if (!operator) assertNotThrottled(profileThrottle, key);
+  if (!operator) {
+    assertNotThrottled(profileThrottle, key);
+    // Per-handle AFTER per-IP: a caller already inside their own cooldown learns
+    // that first, rather than being told about a shop they were not going to be
+    // allowed to edit anyway.
+    assertNotThrottled(handleThrottle, handle);
+  }
   if (profileInFlight.has(key)) {
     throw new ApiError(429, "ProfileEditInProgress", "a profile edit from this address is already in flight");
   }
+  const metered = !operator && config.profileEditsMetered;
+  if (metered) {
+    const reservation = reserve(
+      profileBudget,
+      1n,
+      PUBLIC_PROFILE_EDITS_DAILY,
+      Date.now(),
+      PROFILE_WINDOW_MS,
+    );
+    profileBudget = reservation.state;
+    if (!reservation.ok) {
+      const resetInMs = msUntilReset(profileBudget, Date.now(), PROFILE_WINDOW_MS);
+      throw new ApiError(
+        429,
+        "ProfileEditBudgetExhausted",
+        `this deployment relays at most ${PUBLIC_PROFILE_EDITS_DAILY} profile edits a day and has ` +
+          `used them all; the window rolls in about ${Math.ceil(resetInMs / 60_000)} minutes.`,
+      );
+    }
+  }
 
   profileInFlight.add(key);
+  /** Only a write that actually landed keeps its reservation — same rule as the
+   * register path. A 404 for an unregistered handle changes nothing on-chain and
+   * must not spend from a budget that bounds how often the rail is rewritten. */
+  let written = false;
   // Wraps the read as well as the write: `getMerchant` throws a 404 for an
   // unregistered handle, and releasing only in the write's own `finally` would
   // leak the key on that path and wedge the caller out of every later edit.
@@ -604,11 +687,18 @@ export async function updateMerchantProfile(
       // signals agreeing on something false is worse than either alone.
       cache.delete(handle);
     }
-    if (!operator) armThrottle(profileThrottle, key);
+    if (!operator) {
+      armThrottle(profileThrottle, key);
+      // Armed on the HANDLE too, and only now: a rejected attempt must not lock
+      // a shop's own owner out of correcting it.
+      armThrottle(handleThrottle, handle);
+    }
+    written = true;
     console.log(`profile updated for ${handle}: ${profile.value.displayName}`);
     return { ...merchant, ...profile.value };
   } finally {
     profileInFlight.delete(key);
+    if (metered && !written) profileBudget = release(profileBudget, 1n);
   }
 }
 
