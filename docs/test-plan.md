@@ -360,8 +360,24 @@ pass all of those. **#78 is the row that breaks the symmetry** — a real mercha
 editing their own shop — and it is why the phase can be signed off at all. Do not
 sign it off on the refusals alone if #78 is ever reset to blank.
 
-What is still unproven is the CONTRACT-ACCOUNT tier (#85): every row here was
-driven by an EOA payout.
+The CONTRACT-ACCOUNT tier is proven too, as of 21 Aug (#85, #85b), using a
+deployed `Erc1271Owner` as a shop's payout. **What that does NOT cover is the
+COUNTERFACTUAL half**: a real passkey account is undeployed until its first
+outgoing transaction and relies on an ERC-6492 wrapper the wallet supplies, which
+viem cannot construct without `factory`/`factoryData`. A deployed ERC-1271
+contract exercises `isValidSignature`; it does not exercise that wrapper. Still
+U1, still never done by a human.
+
+**One open finding, from running #85: `assertOwnsShop` can 404 a shop that
+exists.** It reads through `readMerchantFresh`, which bypasses the 60s cache
+precisely so a payout rotation takes effect immediately — and therefore can land
+on a replica that has not seen a just-mined registration. A merchant who
+registers and edits straight away gets "no merchant registered for handle", while
+every other screen shows their shop from cache. It fails closed and it cleared on
+re-run, so it is transient rather than dangerous, and human latency (connect a
+wallet, type, sign) usually covers the window. The fix is a bounded retry on
+`null` rather than falling back to the cached read, since falling back would
+reintroduce exactly the stale-payout window the fresh read exists to close.
 
 Incidental finding, since it contradicted a note in `CLAUDE.md`: the RainbowKit
 connect control is on **Settings**, not Payouts — `PayoutRotationCard` is imported
@@ -383,8 +399,10 @@ screen serves both merchant writes.
 | 82  | `/merchant/ah-hock-chicken-rice/settings` | Locked, since `demo-reset` registers the canonical shops with the RELAYER as payout. Accepted, not a bug — do NOT import the relayer key into a browser wallet to work around it, because MetaMask can add a 7702 delegation and a delegated relayer breaks the `exact` bridge | **PASS (21 Aug, browser)** — locked, with the payout-signature reason rather than the host-closed one. It never says "Editing is closed on this host" |
 | 83  | `pnpm demo:reset` after all of the above | Still registers both shops, still under 30s — it goes through the admin-token path and never signs | **PASS (21 Aug)** — `done in 2.8s`, exit 0. Both shops present, agent wallet armed at S$50/day · food_beverage · 10.00 USDC, gadgethub-sg registered. Nothing to top up, which is the fast case |
 | 84  | Nothing adjacent broke | Overview and Payouts still render; console carries no errors | **PASS (21 Aug, browser)** — Overview shows all three KPI tiles (S$491.53 collected, 105 agent / 49 human split, S$11.36 saved) over a 10-row live feed including a `via facilitator` row; Payouts shows its KPI grid, By day table and the partial-coverage caveat. Console on all three screens carries exactly two warnings and no errors: `@metamask/sdk`'s optional `@react-native-async-storage/async-storage` peer, and `Lit is in dev mode` from the WalletConnect modal. Handle and Category rows still locked with their own reasons |
-| 85  | A shop whose payout is a PASSKEY (Base Smart Account) edits its profile | The slow tier settles it: recovery declines an ERC-6492 signature, `verifyTypedData`'s universal validator accepts it, the edit lands. Watch the wallet actually returns a WRAPPED 6492 signature — viem cannot build the wrapper without `factory`/`factoryData`, which this call site does not pass, so that is the first thing to check on a refusal | **NOT RUN.** Needs U1 (passkey onboarding) completed first, which no human has ever done. Every row above used an EOA payout, so this tier has never executed |
-| 86  | An unreachable RPC during a contract-account check | 503 `OwnershipUnverifiable`, never 403 `NotMerchantPayout`. viem returns `false` for a failed `eth_call` rather than throwing (measured against a dead port), so without the liveness probe an outage accuses the merchant of forgery | **NOT RUN in the app.** The viem behaviour itself is measured; the probe branch is not exercised. Reproduce by pointing `BASE_SEPOLIA_RPC_URL` at a dead port and editing a contract-account shop |
+| 85  | A shop whose payout is a CONTRACT ACCOUNT edits its profile | The slow tier settles it: ECDSA recovery cannot attribute the signature to the payout, so only `verifyTypedData`'s universal validator can accept it | **PASS (21 Aug).** `Erc1271Owner` (`src/mocks/`) deployed to `0x05669822…d7bD` with Anvil #0 as its owner, shop `erc1271-test-shop` registered with that CONTRACT as payout, then edited with an owner-signed proof: **200**. First execution of the slow tier — every other row in this phase used an EOA payout |
+| 85b | The same shop, signed by a key the contract does not vouch for | 403 `NotMerchantPayout`, and the text unchanged. Without this, #85 could be passing because the slow tier accepts too much | **PASS (21 Aug)** — 403 `NotMerchantPayout`, `displayName` still `"ERC-1271 Test Shop (edited)"`. Both signatures are unrecoverable to the payout address, so `isValidSignature` returning the failure selector is the only thing that can separate them: the CONTRACT is deciding, not a bypass |
+| 85c | A newly registered shop's FIRST edit | Should not 404 | **FAIL (21 Aug), transient — see the findings note below.** Registering and immediately editing returned **404 `MerchantNotFound`** for a shop that `GET /api/merchants/:handle` was serving at that moment. `assertOwnsShop` reads through `readMerchantFresh`, which bypasses the 60s cache and can land on a replica that has not seen the registration block. Passed on re-run seconds later. Not a security failure (it fails closed) but the message is false and alarming, and it is the documented "a write is confirmed against a different provider than the read that follows it" trap, one layer out |
+| 86  | An unreachable RPC during a contract-account check | 503 `OwnershipUnverifiable`, never 403 `NotMerchantPayout`. viem returns `false` for a failed `eth_call` rather than throwing, so without the liveness probe an outage accuses the merchant of forgery | **PASS (21 Aug), and the reachability is the interesting half.** Driven by replicating `assertOwnsShop`'s tail in order against a dead endpoint. **TOTAL outage: the 503 branch is NOT reached** — `readMerchantFresh` throws three lines earlier, so the request dies as a read failure, which is already not a false forgery claim. **PARTIAL outage (reads fine, validator call dead), which is the rate-limited case on the shared egress IP the probe was written for: `verifyTypedData` returned `false`, the `getCode` probe THREW, 503 `OwnershipUnverifiable`.** So the branch is reachable exactly where it matters and dead where it is not needed. Residue unchanged: a provider that serves reads and rejects deployless calls specifically would still yield a 403 |
 
 ---
 
