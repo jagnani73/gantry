@@ -19,10 +19,23 @@ green, and the relayer NOT carrying an EIP-7702 delegation (`eth_getCode` on
 ## What needs a human right now
 
 Kept at the top because it is the question this file gets asked, and answering it
-from the tables means reading all of them. Current as of 20 Aug, after the F16/F17
-pass.
+from the tables means reading all of them. Current as of 21 Aug, after Phase 12.
 
-**Nothing is blocking.** The three unverified fixes were driven by the owner and
+**Nothing is blocking.** Phase 12 (the signed profile edit) closed on 21 Aug: the
+four refusals pass against a live backend, the locked form is verified in a
+browser, and the HAPPY PATH is verified too — shop `siong-sheng`, onboarded with
+an owner-held EOA as payout and edited successfully (#78), including the declined
+prompt (#80) and the mismatched-account lock (#79). That last part matters,
+because every other passing row in that phase is a refusal and a gate that
+refused everything would have passed them all.
+
+**One known hole, not a blocker.** A merchant who onboards with the **passkey**
+button gets a Base Smart Account, whose signature is EIP-1271 rather than
+ECDSA-recoverable and whose address is counterfactual until its first outgoing
+transaction — so `assertOwnsShop` refuses it and that merchant cannot edit their
+own shop. Nobody is stuck (U1 has never been completed by a human), but it is the
+production story in Q&A #9. The fix is a fallback to viem's `verifyTypedData`,
+which handles EIP-1271 and ERC-6492 through the universal validator. The three unverified fixes were driven by the owner and
 pass (**25l**, **25m**, **25n** — the last being the originally reported bug), and
 the two open decisions have been made and implemented.
 
@@ -324,7 +337,46 @@ it.
 | 70  | Same, built with `NODE_ENV=production`                                                                 | **Expectation INVERTED 21 Aug.** It used to be "every field locked, no submit path". Profile editing is open on every host now, so the check is that the production build renders the SAME editable form as dev — i.e. no build-time branch survived. Handle and category stay locked, for their own reasons | **N/A — the thing this tested no longer exists.** It asserted that a production build hid a form, via a `process.env.NODE_ENV` branch in the server component. That branch is gone (21 Aug), and `grep -rn NODE_ENV packages/web/src` now returns only comments describing what used to be there — both pages return their component unconditionally. A build could only confirm that a component with no conditions in it renders. What replaced the gate is a set of RUNTIME limits, which is #73, and which is driven |
 | 71  | `/onboard` in dev                      | "permanently" appears once, on the handle tag; name/location/blurb say they can be updated, mechanism is "ask us" | **PASS** (owner-reported) — copy correct |
 | 72  | `/onboard` in production                                                                               | **Expectation INVERTED 21 Aug.** It used to be "form not shipped at all". The form now ships and works; the gate is a runtime limit, not a build-time branch | **N/A — the thing this tested no longer exists.** It asserted that a production build hid a form, via a `process.env.NODE_ENV` branch in the server component. That branch is gone (21 Aug), and `grep -rn NODE_ENV packages/web/src` now returns only comments describing what used to be there — both pages return their component unconditionally. A build could only confirm that a component with no conditions in it renders. What replaced the gate is a set of RUNTIME limits, which is #73, and which is driven |
-| 73  | The merchant-write limits, against a `NODE_ENV=production` backend | Registration: per-IP 30s cooldown, in-flight guard, global 20/24h ceiling, `ONBOARDING=closed` switch. Edits: per-IP 10s, **per-handle 60s**, global 60/24h, `PROFILE_EDITS=closed` switch. Reservations released when nothing is written | **RE-RUN PASSES (21 Aug), and needs no production backend any more** — merchant writes are metered on every host since the `!isDemoHost` clause was removed. Four PATCHes to one shop from four different IPs: the first landed, the rest refused with `ProfileEditHandleCooldown`, so rotating IPs does not escape a bound keyed on the handle. A different shop landed straight away while that one was cooling, which is the isolation the per-handle key exists for. **Not shown live:** the per-handle DAILY budget (10/24h) — the 60s cooldown refuses first, so ten landed edits would take ten minutes; that arithmetic is covered by `handle-budget.test.ts` (8 cases) instead |
+| 73  | The merchant-write limits, against a `NODE_ENV=production` backend | Registration: per-IP 30s cooldown, in-flight guard, global 20/24h ceiling, `ONBOARDING=closed` switch. Edits: per-IP 10s, **per-handle 60s**, global 60/24h, `PROFILE_EDITS=closed` switch. Reservations released when nothing is written | **RE-RUN PASSES (21 Aug), and needs no production backend any more** — merchant writes are metered on every host since the `!isDemoHost` clause was removed. Four PATCHes to one shop from four different IPs: the first landed, the rest refused with `ProfileEditHandleCooldown`, so rotating IPs does not escape a bound keyed on the handle. A different shop landed straight away while that one was cooling, which is the isolation the per-handle key exists for. **Not shown live:** the per-handle DAILY budget (10/24h) — the 60s cooldown refuses first, so ten landed edits would take ten minutes; that arithmetic is covered by `handle-budget.test.ts` (8 cases) instead. **METHOD INVALIDATED 21 Aug, result still stands:** an unsigned PATCH is now refused with `ProofRequired` before it can arm any cooldown, so this can no longer be reproduced with bare curl. Re-running it needs real signatures from the shop's payout key — and the admin token is not a shortcut, since it is exempt from the limits as well as from the proof |
+
+---
+
+## Phase 12 — the signed profile edit (21 Aug)
+
+`assertOwnsShop` (`services/merchants.ts`) is the whole gate: it recovers an
+EIP-712 `ProfileEdit` signature and compares it against a **fresh** registry read
+before the relayer sends anything. The pure half — sign, recover, and five tamper
+cases — is pinned in `packages/shared/src/profileProof.test.ts`; everything below
+is the part no unit test can reach.
+
+**Read this before signing the phase off: every row that passes is a REFUSAL.**
+The API rows prove the gate says no to an unsigned edit, a wrongly-signed one, a
+stale one and a malformed one, and the browser rows prove the form locks itself
+rather than offering a Save that would 403. **What no row here proves is that a
+real merchant can edit their own shop** — #78, #80 and #81 all need a browser
+wallet holding a shop's payout key, which is the same blocker as U2, and none of
+them has ever run. A gate that refuses everything would pass this table.
+
+Incidental finding, since it contradicted a note in `CLAUDE.md`: the RainbowKit
+connect control is on **Settings**, not Payouts — `PayoutRotationCard` is imported
+only by `settings-screen.tsx`, and Payouts merely links across with "Change it in
+Settings". That is convenient here rather than a problem: one connection on one
+screen serves both merchant writes.
+
+| #   | What | Expected | Result |
+| --- | ---- | -------- | ------ |
+| 74  | `PATCH /api/merchants/<handle>` with no `proof` | 400 `ProofRequired`, and NO cooldown armed — a second attempt must fail the same way rather than with a cooldown error | **PASS (21 Aug)** — 400 `ProofRequired` twice in a row against `ah-hock-chicken-rice`, second attempt identical rather than `ProfileEditHandleCooldown`, so a forged attempt arms nothing. Shop text unchanged after both |
+| 75  | Same, signed by a key that is not the shop's payout | 403 `NotMerchantPayout`. This is the whole feature: it must refuse even though the signature itself is perfectly valid | **PASS (21 Aug)** — 403 `NotMerchantPayout`. Signed by Anvil account #0 over the correct merchantId, correct text and a fresh `issuedAt`; the signature verifies perfectly and is refused solely for not being the payout |
+| 76  | Same, with a valid signature and `issuedAt` set 10 minutes back | 403 `ProofExpired` | **PASS (21 Aug)** — 403 `ProofExpired`. Signed correctly for its own old timestamp, so the freshness check is what refused it, and it refused BEFORE the chain read |
+| 76b | Same, with `signature: "0xdeadbeef"` | 400 `ProofMalformed`, not the 403 a wrong signer gets — an unusable request is a different answer from a refused one | **PASS (21 Aug)** — 400 `ProofMalformed` |
+| 77  | Same, with `x-admin-token` and no proof | 200. The operator path `demo-reset` seeds through must be untouched | **PASS ON RETRY (21 Aug), and the first attempt is worth keeping.** First call returned 502 `ProfileWriteUnresolved` and the text did not change over 30s of polling; the relayer nonce had NOT moved, so nothing was broadcast. Ladder followed rather than reading the calldata: nonce `latest == pending` (1201, nothing stuck) and `eth_getCode` `0x` (no 7702 delegation), then re-ran — 200 in 1.7s, nonce 1201 → 1202. The documented transient, on the one path this change does not touch (`assertOwnsShop` is skipped for an operator). **Side effect worth noting:** the shop's blurb had drifted to `"Hainanese chicken rice since 1978."` from earlier edit testing; this wrote the canonical `DEMO_MERCHANTS` text back |
+| 78  | Onboard a shop at `/onboard` with a payout address held in MetaMask, then edit it at `/merchant/<handle>/settings` | Connect that wallet, edit the name, one signature prompt (no gas — the relayer still sends the transaction), success toast, and `/m/<handle>` plus `/merchants` show the new name | **PASS (21 Aug, owner-reported)** — shop `siong-sheng` onboarded with payout `0xC89a88fdbF613F68AD5a4E03B918610Ff0373c43` (an owner-held EOA, not the relayer) and edited successfully. This is the row the whole phase turns on: every other passing row is a REFUSAL, and a gate that refused everything would have passed them all |
+| 79  | Same screen, wallet disconnected, then connected as a different account | Fields render as locked rows, no Save button, and the line below names the reason: "connect that wallet" when disconnected, and the connected address plus "not the address this shop's payouts go to" when mismatched | **PASS (21 Aug) — both branches.** Disconnected branch verified on `/merchant/ah-hock-chicken-rice/settings`: all three fields render as locked rows with a `locked` badge and `read_page filter=interactive` returns **zero** input elements, so it is structurally locked rather than just styled that way; no Save and no Discard control exists; the line reads verbatim `Changes to a shop's details are signed by the address its payouts go to. Connect that wallet to edit.` **Mismatched branch now PASSES too (21 Aug, owner-reported)** on `siong-sheng` with a non-payout account connected, so the `shortAddress(signer)` sentence renders. Both branches verified |
+| 80  | Decline the signature prompt in MetaMask | One sentence inline ("You declined this in your wallet, so nothing was sent."), never a viem block. The draft must survive so the merchant can retry | **PASS (21 Aug, owner-reported)** on `siong-sheng` — `describeWriteError`'s `REJECTED` branch is reachable from this screen |
+| 81  | Sign, wait six minutes without saving, then save | `ProofExpired`, explained as needing a fresh signature. Reachable because signing and saving are two steps | **NOT RUN (no longer blocked).** A payout wallet exists now (`siong-sheng`), so this is only skipped for costing six minutes of waiting. The server half is #76 and passes; what is untested is that the SCREEN explains it rather than showing a bare error |
+| 82  | `/merchant/ah-hock-chicken-rice/settings` | Locked, since `demo-reset` registers the canonical shops with the RELAYER as payout. Accepted, not a bug — do NOT import the relayer key into a browser wallet to work around it, because MetaMask can add a 7702 delegation and a delegated relayer breaks the `exact` bridge | **PASS (21 Aug, browser)** — locked, with the payout-signature reason rather than the host-closed one. It never says "Editing is closed on this host" |
+| 84  | Nothing adjacent broke | Overview and Payouts still render; console carries no errors | **PASS (21 Aug, browser)** — Overview shows all three KPI tiles (S$491.53 collected, 105 agent / 49 human split, S$11.36 saved) over a 10-row live feed including a `via facilitator` row; Payouts shows its KPI grid, By day table and the partial-coverage caveat. Console on all three screens carries exactly two warnings and no errors: `@metamask/sdk`'s optional `@react-native-async-storage/async-storage` peer, and `Lit is in dev mode` from the WalletConnect modal. Handle and Category rows still locked with their own reasons |
+| 83  | `pnpm demo:reset` after all of the above | Still registers both shops, still under 30s — it goes through the admin-token path and never signs | **PASS (21 Aug)** — `done in 2.8s`, exit 0. Both shops present, agent wallet armed at S$50/day · food_beverage · 10.00 USDC, gadgethub-sg registered. Nothing to top up, which is the fast case |
 
 ---
 

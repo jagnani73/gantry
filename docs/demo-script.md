@@ -335,11 +335,16 @@ token is not a sample of what that token costs.
 
 **12. What are you weakest at?**
 Three things, and none of them is a surprise to us. **The merchant back-office is
-unauthenticated** — anyone with the URL can read a shop's takings, and we did not
-invent a login we couldn't secure in the time. **The demo payer is one shared
-account**, so on the deployed build every visitor signs as the same key and the
-history is not private; the app says so on two screens. And **a denial record is
-relayer-attested** — the verifier re-derives the policy half from public state
+readable by anyone with the URL** — a shop's takings are not private, because we
+did not invent a login we couldn't secure in the time. Note what that does *not*
+cover: both back-office writes are authenticated, and by the chain rather than by
+us. Rotating a payout is gated in the contract on `msg.sender == merchant.payout`,
+and changing a shop's details needs an EIP-712 signature from that same address,
+which the backend checks against a fresh registry read before the relayer sends
+anything. Gantry holds no key that can rename a shop. **The demo payer is one
+shared account**, so on the deployed build every visitor signs as the same key and
+the history is not private; the app says so on two screens. And **a denial record
+is relayer-attested** — the verifier re-derives the policy half from public state
 and cannot check the signature, so it proves the wallet would have refused, not
 that the agent asked.
 
@@ -360,13 +365,21 @@ gaps list in `CLAUDE.md`, not hidden.
   signing and the HTTP live in tools it cannot reach. If the model times out, a
   scripted path sends identical wire traffic.
 - *Can anyone register as a merchant?* On the contract, yes, and that is the
-  point: `registerMerchant` is permissionless. On the demo host the form is open
-  too, which is the 2-minute onboarding beat. It is closed on the deployed
-  instance for one reason only, and it is not vetting: that form spends our gas
-  key, and we will not leave an unauthenticated ETH spend on the public
-  internet. Nothing in Gantry reviews or verifies a merchant. Categories are
-  self-attested and there is no KYC anywhere in the system.
-- *How many tests?* 550 — 201 Foundry, 174 shared, 171 backend, 4 agent. Five of
+  point: `registerMerchant` is permissionless. The form is open on **every**
+  host, including the deployed one, because a rail nobody outside the demo can
+  join demonstrates the opposite of a permissionless registry. What is bounded is
+  the rate, not the identity: a global ceiling of 20 registrations a rolling 24h
+  plus a per-IP cooldown, because a registration is permanent and public.
+  `ONBOARDING=closed` is the kill switch if it is ever abused. Nothing in Gantry
+  reviews or verifies a merchant. Categories are self-attested and there is no
+  KYC anywhere in the system.
+- *So anyone can rename my shop?* No, not since 21 August. A profile edit carries
+  an EIP-712 signature from the address that receives that shop's payouts, and
+  the backend recovers it and compares it against a fresh registry read before
+  relaying. It is authentication with no account, no password and nothing new for
+  us to secure, because the chain already holds the identity. What it proves is
+  who wrote the text, never that the text is true.
+- *How many tests?* 577 — 201 Foundry, 183 shared, 189 backend, 4 agent. Five of
   the Foundry ones are fork tests that skip without a fork RPC, so CI runs 196 of
   the 201; don't let a slide imply otherwise. Four are invariants, not unit
   tests. `packages/web` has no suite at all.
