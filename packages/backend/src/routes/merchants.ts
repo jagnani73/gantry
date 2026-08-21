@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Address, Hex } from "viem";
+import { MAX_PROOF_SIGNATURE_BYTES } from "@gantry/shared";
 import {
   getMerchant,
   listMerchantIndex,
@@ -31,22 +32,30 @@ const RegisterMerchantSchema = z.object({
 });
 
 // `proof` is optional to the SCHEMA and required by the service for anyone
-// without an admin token, which is the only split that works: the operator path
-// demo-reset seeds through carries no wallet and cannot sign. Enforcing presence
-// here would refuse it; enforcing it in `updateMerchantProfile` puts the check
-// next to the exemption it has to agree with.
+// without an admin token. Enforcing presence here would refuse the operator
+// path; enforcing it in `updateMerchantProfile` puts the check next to the
+// exemption it has to agree with.
+//
+// Note what that exemption is NOT for: `demo-reset` never calls this route. It
+// ships display text inside `registerMerchant` (one transaction per shop), so
+// the only PATCH client in the repo is the browser. The admin token exists so an
+// operator can correct a shop by hand, which is worth keeping and worth not
+// misdescribing as a caller that would break if it were removed.
 const UpdateMerchantProfileSchema = z.object({
   displayName: z.string(),
   location: z.string(),
   blurb: z.string(),
   proof: z
     .object({
-      // Shape only, and the cast is what the regex earns: recovery reads raw
-      // bytes, so a hex-shaped string that is not a real signature is refused by
-      // `assertOwnsShop` recovering the wrong address, never here.
+      // Shape only, and deliberately PAIRED hex: an odd number of nibbles is not
+      // a byte string, and the arithmetic downstream turns it into a fractional
+      // byte count that compares as though it were real. `isSignatureShaped`
+      // re-checks this in the service, since the service is where the security
+      // decision lives and a schema is not a place to keep one.
       signature: z
         .string()
-        .regex(/^0x[0-9a-fA-F]+$/, "signature must be hex")
+        .regex(/^0x([0-9a-fA-F]{2})+$/, "signature must be an even-length hex string")
+        .max(2 + MAX_PROOF_SIGNATURE_BYTES * 2, "signature is too long to be one")
         .transform((value) => value as Hex),
       issuedAt: z.number().int(),
     })

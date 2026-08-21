@@ -25,10 +25,14 @@ import type { MerchantProfile } from "./profile";
  *    reads as a shop name, not a security boundary. Coupling the two means a
  *    future relaxation of the content rule silently becomes a signature bug.
  *
- * There is NO on-chain counterpart: nothing verifies this digest in Solidity,
- * because `setMerchantProfile` takes no signature. So unlike
- * `buildSpendAuthorization` this is not a cross-stack pin and has no Foundry
- * vector — the only requirement is that the browser and the backend build it
+ * No GANTRY contract verifies this digest — `setMerchantProfile` takes no
+ * signature — so unlike `buildSpendAuthorization` this is not a cross-stack pin
+ * and has no Foundry vector. A contract-account payout's own `isValidSignature`
+ * DOES see it, through viem's universal validator on the backend's slow tier,
+ * which is why "nothing verifies this in Solidity" is no longer the right way to
+ * put it.
+ *
+ * The requirement that remains is that the browser and the backend build it
  * identically, which is why there is exactly one builder and both import it.
  */
 
@@ -65,6 +69,38 @@ export const PROOF_TTL_SECONDS = 300;
  * is invisible from either end.
  */
 export const PROOF_SKEW_SECONDS = 60;
+
+/**
+ * Signature length bounds, in bytes.
+ *
+ * A raw ECDSA signature is exactly 65. An ERC-6492 one wraps that with the
+ * factory address and its deploy calldata, so it is longer and has no fixed
+ * size — hence a floor and a generous ceiling rather than an equality.
+ *
+ * The ceiling is a cost bound, not a correctness one. Without it the only limit
+ * is the JSON body cap, and a ~99KB "signature" would buy a registry read plus a
+ * deployless `eth_call` carrying that payload to every fallback provider, times
+ * viem's retries. The floor is what keeps four bytes of junk from doing the
+ * same.
+ */
+export const MIN_PROOF_SIGNATURE_BYTES = 65;
+export const MAX_PROOF_SIGNATURE_BYTES = 8192;
+
+/**
+ * Is this even shaped like a signature? Cheap, total, and no I/O, so it can run
+ * before anything expensive.
+ *
+ * Checks EVEN length as well as the bounds: a hex regex alone admits an odd
+ * number of nibbles, which is not a byte string at all, and `(len - 2) / 2`
+ * silently yields a fraction that compares as though it were a real size.
+ */
+export function isSignatureShaped(signature: string): boolean {
+  if (!/^0x[0-9a-fA-F]*$/.test(signature)) return false;
+  const nibbles = signature.length - 2;
+  if (nibbles % 2 !== 0) return false;
+  const bytes = nibbles / 2;
+  return bytes >= MIN_PROOF_SIGNATURE_BYTES && bytes <= MAX_PROOF_SIGNATURE_BYTES;
+}
 
 /** What the client sends alongside the profile it wants written. */
 export interface ProfileEditProof {
@@ -110,19 +146,33 @@ export function buildProfileEdit(params: ProfileEditParams) {
 }
 
 /**
- * Who signed this edit.
+ * Who signed this edit, if anyone.
  *
- * Recovery ALWAYS produces an address — there is no "invalid signature" answer
- * short of malformed bytes, because any 65 bytes recover to something. So the
- * caller's job is to compare the result against the payout, and a tampered field
- * shows up as a different address rather than as a thrown error. Callers must
- * never treat "it returned" as "it verified".
+ * Two outcomes, and callers must handle both. A TAMPERED field returns a
+ * different address, so the caller's job is to compare against the payout and
+ * never to treat "it returned" as "it verified". Bytes that are not an ECDSA
+ * signature at all THROW — measured: `0x` + `11` repeated 65 times rejects
+ * rather than returning, so the once-stated "any 65 bytes recover to something"
+ * was wrong.
+ *
+ * That distinction is load-bearing for the backend's two-tier check: an ERC-6492
+ * signature from a contract account lands in the throwing case, and falling
+ * through to the chain rather than refusing is what lets such an account be
+ * verified at all.
+ *
+ * Takes the proof as its OWN argument rather than intersecting it into the
+ * params, so `issuedAt` has exactly one home. As
+ * `ProfileEditParams & { signature }` both objects carried an `issuedAt`, both
+ * spread orders typechecked, and they produced DIFFERENT digests — with the
+ * value that gets freshness-checked and the value that gets hashed free to
+ * diverge, in the one function that is the whole gate.
  */
 export async function recoverProfileEditSigner(
-  params: ProfileEditParams & { signature: Hex },
+  base: Omit<ProfileEditParams, "issuedAt">,
+  proof: ProfileEditProof,
 ): Promise<Address> {
-  const typedData = buildProfileEdit(params);
-  return recoverTypedDataAddress({ ...typedData, signature: params.signature });
+  const typedData = buildProfileEdit({ ...base, issuedAt: proof.issuedAt });
+  return recoverTypedDataAddress({ ...typedData, signature: proof.signature });
 }
 
 /**
@@ -133,7 +183,27 @@ export async function recoverProfileEditSigner(
  * replayed signature should not be able to buy an `eth_call` per attempt.
  */
 export function isProofFresh(issuedAt: number, nowSeconds: number): boolean {
-  if (!Number.isFinite(issuedAt)) return false;
+  // INTEGER, not merely finite: `buildProfileEdit` puts this through `BigInt()`,
+  // which throws a RangeError on a fraction. Accepting one here would pass a
+  // value the module's own builder cannot encode, and the route's `z.number()
+  // .int()` is currently the only thing standing in front of that.
+  if (!Number.isInteger(issuedAt)) return false;
   if (issuedAt > nowSeconds + PROOF_SKEW_SECONDS) return false;
   return nowSeconds - issuedAt <= PROOF_TTL_SECONDS;
+}
+
+/**
+ * Is this stamp in MILLISECONDS?
+ *
+ * Split from staleness because the two need different answers. A millisecond
+ * stamp fails `isProofFresh` on the future branch and would surface as "your
+ * signature expired, sign again" — advice that cannot work, since re-signing
+ * reproduces the same wrong units forever. The same trap the settlements summary
+ * endpoint was hardened against, where the answer was a 400 that says so.
+ *
+ * The threshold is deliberately crude: any plausible SECONDS value is far below
+ * this, and any plausible MILLISECONDS value is far above it.
+ */
+export function looksLikeMilliseconds(issuedAt: number): boolean {
+  return Number.isFinite(issuedAt) && Math.abs(issuedAt) > 1e11;
 }

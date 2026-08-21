@@ -14,6 +14,8 @@ import {
   decodeGantryError,
   buildProfileEdit,
   isProofFresh,
+  isSignatureShaped,
+  looksLikeMilliseconds,
   recoverProfileEditSigner,
   PROOF_TTL_SECONDS,
 } from "@gantry/shared";
@@ -209,7 +211,9 @@ function primeRegistration(
 }
 
 /**
- * Per-IP throttle, shared by both write routes because both are unauthenticated
+ * Per-IP throttle, shared by both write routes. Registration is unauthenticated;
+ * a profile edit is signed by the shop's payout, so this is a gas bound there
+ * rather than the control, and it stands if that check is ever relaxed.
  * writes made on a stranger's behalf. The buckets are separate because they
  * spend different things — a registration spends relayer ETH and claims a handle
  * permanently, a profile edit rewrites one row — and because onboarding a shop
@@ -580,8 +584,8 @@ export async function registerMerchant(
  *
  * `normalizeProfile` caps CODEPOINTS (60/80/140), and four-byte emoji turn that
  * into 1,120 bytes — roughly fifteen times an empty write, and this route is
- * unauthenticated on a demo host and replayable on the same handle forever, each
- * rewrite re-paying cold SSTOREs. Registering at least claims a permanent handle
+ * replayable on the same handle forever, each rewrite re-paying cold SSTOREs.
+ * Signing narrows WHO can do that to the shop's own payout, and not how often. Registering at least claims a permanent handle
  * per spend; this buys nothing. Draining the gas key stops EVERY door, so the
  * bound is on the thing that actually costs: total bytes.
  *
@@ -612,8 +616,14 @@ function assertAffordable(profile: MerchantProfile): void {
  * can change and the relayer key is the only thing that can do it. What the
  * contract therefore CANNOT do is check who asked, which is why `assertOwnsShop`
  * does it here: the merchant signs the exact text with the address their payouts
- * land in, and that is the same identity `setMerchantPayout` is gated on. The
- * record is MERCHANT-owned. Gantry holds no key that can rename a shop.
+ * land in, and that is the same identity `setMerchantPayout` is gated on.
+ *
+ * The record is merchant-owned ON THIS ROUTE, and that qualifier is the whole of
+ * the honest version. Two keys still bypass it and both are ours: a valid
+ * `x-admin-token` skips the proof entirely, and the relayer key can call
+ * `setMerchantProfile` directly, since the contract's only guard is
+ * `onlyRelayer`. So "Gantry holds no key that can rename a shop" is FALSE and
+ * must not be written anywhere; what is true is that no STRANGER can.
  *
  * That is authentication without an account: no password, no session, no user
  * table, and nothing new to secure. READS are still open — anyone with the URL
@@ -666,15 +676,33 @@ export async function updateMerchantProfile(
   if (profileInFlight.has(key)) {
     throw new ApiError(429, "ProfileEditInProgress", "a profile edit from this address is already in flight");
   }
+  // CLAIMED IMMEDIATELY, and the position is load-bearing rather than tidy.
+  // Everything between this check and this arm used to be synchronous, which is
+  // the only reason the guard held at all — it is a plain Set on one event loop,
+  // not a lock. The ownership check below is the first `await` ever to sit in
+  // that gap, and while it did, two concurrent PATCHes from one caller both
+  // passed the check, both verified, and both relayed `setMerchantProfile`: two
+  // relayer transactions and two units of a ten-a-day allowance for one intended
+  // edit. It also left forged attempts unbounded in parallel as well as
+  // serially, since a refused proof deliberately arms no throttle.
+  //
+  // From here every exit must release it, which is what the outer `finally`
+  // below is for.
+  profileInFlight.add(key);
+  // See the note on the register path: metered everywhere, because the operator
+  // exemption already covers the rehearsal case and an unexercised limit is an
+  // untested one.
+  const metered = !operator;
+  /** Only a write that actually landed keeps its reservation — same rule as the
+   * register path. A 404 for an unregistered handle changes nothing on-chain and
+   * must not spend from a budget that bounds how often the rail is rewritten. */
+  let written = false;
+  try {
   // WHO is asking, before anything is spent on their behalf. Deliberately ahead
   // of the budget reservations below: a forged proof must cost no cooldown and no
   // share of the daily ceiling, or an attacker who cannot edit a shop can still
   // exhaust the allowance that lets its real owner edit it.
   if (!operator) await assertOwnsShop(handle, profile.value, req.proof);
-  // See the note on the register path: metered everywhere, because the operator
-  // exemption already covers the rehearsal case and an unexercised limit is an
-  // untested one.
-  const metered = !operator;
   if (metered) {
     const now = Date.now();
     // PER-HANDLE FIRST, and the order is the whole point: a shop that has used
@@ -712,15 +740,6 @@ export async function updateMerchantProfile(
     }
   }
 
-  profileInFlight.add(key);
-  /** Only a write that actually landed keeps its reservation — same rule as the
-   * register path. A 404 for an unregistered handle changes nothing on-chain and
-   * must not spend from a budget that bounds how often the rail is rewritten. */
-  let written = false;
-  // Wraps the read as well as the write: `getMerchant` throws a 404 for an
-  // unregistered handle, and releasing only in the write's own `finally` would
-  // leak the key on that path and wedge the caller out of every later edit.
-  try {
     // 404s for a handle nobody registered, before any gas is spent. The contract
     // rejects it too (MerchantNotFound), but paying for that revert to learn what a
     // read already knows is the wrong order.
@@ -823,19 +842,23 @@ export async function updateMerchantProfile(
  * `setMerchantPayout` is gated on — and we relay only if the two agree.
  *
  * Ordered cheapest first, because every attempt an attacker can make should cost
- * them more than it costs us: the presence and freshness checks are free, so
- * only an in-window proof buys the `eth_call` that fetches the payout, and only
- * one that ALSO fails ECDSA recovery buys the second call behind it.
+ * them more than it costs us: presence, clock unit, freshness, byte shape and
+ * ECDSA recovery are all free and all run before the one unavoidable `eth_call`
+ * that fetches the payout, and only a proof that ALSO fails recovery buys the
+ * second call behind it. Note what this does NOT bound: a refused proof
+ * deliberately arms no throttle, so attempts are unlimited and each costs us a
+ * read. The `profileInFlight` guard is what keeps them from being unlimited in
+ * PARALLEL too, which is why it is claimed before this runs.
  *
  * Two tiers, and the split is about what kind of account the payout is rather
  * than about speed. An EOA is settled by recovery alone. A contract account —
  * which is what `/onboard`'s passkey button mints — signs under EIP-1271 and
  * cannot be recovered at all, so it needs the chain's own opinion.
  *
- * Fails CLOSED at every step. A read that throws propagates rather than being
- * caught into an allow — unlike `ownsHandle`, whose failure means "we could not
- * confirm a write" and is safe to report as such, a failure HERE would mean
- * "we could not confirm ownership", and the safe answer to that is no.
+ * Fails CLOSED at every step, but "closed" is not the same as "honest about
+ * why": viem reports an unreachable node as an invalid signature, so the
+ * `!valid` branch has to ask a second question before it accuses anyone. See
+ * there.
  */
 async function assertOwnsShop(
   handle: string,
@@ -850,6 +873,16 @@ async function assertOwnsShop(
         "Connect that wallet and sign the change.",
     );
   }
+  // Named BEFORE staleness, because "sign it again" is advice that cannot work
+  // here: re-signing reproduces the same wrong units forever. Same trap, and the
+  // same answer, as a millisecond `since` on the settlements summary.
+  if (looksLikeMilliseconds(proof.issuedAt)) {
+    throw new ApiError(
+      400,
+      "ProofClockUnit",
+      "that signature's timestamp looks like milliseconds; issuedAt is unix SECONDS.",
+    );
+  }
   if (!isProofFresh(proof.issuedAt, Math.floor(Date.now() / 1000))) {
     throw new ApiError(
       403,
@@ -859,26 +892,48 @@ async function assertOwnsShop(
     );
   }
 
-  // Shape, before either tier spends an RPC call on it. A raw ECDSA signature is
-  // exactly 65 bytes and an ERC-6492 one is longer, so anything shorter is not a
-  // signature under any scheme and can be refused for free.
-  //
-  // Worth keeping even though the verifier would eventually say no: without it,
-  // four bytes of junk bought a registry read AND a universal-validator call, and
-  // came back as `NotMerchantPayout` — which reads as "wrong signer" to a client
-  // whose actual problem is that it sent nonsense.
-  if ((proof.signature.length - 2) / 2 < 65) {
+  // Shape, before either tier spends an RPC call on it. `isSignatureShaped`
+  // (shared) owns the bounds, and the EVEN-length half matters as much as the
+  // floor: the route's hex regex admits an odd number of nibbles, which is not a
+  // byte string at all, and the obvious `(len - 2) / 2` yields a fraction that
+  // compares as though it were a real size — so `0x` + 131 nibbles measured 65.5
+  // and sailed past a `< 65` test into the exact `eth_call` the gate exists to
+  // prevent. The ceiling bounds cost: without it the only limit was the 100kb
+  // JSON body cap.
+  if (!isSignatureShaped(proof.signature)) {
     throw new ApiError(400, "ProofMalformed", "that profile signature could not be read");
   }
 
   const id = merchantId(handle);
-  const typedData = {
+  // `issuedAt` is taken from the proof and nowhere else, here and in the
+  // recovery call below, so the value that was freshness-checked is provably the
+  // value that gets hashed.
+  const base = {
     merchantId: id,
     profile,
-    issuedAt: proof.issuedAt,
     chainId: config.chainId,
     gantryCore: config.addresses.gantryCore,
   };
+
+  // Recovery FIRST, and the position is what makes the docblock's ordering claim
+  // true: it is pure crypto and needs nothing from the chain, so running it
+  // before the read means a request that is going to be settled by the fast tier
+  // has already been computed by the time the one unavoidable `eth_call` starts.
+  //
+  // `recovered === null` is NOT a refusal. viem THROWS on bytes that are not an
+  // ECDSA signature (a bad recovery byte, or r/s outside the curve order), which
+  // is exactly what an ERC-6492 signature looks like from here. Falling through
+  // to the contract-account tier rather than refusing is the point.
+  const recovered = await recoverProfileEditSigner(base, proof).catch((err: unknown) => {
+    // LOGGED, not swallowed. Two very different things arrive as null: a 6492
+    // signature (expected, benign) and a genuine encoding fault. If
+    // `PROFILE_EDIT_TYPES` ever drifted, EVERY merchant would drop to the slow
+    // tier, rebuild the same broken digest, fail there too, and the whole rail
+    // would get `NotMerchantPayout` on their own shops with the evidence thrown
+    // away. Same reasoning as the confirmation probe on the write path.
+    console.warn(`profile proof for ${handle} did not recover as an EOA signature:`, err);
+    return null;
+  });
 
   // The FRESH read, never the 60s cache: a payout that rotated a moment ago must
   // gain the right to edit immediately, and the address it rotated away from must
@@ -888,18 +943,8 @@ async function assertOwnsShop(
     throw new ApiError(404, "MerchantNotFound", `no merchant registered for handle: ${handle}`);
   }
 
-  // FAST TIER — a plain EOA, which is every payout that exists today. Pure
-  // crypto, no RPC, and it is what the tamper vectors in
-  // `shared/src/profileProof.test.ts` exercise, so it must stay the path taken.
-  //
-  // `recovered === null` is NOT a refusal. Recovery over 65 valid bytes always
-  // produces SOME address, so a throw means the bytes were never an ECDSA
-  // signature — which is exactly what an ERC-6492 signature looks like from
-  // here, since it is longer and carries a magic suffix. Falling through is the
-  // point.
-  const recovered = await recoverProfileEditSigner({ ...typedData, signature: proof.signature }).catch(
-    () => null,
-  );
+  // FAST TIER — a plain EOA, which is every payout that exists today, and what
+  // the tamper vectors in `shared/src/profileProof.test.ts` exercise.
   if (recovered && recovered.toLowerCase() === chain.payout.toLowerCase()) return;
 
   // SLOW TIER — a CONTRACT account, which is what `/onboard`'s passkey button
@@ -908,27 +953,54 @@ async function assertOwnsShop(
   // they would in production is refused on their own shop.
   //
   // viem's `verifyTypedData` delegates to `verifyHash`, whose universal
-  // validator covers BOTH the deployed case (EIP-1271 `isValidSignature`) and
-  // the undeployed one (ERC-6492) in a single `eth_call`. The second half is
-  // load-bearing rather than thoroughness: registration is relayer-paid, so a
-  // passkey account never sends a transaction and stays counterfactual — there
-  // is frequently no contract deployed to ask.
+  // validator covers the deployed case (EIP-1271 `isValidSignature`) and the
+  // undeployed one (ERC-6492) in a single `eth_call`. The undeployed half only
+  // works because the Base Account connector returns an ALREADY-WRAPPED 6492
+  // signature: viem builds that wrapper only when handed `factory`/`factoryData`,
+  // which we do not have. That dependency is invisible at this call site and is
+  // the thing to check first if a passkey merchant is refused.
   let valid: boolean;
   try {
     valid = await publicClient.verifyTypedData({
       address: chain.payout,
-      ...buildProfileEdit(typedData),
+      ...buildProfileEdit({ ...base, issuedAt: proof.issuedAt }),
       signature: proof.signature,
     });
   } catch (err) {
-    // Fails CLOSED, and reported as unreadable rather than as a refusal: with
-    // recovery already having declined these bytes, a throw here means nothing
-    // could parse them at all. An RPC fault lands here too and is logged, which
-    // is why the message does not claim the signature was wrong.
+    // Reachable for a non-boolean return from a contract's `isValidSignature`,
+    // NOT for an RPC fault — see the probe below for why that distinction had to
+    // be drawn in code rather than trusted.
     console.warn(`profile proof for ${handle} could not be verified:`, err);
     throw new ApiError(400, "ProofMalformed", "that profile signature could not be read");
   }
   if (!valid) {
+    // `false` DOES NOT MEAN "wrong signer", and this cost a false accusation
+    // before it was measured. viem folds a failed `eth_call` into `false` rather
+    // than throwing — `getCallError` wraps every transport failure, timeout and
+    // 429 as a `CallExecutionError`, `verifyHash` converts that to a
+    // `VerificationError` and returns false. Verified against a dead port: it
+    // RETURNED false. So an unreachable node was reported to a merchant as "that
+    // signature is not from the address this shop's payouts go to", with nothing
+    // logged, on the one account type this tier exists to serve.
+    //
+    // Since viem gives us no way to tell them apart, ask a second question: was
+    // the chain reachable at all? A cheap read is not proof the validator call
+    // would have succeeded (a provider can reject deployless calls specifically),
+    // so this narrows the lie rather than eliminating it — but it catches the
+    // common cases, a dead node and a rate-limited one, which CLAUDE.md's RPC
+    // notes make the expected failure on the shared egress IP rather than an
+    // exotic one.
+    try {
+      await publicClient.getCode({ address: chain.payout });
+    } catch (err) {
+      console.error(`ownership check for ${handle} could not reach the chain:`, err);
+      throw new ApiError(
+        503,
+        "OwnershipUnverifiable",
+        "we could not reach the chain to check that signature, so nothing was changed. Try again " +
+          "shortly.",
+      );
+    }
     throw new ApiError(
       403,
       "NotMerchantPayout",

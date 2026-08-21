@@ -178,9 +178,11 @@ export interface RegisterMerchantRequest {
  * Gantry, and READS remain open — anyone with the URL can see a shop's takings.
  * That half belongs on the honest-labels list.
  *
- * Optional on the type because the operator path (`x-admin-token`, which
- * demo-reset seeds through) sends none. The backend REQUIRES it for everyone
- * else; do not read this `?` as "the server will manage without it".
+ * Optional on the type because the operator path (`x-admin-token`) sends none.
+ * The backend REQUIRES it for everyone else; do not read this `?` as "the server
+ * will manage without it". That exemption has no in-repo caller — `demo-reset`
+ * ships display text inside `registerMerchant` and never PATCHes — so it exists
+ * for an operator correcting a shop by hand, not for a script.
  */
 export interface UpdateMerchantProfileRequest {
   displayName: string;
