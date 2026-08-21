@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { Address } from "viem";
+import type { Address, Hex } from "viem";
 import {
   getMerchant,
   listMerchantIndex,
@@ -30,10 +30,27 @@ const RegisterMerchantSchema = z.object({
   blurb: z.string(),
 });
 
+// `proof` is optional to the SCHEMA and required by the service for anyone
+// without an admin token, which is the only split that works: the operator path
+// demo-reset seeds through carries no wallet and cannot sign. Enforcing presence
+// here would refuse it; enforcing it in `updateMerchantProfile` puts the check
+// next to the exemption it has to agree with.
 const UpdateMerchantProfileSchema = z.object({
   displayName: z.string(),
   location: z.string(),
   blurb: z.string(),
+  proof: z
+    .object({
+      // Shape only, and the cast is what the regex earns: recovery reads raw
+      // bytes, so a hex-shaped string that is not a real signature is refused by
+      // `assertOwnsShop` recovering the wrong address, never here.
+      signature: z
+        .string()
+        .regex(/^0x[0-9a-fA-F]+$/, "signature must be hex")
+        .transform((value) => value as Hex),
+      issuedAt: z.number().int(),
+    })
+    .optional(),
 });
 
 /**
@@ -69,9 +86,12 @@ merchantsRouter.post("/api/merchants", async (req, res) => {
 /**
  * Rewrites a shop's display record on-chain, and nothing else — the contract's
  * `setMerchantProfile` provably cannot touch payout, handle or category.
- * Unauthenticated by decision (there is no merchant login), which is why the
- * service gates it on the host class and throttles it per IP; the admin token is
- * the operator escape hatch demo-reset seeds through.
+ *
+ * Authenticated by the CHAIN rather than by a login: the body carries an EIP-712
+ * signature from the address that receives this shop's payouts, and the service
+ * compares it against a fresh registry read before relaying anything. The admin
+ * token is the operator escape hatch demo-reset seeds through, and the only way
+ * past that check. The per-IP and per-handle throttles remain underneath it.
  */
 merchantsRouter.patch("/api/merchants/:handle", async (req, res) => {
   const body = UpdateMerchantProfileSchema.parse(req.body);

@@ -7,10 +7,15 @@ import {
   normalizePayout,
   type MerchantListResponse,
   type MerchantResponse,
+  type ProfileEditProof,
   type RegisterMerchantRequest,
   type RegisterMerchantResponse,
   type UpdateMerchantProfileRequest,
   decodeGantryError,
+  buildProfileEdit,
+  isProofFresh,
+  recoverProfileEditSigner,
+  PROOF_TTL_SECONDS,
 } from "@gantry/shared";
 import { publicClient } from "../chain";
 import { config } from "../config";
@@ -604,34 +609,26 @@ function assertAffordable(profile: MerchantProfile): void {
  * PATCH /api/merchants/:handle — the display record, now an ON-CHAIN write.
  *
  * `setMerchantProfile` is `onlyRelayer`, so this route is the only way the text
- * can change and the relayer key is the only thing that can do it. That is a
- * deliberate position rather than an accident: Gantry has no merchant login and
- * the back-office has no wallet, so a merchant-signed write would need both,
- * and a permissionless one would let anyone rename any shop. The record is
- * therefore OPERATOR-owned, the UI says so, and the honest-labels list carries
- * it. The contract cannot touch payout, handle or category through this path.
+ * can change and the relayer key is the only thing that can do it. What the
+ * contract therefore CANNOT do is check who asked, which is why `assertOwnsShop`
+ * does it here: the merchant signs the exact text with the address their payouts
+ * land in, and that is the same identity `setMerchantPayout` is gated on. The
+ * record is MERCHANT-owned. Gantry holds no key that can rename a shop.
  *
- * OPEN on every host since 21 Aug, alongside registration, and bounded the same
- * way — but with one control registration does not have, because the two abuse
- * shapes differ. Registration is spread thin (many handles, each claimed once)
- * and its risk is PERMANENCE. An edit is aimed (one shop, over and over) and its
- * risk is a re-deface loop, which a global count does nothing about: an attacker
- * simply spends the whole daily budget on one victim. So edits carry a per-HANDLE
- * cooldown as well, which bounds the loop where it actually happens and leaves
- * every other merchant unaffected.
+ * That is authentication without an account: no password, no session, no user
+ * table, and nothing new to secure. READS are still open — anyone with the URL
+ * can see a shop's takings — and that half stays on the honest-labels list.
  *
- * What is NOT at risk here, and it is why this can be open at all: the contract
- * cannot touch payout, handle or category through this path, so an edit moves no
- * money and redirects no payment — the payer arrived at a handle they scanned off
- * the shop's own code, and the payout behind it is unreachable from here. And
- * unlike a registration an edit is REVERSIBLE: the real merchant edits it back
- * through the same open route. Defacement, not theft, and self-healing.
+ * The rate limits below are now belt and braces rather than the control, and
+ * they stay for two reasons. They bound the relayer's gas against a merchant
+ * editing their own shop in a loop, and they are what still stands if the
+ * signature check is ever relaxed. Registration is spread thin (many handles,
+ * each claimed once) and its risk is PERMANENCE; an edit is aimed (one shop, over
+ * and over), which is what the per-HANDLE cooldown bounds.
  *
- * The real fix remains authentication rather than rate limiting, and it exists
- * already one function away: `setMerchantPayout` is gated on
- * `msg.sender == merchant.payout`, so a merchant CAN prove ownership. Verify a
- * signature from the payout address here and every limit below becomes belt and
- * braces. `PROFILE_EDITS=closed` is the switch until then.
+ * `PROFILE_EDITS=closed` remains the kill switch, and is still worth having: it
+ * is a host env edit rather than a push, so an incident can be stopped without a
+ * deploy.
  */
 export async function updateMerchantProfile(
   handle: string,
@@ -669,6 +666,11 @@ export async function updateMerchantProfile(
   if (profileInFlight.has(key)) {
     throw new ApiError(429, "ProfileEditInProgress", "a profile edit from this address is already in flight");
   }
+  // WHO is asking, before anything is spent on their behalf. Deliberately ahead
+  // of the budget reservations below: a forged proof must cost no cooldown and no
+  // share of the daily ceiling, or an attacker who cannot edit a shop can still
+  // exhaust the allowance that lets its real owner edit it.
+  if (!operator) await assertOwnsShop(handle, profile.value, req.proof);
   // See the note on the register path: metered everywhere, because the operator
   // exemption already covers the rehearsal case and an unexercised limit is an
   // untested one.
@@ -809,6 +811,130 @@ export async function updateMerchantProfile(
       profileBudget = release(profileBudget, 1n);
       releaseForHandle(handleBudgets, handle);
     }
+  }
+}
+
+/**
+ * The one control that answers "who", rather than "how often".
+ *
+ * `setMerchantProfile` is `onlyRelayer`, so the contract cannot check the caller
+ * and this comparison is the whole gate. The merchant signs the exact text they
+ * want written with the key their payouts land in — the same identity
+ * `setMerchantPayout` is gated on — and we relay only if the two agree.
+ *
+ * Ordered cheapest first, because every attempt an attacker can make should cost
+ * them more than it costs us: the presence and freshness checks are free, so
+ * only an in-window proof buys the `eth_call` that fetches the payout, and only
+ * one that ALSO fails ECDSA recovery buys the second call behind it.
+ *
+ * Two tiers, and the split is about what kind of account the payout is rather
+ * than about speed. An EOA is settled by recovery alone. A contract account —
+ * which is what `/onboard`'s passkey button mints — signs under EIP-1271 and
+ * cannot be recovered at all, so it needs the chain's own opinion.
+ *
+ * Fails CLOSED at every step. A read that throws propagates rather than being
+ * caught into an allow — unlike `ownsHandle`, whose failure means "we could not
+ * confirm a write" and is safe to report as such, a failure HERE would mean
+ * "we could not confirm ownership", and the safe answer to that is no.
+ */
+async function assertOwnsShop(
+  handle: string,
+  profile: MerchantProfile,
+  proof: ProfileEditProof | undefined,
+): Promise<void> {
+  if (!proof) {
+    throw new ApiError(
+      400,
+      "ProofRequired",
+      "editing a shop's profile needs a signature from the address that receives its payouts. " +
+        "Connect that wallet and sign the change.",
+    );
+  }
+  if (!isProofFresh(proof.issuedAt, Math.floor(Date.now() / 1000))) {
+    throw new ApiError(
+      403,
+      "ProofExpired",
+      `a signed profile change is good for ${PROOF_TTL_SECONDS / 60} minutes and this one is ` +
+        "outside that window. Sign the change again.",
+    );
+  }
+
+  // Shape, before either tier spends an RPC call on it. A raw ECDSA signature is
+  // exactly 65 bytes and an ERC-6492 one is longer, so anything shorter is not a
+  // signature under any scheme and can be refused for free.
+  //
+  // Worth keeping even though the verifier would eventually say no: without it,
+  // four bytes of junk bought a registry read AND a universal-validator call, and
+  // came back as `NotMerchantPayout` — which reads as "wrong signer" to a client
+  // whose actual problem is that it sent nonsense.
+  if ((proof.signature.length - 2) / 2 < 65) {
+    throw new ApiError(400, "ProofMalformed", "that profile signature could not be read");
+  }
+
+  const id = merchantId(handle);
+  const typedData = {
+    merchantId: id,
+    profile,
+    issuedAt: proof.issuedAt,
+    chainId: config.chainId,
+    gantryCore: config.addresses.gantryCore,
+  };
+
+  // The FRESH read, never the 60s cache: a payout that rotated a moment ago must
+  // gain the right to edit immediately, and the address it rotated away from must
+  // lose it just as fast. A minute of either is a minute of the wrong owner.
+  const chain = await readMerchantFresh(id);
+  if (!chain) {
+    throw new ApiError(404, "MerchantNotFound", `no merchant registered for handle: ${handle}`);
+  }
+
+  // FAST TIER — a plain EOA, which is every payout that exists today. Pure
+  // crypto, no RPC, and it is what the tamper vectors in
+  // `shared/src/profileProof.test.ts` exercise, so it must stay the path taken.
+  //
+  // `recovered === null` is NOT a refusal. Recovery over 65 valid bytes always
+  // produces SOME address, so a throw means the bytes were never an ECDSA
+  // signature — which is exactly what an ERC-6492 signature looks like from
+  // here, since it is longer and carries a magic suffix. Falling through is the
+  // point.
+  const recovered = await recoverProfileEditSigner({ ...typedData, signature: proof.signature }).catch(
+    () => null,
+  );
+  if (recovered && recovered.toLowerCase() === chain.payout.toLowerCase()) return;
+
+  // SLOW TIER — a CONTRACT account, which is what `/onboard`'s passkey button
+  // mints (a Base Smart Account). Its signature is EIP-1271 and cannot be
+  // recovered, so without this a merchant who onboarded the way we tell judges
+  // they would in production is refused on their own shop.
+  //
+  // viem's `verifyTypedData` delegates to `verifyHash`, whose universal
+  // validator covers BOTH the deployed case (EIP-1271 `isValidSignature`) and
+  // the undeployed one (ERC-6492) in a single `eth_call`. The second half is
+  // load-bearing rather than thoroughness: registration is relayer-paid, so a
+  // passkey account never sends a transaction and stays counterfactual — there
+  // is frequently no contract deployed to ask.
+  let valid: boolean;
+  try {
+    valid = await publicClient.verifyTypedData({
+      address: chain.payout,
+      ...buildProfileEdit(typedData),
+      signature: proof.signature,
+    });
+  } catch (err) {
+    // Fails CLOSED, and reported as unreadable rather than as a refusal: with
+    // recovery already having declined these bytes, a throw here means nothing
+    // could parse them at all. An RPC fault lands here too and is logged, which
+    // is why the message does not claim the signature was wrong.
+    console.warn(`profile proof for ${handle} could not be verified:`, err);
+    throw new ApiError(400, "ProofMalformed", "that profile signature could not be read");
+  }
+  if (!valid) {
+    throw new ApiError(
+      403,
+      "NotMerchantPayout",
+      "that signature is not from the address this shop's payouts go to, so it cannot change " +
+        "the shop's details.",
+    );
   }
 }
 
