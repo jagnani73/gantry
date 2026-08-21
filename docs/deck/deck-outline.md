@@ -25,11 +25,11 @@ One rail, every payer. QR for humans, x402 for AI agents.
 
 ## 2 — Two payers nobody can serve
 
-| | PayNow | Cards | Gantry |
-|---|---|---|---|
-| Singaporean with a bank account | yes | yes | yes |
-| Tourist | no | yes, at 2–3% | yes |
-| AI agent | no | no | yes |
+|                                 | PayNow | Cards        | Gantry |
+| ------------------------------- | ------ | ------------ | ------ |
+| Singaporean with a bank account | yes    | yes          | yes    |
+| Tourist                         | no     | yes, at 2–3% | yes    |
+| AI agent                        | no     | no           | yes    |
 
 - PayNow is free and excellent, for the first row
 - 16 million people visit Singapore each year without a local bank account
@@ -62,7 +62,7 @@ A tourist lands at Changi with no local bank account.
 - Scans a printed sticker, sees S$1.50
 - Signs one EIP-3009 authorization
 - Holds zero ETH and never sends a transaction. The relayer pays the gas.
-- 1.117652 USDC in, 1.50 XSGD out, at an owner-set rate of 1.3421
+- 1.117652 USDC in, 1.50 XSGD out, at a demo rate of 1.3421
 
 **Say:** They sign. They don't transact. That distinction is the whole reason this works for someone who has never held crypto.
 
@@ -74,10 +74,10 @@ A tourist lands at Changi with no local bank account.
 
 The same endpoint answers a machine with 402 and an x402 v2 challenge offering two schemes.
 
-| Scheme | For | On-chain payer | Custody |
-|---|---|---|---|
-| `exact` | Any vanilla x402 client | The relayer | One hop, PSP-style |
-| `gantry-pbm` | Agents with an on-chain policy | The agent's own wallet | None |
+| Scheme       | For                            | On-chain payer         | Custody            |
+| ------------ | ------------------------------ | ---------------------- | ------------------ |
+| `exact`      | Any vanilla x402 client        | The relayer            | One hop, PSP-style |
+| `gantry-pbm` | Agents with an on-chain policy | The agent's own wallet | None               |
 
 - An unmodified `@x402/fetch` client pays this endpoint end to end
 
@@ -106,6 +106,7 @@ The same endpoint answers a machine with 402 and an x402 v2 challenge offering t
 ## 7 — What's real, and what's mocked
 
 Real:
+
 - Four contracts deployed and verified on Base Sepolia
 - Payments settle in real Circle testnet USDC
 - x402 v2 wire format, paid by an unmodified client
@@ -113,6 +114,7 @@ Real:
 - Live LLM tool-use decisions, Gemini
 
 Mocked:
+
 - MockXSGD, the only mocked token. XSGD exists on no testnet.
 - Owner-set FX rate, not a market
 - One trusted relayer key, briefly custodial on the `exact` path
@@ -143,10 +145,10 @@ Mocked:
 
 ## 9 — What it costs, and who carries the liability
 
-| | Rate | On S$2,000 a month |
-|---|---|---|
-| Cards | ~2.8% | S$56 |
-| Gantry | 0.5% | S$10 |
+|        | Rate  | On S$2,000 a month |
+| ------ | ----- | ------------------ |
+| Cards  | ~2.8% | S$56               |
+| Gantry | 0.5%  | S$10               |
 
 - The fee is skimmed inside the settlement transaction. There's no payout schedule; each payment settles to the merchant's address in the same transaction.
 - MAS has the framework already: the Payment Services Act, and Project Orchid for PBM
@@ -180,7 +182,7 @@ Mocked:
 
 Recorded so nothing gets quietly re-added:
 
-- **Architecture folded into the thesis (3).** The diagram *is* the thesis rendered, so showing it a slide later was making the same point twice.
+- **Architecture folded into the thesis (3).** The diagram _is_ the thesis rendered, so showing it a slide later was making the same point twice.
 - **The refusal folded into purpose-bound money (6).** Two beats, one argument: here are the limits, here is proof a contract enforces them. This is the densest slide in the deck and the one to rehearse hardest.
 - **Regulation folded into the fee slide (9).** Both answer "is this a business", one on economics and one on posture.
 - **The roadmap and the ask share the close (10).**
@@ -191,28 +193,28 @@ If it has to shrink further, drop 8 before anything else and move the Basescan l
 
 These have each drifted at least once.
 
-| Fact | Correct value |
-|---|---|
-| Agent model | Gemini `gemini-flash-latest` via the Vercel AI SDK, **not** Claude |
-| Chain | Base Sepolia over a laptop hotspot. Local Anvil was never built. |
-| FX | `FixedRateSwap`, owner-set. No AMM, no slippage. |
-| Contract names | `GantryCore`, `AgentPBMWallet`. `SettlementRouter` and `PolicyGuard` never existed. |
-| Agent door | Two sub-paths. `exact` is custodial, `gantry-pbm` is not. |
-| Human demo amount | Iced tea S$1.50, 1.117652 USDC at 1.3421 |
-| Agent demo amount | 3 iced teas S$4.50, 3.352955 USDC |
-| Rejection | GadgetHub SG, S$4 phone cable, `CategoryNotAllowed(2)` |
-| Fee | Quote the monthly figures, S$10 against S$56 |
-| Dashboard tiles | Live figures that move on every run. Never hardcode them onto a slide. |
-| Test counts | 191 Foundry, 126 shared, 129 backend. Re-measured 12 Aug 2026. |
-| Agent wallet owner | The payer, on-chain. Revoke lives in the payer app at `/app/agents`, not on the merchant screens. |
-| Surfaces | Merchant back-office `/merchant/[handle]/…` and payer app `/app/…`. There is no `/dashboard` screen; the path redirects. |
+| Fact               | Correct value                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Agent model        | Gemini `gemini-flash-latest` via the Vercel AI SDK, **not** Claude                                                       |
+| Chain              | Base Sepolia over a laptop hotspot. Local Anvil was never built.                                                         |
+| FX                 | `FixedRateSwap`, owner-set. No AMM, no slippage.                                                                         |
+| Contract names     | `GantryCore`, `AgentPBMWallet`. `SettlementRouter` and `PolicyGuard` never existed.                                      |
+| Agent door         | Two sub-paths. `exact` is custodial, `gantry-pbm` is not.                                                                |
+| Human demo amount  | Iced tea S$1.50, 1.117652 USDC at 1.3421                                                                                 |
+| Agent demo amount  | 3 iced teas S$4.50, 3.352955 USDC                                                                                        |
+| Rejection          | GadgetHub SG, S$4 phone cable, `CategoryNotAllowed(2)`                                                                   |
+| Fee                | Quote the monthly figures, S$10 against S$56                                                                             |
+| Dashboard tiles    | Live figures that move on every run. Never hardcode them onto a slide.                                                   |
+| Test counts        | 191 Foundry, 126 shared, 129 backend. Re-measured 12 Aug 2026.                                                           |
+| Agent wallet owner | The payer, on-chain. Revoke lives in the payer app at `/app/agents`, not on the merchant screens.                        |
+| Surfaces           | Merchant back-office `/merchant/[handle]/…` and payer app `/app/…`. There is no `/dashboard` screen; the path redirects. |
 
 ## Screening risks and what counters each
 
-| Risk | Counter, and where it lives |
-|---|---|
-| "Generic crypto payment gateway" | The payer × rail matrix leads the deck (slide 2) |
+| Risk                             | Counter, and where it lives                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| "Generic crypto payment gateway" | The payer × rail matrix leads the deck (slide 2)                                                             |
 | "The AI agent part is a gimmick" | x402 is a Linux Foundation standard, an unmodified client pays us, the denial is a real revert (slides 5, 6) |
-| "Vaporware" | Basescan links, live dashboard, scannable QR on slide 1 (slides 1, 8) |
-| "Hand-waves regulation" | Slide 9's modest posture: licensed PSP in front, Gantry as rail |
-| "Solo builder can't execute" | Visible scope discipline. The skipped AMM is documented as skipped, not hidden. |
+| "Vaporware"                      | Basescan links, live dashboard, scannable QR on slide 1 (slides 1, 8)                                        |
+| "Hand-waves regulation"          | Slide 9's modest posture: licensed PSP in front, Gantry as rail                                              |
+| "Solo builder can't execute"     | Visible scope discipline. The skipped AMM is documented as skipped, not hidden.                              |

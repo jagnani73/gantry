@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Gantry — NTU InnovateX 2026, Track 1</title>
+<title>Gantry, NTU InnovateX 2026, Track 1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -232,7 +232,7 @@
   <div class="num">03</div>
   <div class="eyebrow">The idea</div>
   <h1>One intent, two encodings</h1>
-  <p class="lede">A payment is an intent: <b>merchant M requests S$X</b>. A printed QR and an HTTP <code>402 Payment Required</code> are two encodings of the same one.</p>
+  <p class="lede">A payment is an intent: <b>merchant M requests S$X</b>. A printed QR and an HTTP <code>402 Payment Required</code> are two encodings of the same one, which is why <b>one URL can be both</b>: <code>/pay/&lt;handle&gt;</code> sends a person to the payment page and answers a machine with the 402.</p>
 
   <div class="arch">
     <div class="doors">
@@ -267,7 +267,8 @@
         <li>Signs one <b>EIP-3009</b> authorization</li>
         <li>Holds <b>zero ETH</b> and never sends a transaction. The relayer pays the gas.</li>
         <li><span class="mono">1.117652 USDC</span> in, <span class="mono">1.50 XSGD</span> out</li>
-        <li>Rate <span class="mono">1.3421</span>, <b>owner-set</b>, not a market</li>
+        <li>Paying in <b>euros</b> instead: <span class="mono">0.993378 EURC</span> in, the same <span class="mono">1.50 XSGD</span> out. The payer picks the currency; the hawker is always paid in Singapore dollars.</li>
+        <li>Rates <span class="mono">1.3421</span> / <span class="mono">1.5100</span>, <b>owner-set</b>, not a market</li>
       </ul>
       <div class="footnote" style="margin-top:auto">The EIP-3009 nonce <i>is</i> the intentId. That binding is what stops a signature being replayed against a different price or a different merchant.</div>
     </div>
@@ -282,7 +283,7 @@
   <div class="num">05</div>
   <div class="eyebrow">The agent door</div>
   <h1>An unmodified client pays us</h1>
-  <p class="lede">The same endpoint answers a machine with <code>402</code> and an x402 v2 challenge offering two schemes.</p>
+  <p class="lede">The same endpoint answers a machine with <code>402</code> and an x402 v2 challenge offering two schemes, each priced in <b>both currencies</b>. An agent with no shop in mind enumerates them all from <code>/discovery/resources</code> first, so the loop needs no human at any point.</p>
   <div class="body" style="flex-direction:column; gap:20px; margin-top:20px;">
     <table>
       <thead><tr><th style="width:20%">Scheme</th><th style="width:31%">Who it is for</th><th style="width:25%">On-chain payer</th><th>Custody</th></tr></thead>
@@ -312,6 +313,7 @@
         <li>Set by the wallet's owner, the human, <b>from their own key</b></li>
         <li><code>setPolicy</code> and <code>revoke</code> are <code>onlyOwner</code>. Gantry holds no key that can raise a cap or lift a category.</li>
         <li>The agent asks for a <b>S$4 phone cable</b> from an electronics shop</li>
+        <li><b>Nobody has to take our word for it.</b> <span class="mono">verify:denial</span> re-derives the refusal from public state at that block, and can contradict us</li>
       </ul>
       <div class="revert">
         <div class="code">CategoryNotAllowed(2)</div>
@@ -332,10 +334,11 @@
       <h3>Real</h3>
       <ul>
         <li>Four contracts deployed and <b>verified</b> on Base Sepolia</li>
-        <li>Payments settle in <b>real Circle testnet USDC</b></li>
+        <li>Payments settle in <b>real Circle testnet USDC or EURC</b>, payer&rsquo;s choice</li>
         <li>x402 v2 wire format, paid by an unmodified client</li>
         <li>On-chain policy denials, as contract reverts</li>
-        <li>Live LLM tool-use decisions (Gemini)</li>
+        <li>Live LLM tool-use decisions, on <b>AIsa&rsquo;s</b> gateway</li>
+        <li>Anyone can register a shop on the live deployment</li>
         <li>Real phone, real printed QR</li>
       </ul>
     </section>
@@ -346,7 +349,8 @@
         <li>Owner-set FX rate, not a market</li>
         <li>One trusted relayer key, briefly custodial on the <span class="mono">exact</span> path</li>
         <li>Self-attested categories, no KYC. <b>Registered, never verified.</b></li>
-        <li>No merchant login. The deployed demo payer is one shared account.</li>
+        <li>No merchant login. Anyone with the URL can read a shop&rsquo;s takings, or rewrite its profile text. Never its payout.</li>
+        <li>The deployed demo payer is one shared account</li>
         <li>No fiat off-ramp</li>
       </ul>
     </section>
@@ -368,9 +372,9 @@
         <div><span>AgentPBMWalletFactory</span><span>0x9e51484b1B79bB3E9EaCEfB3D3510Cc19b7Baac1</span></div>
       </div>
       <div class="kpi" style="margin-top:4px">
-        <div class="box"><div class="k">Tests</div><div class="v">446</div></div>
-        <div class="box"><div class="k">Foundry</div><div class="v">191 <small>186 in CI</small></div></div>
-        <div class="box"><div class="k">TypeScript</div><div class="v">255 <small>126 + 129</small></div></div>
+        <div class="box"><div class="k">Tests</div><div class="v">566</div></div>
+        <div class="box"><div class="k">Foundry</div><div class="v">201 <small>196 in CI</small></div></div>
+        <div class="box"><div class="k">TypeScript</div><div class="v">365 <small>189 + 172 + 4</small></div></div>
       </div>
       <div class="footnote" style="margin-top:auto">Solo student build. Every address on this slide is verified and clickable. Five Foundry tests are fork tests and skip themselves without an RPC URL.</div>
     </div>
