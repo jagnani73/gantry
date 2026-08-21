@@ -58,11 +58,16 @@ source and an artifact that disagree, with nothing announcing it. Always re-rend
 Fixed on 21 Aug 2026: slide 7's USDC-only settlement claim and its "Gemini" model credit, and slide
 8's test counts. What remains:
 
-- **Slide 8's test counts go stale by construction.** They read `Tests 566 · Foundry 201 (196 in CI)
-  · TypeScript 365 (189 + 172 + 4)`, counted by re-running all four suites on 21 Aug 2026. Every
-  branch that adds tests makes this wrong. **Never adjust these by arithmetic**: the 550 previously
-  recorded here was wrong on two suites at once, which no amount of adding up would have caught. Run
-  the suites.
+- **Slide 8's test counts are deliberately FLOORS, not counts:** `550+ · 200+ · 350+`. Exact figures
+  meant re-running four suites before every export, and they were wrong more often than they were
+  right. A floor only needs revisiting when it is breached, which nothing does by accident.
+
+  Set with real headroom on purpose. Counts do not only go up: the shared suite dropped 174 to 172
+  on 21 Aug 2026, so a floor rounded to the nearest number above the true count would have gone
+  false without anyone touching the deck. Measured that day: 201 forge, 189 backend, 172 shared, 4
+  agent. **If you ever want the exact numbers back, run the four suites and never add them up** —
+  the 550 recorded here before that was wrong on two suites at once, which arithmetic could not
+  have caught.
 - **Slide 8 hardcodes all four contract addresses.** They are correct today, and a
   `pnpm contracts:fresh` would silently invalidate the slide, since the deck reads no address from
   `addresses.ts`.
