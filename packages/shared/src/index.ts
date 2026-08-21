@@ -31,3 +31,4 @@ export * from "./api";
 export * from "./x402";
 export * from "./display";
 export * from "./profile";
+export * from "./profileProof";

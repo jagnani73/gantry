@@ -4,6 +4,7 @@ import type { TokenId } from "./tokens";
 import type { WireDoor } from "./door";
 import type { WireTypedData } from "./eip3009";
 import type { WireSpendAuthorization } from "./agentPolicy";
+import type { ProfileEditProof } from "./profileProof";
 
 /**
  * Wire types for every backend route. Conventions: ALL token/XSGD amounts are
@@ -167,17 +168,25 @@ export interface RegisterMerchantRequest {
 }
 
 /**
- * PATCH /api/merchants/:handle — rewrites the off-chain display record only.
- * Nothing here touches the chain, so nothing here can misroute money.
+ * PATCH /api/merchants/:handle — rewrites the shop's display record on-chain.
+ * `setMerchantProfile` provably cannot touch payout, handle or category, so
+ * nothing here can misroute money.
  *
- * UNAUTHENTICATED, deliberately: there is no merchant login anywhere in Gantry,
- * so anyone with the URL can edit any shop's profile. That belongs on the
- * honest-labels list; do not paper over it with a login that checks nothing.
+ * AUTHENTICATED BY THE CHAIN, not by a login: `proof` is an EIP-712 signature
+ * from the address that receives this shop's payouts, which is the same identity
+ * `setMerchantPayout` is gated on. There is still no merchant account anywhere in
+ * Gantry, and READS remain open — anyone with the URL can see a shop's takings.
+ * That half belongs on the honest-labels list.
+ *
+ * Optional on the type because the operator path (`x-admin-token`, which
+ * demo-reset seeds through) sends none. The backend REQUIRES it for everyone
+ * else; do not read this `?` as "the server will manage without it".
  */
 export interface UpdateMerchantProfileRequest {
   displayName: string;
   location: string;
   blurb: string;
+  proof?: ProfileEditProof;
 }
 
 export interface RegisterMerchantResponse extends MerchantResponse {
