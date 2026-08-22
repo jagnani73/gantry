@@ -38,7 +38,7 @@ export const IDEA = [
   { n: "01", text: "A payment is an intent: merchant M requests S$X." },
   {
     n: "02",
-    text: "A QR code and an HTTP 402 are two encodings of that same intent — so one URL can be both.",
+    text: "A QR code and an HTTP 402 are two encodings of that same intent, so one URL can be both.",
   },
   { n: "03", text: "One contract consumes both, so a hawker and an API get paid the same way." },
 ] as const;
