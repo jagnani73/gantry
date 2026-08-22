@@ -10,7 +10,10 @@ import { PayerFrame } from "@/components/payer/payer-frame";
  * It is a layout rather than something each page mounts so that switching tabs
  * keeps the store alive: the balance, the settlement page and the agent
  * enumeration are shared, and remounting them on every tap would refetch all
- * three — the agent walk alone is a block-range scan.
+ * three. Two of those are backend round trips (the settlement page and the
+ * agent enumeration, the latter costing four RPC calls behind it); the balance
+ * is a direct RPC read from the browser. On a venue hotspot that is a visible
+ * stall on every tab tap.
  *
  * No `entry`: these four routes are the app's own tabs, so there is no floor
  * overlay and an emptied overlay stack has somewhere to be — the tab underneath

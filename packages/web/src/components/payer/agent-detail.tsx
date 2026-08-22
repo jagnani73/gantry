@@ -31,7 +31,7 @@ import { useAgentWrites, UnknownOutcomeError } from "./agent-writes";
 import { categorySplit, policyFingerprint, revokedState, sgdFromCapUnits } from "./agent-rules";
 import { calendarDate, relativeWhen, sgdUnits } from "./format";
 import { OverlayHeader, OverlayScreen } from "./overlay";
-import { usePayer } from "./payer-context";
+import { AGENT_LIVE_POLL_MS, usePayer } from "./payer-context";
 
 /**
  * One agent's on-chain allowance, and the writes that change it.
@@ -137,6 +137,30 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
   const [withdrawal, setWithdrawal] = useState<{ before: bigint; amount: bigint } | null>(null);
   /** Poll attempts, in a ref so counting one does not re-run the effect. */
   const withdrawTries = useRef(0);
+  /**
+   * The withdraw wait gave up. Suppresses the live tick for the same reason
+   * `waitedOut` does one field up.
+   *
+   * Without it the give-up path is the one bounded wait whose exit sets no
+   * flag — it clears `withdrawal` and posts a notice — so all four guards go
+   * false, the tick re-reads, the balance corrects within seconds, and the
+   * screen goes on caveating a figure it has since made good. A caveat asserted
+   * over data that is now current is the same class of wrong statement as the
+   * stale figure the caveat was for.
+   */
+  const [withdrawWaitedOut, setWithdrawWaitedOut] = useState(false);
+  /**
+   * A wallet read is outstanding, so the live tick must not fire.
+   *
+   * `reloadNonce` RESTARTS this effect and its cleanup sets the previous run's
+   * `cancelled`, so a tick arriving mid-read discards that read rather than
+   * duplicating it. `api.agent` carries a 12s timeout against a 4s tick, so on
+   * a backend slower than the tick nothing ever landed: the screen sat on
+   * "Reading this agent's policy from the chain…" with no error and no retry —
+   * verbatim the failure the catch below says it exists to prevent, reached by
+   * making that catch unreachable.
+   */
+  const readInFlight = useRef(false);
 
   /**
    * Read the wallet, and keep reading while it still shows the policy the payer
@@ -160,6 +184,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     setWaitedOut(false);
 
     const read = async (attempt: number) => {
+      readInFlight.current = true;
       try {
         const summary = await api.agent(wallet);
         if (cancelled) return;
@@ -199,14 +224,21 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
         // after creating a wallet the list has NOT caught up, and swallowing
         // this left the screen reading "Reading this agent's policy…" forever
         // with nothing on it saying why.
-        if (cancelled) return;
+        //
+        // Logged BEFORE the cancelled guard, because a superseded request is
+        // the one failure that reaches no screen at all. `readInFlight` above
+        // makes supersession rare again, but rare is not never — a manual
+        // recheck can still land on top of one.
         console.warn(`gantry: agent read failed for ${wallet}`, err);
+        if (cancelled) return;
         setReadError(err instanceof Error ? err.message : String(err));
         // The expectation is deliberately NOT settled. A failed read is not an
         // answer to "did the write land", and settling it here dropped the only
         // signal that the rendered policy is superseded — so one flaky GET fell
         // through to the pre-write caps, with `readError` set but unreachable,
         // since its card only renders inside the wait guard below.
+      } finally {
+        readInFlight.current = false;
       }
     };
 
@@ -247,6 +279,7 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
       // money outright, which is the strictly worse failure.
       console.warn(`gantry: ${wallet} still reads its pre-withdraw balance; showing the read`);
       setWithdrawal(null);
+      setWithdrawWaitedOut(true);
       setNotice({
         tone: "sunken",
         text: "Your withdrawal is on-chain, but we couldn't read the new balance back just now, so the figure below may be a moment old.",
@@ -267,6 +300,51 @@ export function AgentDetail({ wallet }: { wallet: Address }) {
     }, FRESHNESS_POLL_MS);
     return () => clearTimeout(timer);
   }, [withdrawal, fresh, wallet]);
+
+  /**
+   * Keeps the cap meter live: `spentToday` moves when the agent pays, and this
+   * screen is where a payer watches it happen.
+   *
+   * Through `reloadNonce` and the main read effect, never a second
+   * `api.agent` — the rule the withdraw wait above states at length. One owner
+   * of `fresh`, always.
+   *
+   * SUPPRESSED whenever something bounded is already waiting, and that is the
+   * load-bearing half rather than an optimisation. Bumping `reloadNonce`
+   * RESTARTS the read effect at `read(0)`, so a tick faster than
+   * `FRESHNESS_ATTEMPTS × FRESHNESS_POLL_MS` (7.2s — and this is 4s) would
+   * reset the attempt counter on every pass and the give-up could never fire.
+   * A payer whose write genuinely could not be read back would then sit on a
+   * "reading it back" screen forever instead of being told.
+   *
+   * `waitedOut` is in the guard for the other half of that: the give-up path
+   * has declared the figures below possibly stale and said so, and a silent
+   * re-read would clear that flag while its notice stayed up. The notice
+   * carries an explicit "check again" instead.
+   */
+  const expectationPending = agentExpectation(wallet) !== null;
+  const live =
+    !expectationPending &&
+    withdrawal === null &&
+    busy === null &&
+    !waitedOut &&
+    !withdrawWaitedOut;
+  useEffect(() => {
+    if (!live) return;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      // See `readInFlight`. Ticking over an outstanding read cancels it, so on
+      // a slow backend this screen could never resolve at all.
+      if (readInFlight.current) return;
+      setReloadNonce((n) => n + 1);
+    };
+    const timer = setInterval(tick, AGENT_LIVE_POLL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [live]);
 
   const agent = fresh ?? listed;
   // The wallet's own label wins over the list's: this screen's read is the newer

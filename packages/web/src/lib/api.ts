@@ -193,7 +193,9 @@ export const api = {
     call<DenialListResponse>(`/api/denials${query({ wallet })}`, { timeoutMs: 12_000 }),
 
   /**
-   * Enumerated from WalletCreated logs, so a cold call can take seconds.
+   * `owner` is read from the factory's `walletsOf` view and cannot be stale;
+   * only `agentSigner` is answered from the swept `WalletCreated` table and may
+   * force a sweep. The payer app passes `owner` and nothing else.
    *
    * The response has TWO lists and a caller that reads only `agents` is wrong:
    * `unreadable` holds wallets that carry code and did not answer, and folding

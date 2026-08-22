@@ -59,8 +59,19 @@ export function CapMeter({
       )}
       {...props}
     >
+      {/* Deliberately slower than the 120ms `--default-transition-duration`.
+          This bar moves on its own — an agent spends while the payer watches —
+          so the width change is an EVENT rather than a hover response, and at
+          the default it lands as a jump nobody reads as filling. Same lesson
+          `fresh-tint` records: a mark too short to see is a mark that is not
+          there.
+
+          It needs no `prefers-reduced-motion` exception, which `fresh-tint`
+          does: the figures directly underneath say `S$4.50 of S$50.00 today`,
+          so the blanket opt-out flattening this to 0.01ms costs the motion and
+          none of the meaning. */}
       <div
-        className={cn("h-full rounded-full transition-[width]", FILL[tone])}
+        className={cn("h-full rounded-full transition-[width] duration-700 ease-out", FILL[tone])}
         style={{ width: `${percent}%` }}
       />
     </div>

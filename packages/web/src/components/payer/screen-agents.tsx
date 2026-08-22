@@ -29,12 +29,15 @@ import { usePayer } from "./payer-context";
 type AgentTab = "all" | "active" | "inactive";
 
 /**
- * The payer's agents, enumerated from the factory's `WalletCreated` logs.
+ * The payer's agents, read from the factory's `walletsOf` view.
  *
- * That walk is a block-range scan and can take seconds cold, so `agents === null`
- * renders skeletons rather than "no agents yet" — a payer with three agents
- * being told they have none, for two seconds, on stage, is the failure mode this
- * screen exists to avoid.
+ * Two RPC calls — the view, then one multicall of the getters — so this is
+ * cheap enough to re-read on a live tick while the screen is open, which is what
+ * keeps the cap meters moving as an agent spends. It is not instant, though, and
+ * a cold hotspot makes it slower still: `agents === null` renders skeletons
+ * rather than "no agents yet", because a payer with three agents being told they
+ * have none, for two seconds, on stage, is the failure mode this screen exists
+ * to avoid.
  *
  * The error branch is checked FIRST for the same reason and with higher stakes:
  * a failed enumeration also arrives as an empty list, and "You don't have an
@@ -345,7 +348,9 @@ function TabButton({
  * What was here before rendered `Saving…` in place of the name for as long as
  * the read stayed behind, which was wrong twice over: the save had already
  * finished — it is the READ that is late — and nothing bounded the wait, because
- * the give-up rule lives with whoever polls and this screen does not poll.
+ * the give-up rule lives with whoever polls, and the store's live tick — which
+ * is the only poll behind this screen — waits on no write and so gives up on
+ * nothing.
  */
 
 function AgentCard({

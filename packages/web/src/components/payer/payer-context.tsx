@@ -98,8 +98,10 @@ export type PendingReceiptState = {
  * name for as long as the read stayed behind, which was wrong twice over: the
  * save had already finished (it is the read that is late, not the write), and
  * nothing bounded the wait, because the give-up rule lives with the poller and
- * the list does not poll. There is nothing to bound now — the row shows what
- * the chain holds.
+ * the list had none. There is nothing to bound now — the row shows what the
+ * chain holds. (The list DOES poll since the live tick landed, but that tick
+ * waits on nothing and gives up on nothing; the bounded wait is still the
+ * detail screen's.)
  */
 export interface AgentExpectation {
   fingerprint: string;
@@ -350,6 +352,33 @@ export function usePayer(): PayerStore {
  * every row already carries the cursor it would need. */
 const HISTORY_LIMIT = 100;
 
+/** How often the history is re-read in the background. */
+const HISTORY_POLL_MS = 20_000;
+/**
+ * How often the agent list is re-read WHILE IT IS THE SCREEN ON SCREEN.
+ *
+ * `spentToday` is the one figure here that moves without this app doing
+ * anything — the payer's own agent pays while they watch it — and 20s is far
+ * too slow to read as that happening. Four seconds puts the bar inside the same
+ * beat as the payment.
+ *
+ * The cost is FOUR RPC calls, not the two an earlier version of this comment
+ * claimed. `candidates()` short-circuits to the factory's `walletsOf` view (one
+ * `eth_call`, never behind, and never the swept table — the signer lookup is
+ * what leans on that, and the payer app never asks for it), and the wallet
+ * getters do collapse into one multicall. But `readAgents` fires that multicall
+ * alongside one uncached `rateOf` per payable token, and the backend's transport
+ * does not batch, so USDC and EURC are two more requests. Roughly 60 RPC calls a
+ * minute per open agents screen.
+ *
+ * Half of that is the two `rateOf` reads, re-fetching an OWNER-SET fixed rate
+ * that only changes on an owner transaction — so caching them is where to look
+ * first if this ever needs defending. It is affordable on the demo laptop, which
+ * is where the live tick matters; on a shared egress IP it is the figure to
+ * weigh, because a rate limit belongs to the IP and not to the endpoint.
+ */
+export const AGENT_LIVE_POLL_MS = 4_000;
+
 /** Bounded, and sized like the pay flow's own post-funding wait: a transfer
  * that has not surfaced after this long is reported as unconfirmed rather than
  * polled forever — see `balanceWatch`, which is what carries that answer to a
@@ -563,6 +592,41 @@ export function PayerProvider({
   const [nonce, setNonce] = useState(0);
   const [historyNonce, setHistoryNonce] = useState(0);
   const [balanceNonce, setBalanceNonce] = useState(0);
+  /**
+   * Re-reads the agent list ALONE, which `nonce` cannot do.
+   *
+   * `nonce` is the everything trigger — the enumeration, the balance and the
+   * rate all sit behind it — so driving a 4s live tick from it would re-read a
+   * payer's ERC-20 balance and the swap rate every four seconds to watch one
+   * counter move. Narrow trigger, same single effect: `refresh()` keeps meaning
+   * "re-read all of it", and this means "just the agents".
+   */
+  const [agentsNonce, setAgentsNonce] = useState(0);
+  /**
+   * An agent read is outstanding, so the live tick must not fire.
+   *
+   * Bumping the nonce RE-RUNS the effect, and its cleanup sets the previous
+   * run's `cancelled` — so a tick arriving before a read completes does not
+   * merely duplicate it, it DISCARDS it. `api.agents` carries a 20s timeout
+   * against a 4s interval, so on any backend slower than the tick every request
+   * was cancelled by its successor and neither `setAgentsRead` nor
+   * `setAgentsError` ever ran: permanent skeletons, and the error card holding
+   * the "don't create a second wallet" warning unreachable, which is precisely
+   * the state that warning exists for. Reachable on a Render cold start, on a
+   * venue hotspot, or after an RPC failover to the rate-limited public node.
+   *
+   * Skipping while one is in flight also caps concurrency at one, where the
+   * free-running interval otherwise left ~5 requests outstanding per tab, each
+   * costing four RPC calls, and starved the settlements and denials sharing the
+   * browser's six connections to that origin.
+   */
+  const agentsInFlight = useRef(false);
+  /** What triggered the last agent read, so a failure knows whether a person is
+   * waiting on it. See `background` in the effect below. */
+  const agentsTrigger = useRef<{ address: Address | undefined; nonce: number }>({
+    address: undefined,
+    nonce: -1,
+  });
 
   useEffect(() => {
     try {
@@ -1005,21 +1069,64 @@ export function PayerProvider({
   /* The feed can change without this app doing anything — the payer's own agent
      pays while they watch. There is no SSE here on purpose: the live stream is
      the merchant's screen, and a payer app holding a long-lived connection open
-     on a phone for one row a minute is the wrong trade. A poll of the HISTORY
-     only (never the agent enumeration, which walks a block range) covers it, and
-     it stops while the tab is hidden so a pocketed phone is not calling the
-     backend every twenty seconds. */
+     on a phone for one row a minute is the wrong trade. A poll covers it, and it
+     stops while the tab is hidden so a pocketed phone is not calling the backend
+     every twenty seconds. */
   useEffect(() => {
     const tick = () => {
       if (document.visibilityState === "visible") setHistoryNonce((n) => n + 1);
     };
-    const timer = setInterval(tick, 20_000);
+    const timer = setInterval(tick, HISTORY_POLL_MS);
     document.addEventListener("visibilitychange", tick);
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", tick);
     };
   }, []);
+
+  /**
+   * The same idea one screen narrower: keep the CAP METERS live.
+   *
+   * The agent enumeration used to be excluded from the tick above on the
+   * grounds that it "walks a block range". That is true of the SIGNER lookup
+   * and false of the one this app makes: `?owner=` is answered from the
+   * factory's `walletsOf` view, which is a getter and cannot be stale. See
+   * `AGENT_LIVE_POLL_MS` for what it actually costs. The figure it carries —
+   * `spentToday` — is the only one on the agents screen that moves on its own,
+   * and a bar that only ever fills on a manual refresh states a live allowance
+   * as a static one.
+   *
+   * A SECOND timer rather than a faster shared one, deliberately. The two drive
+   * disjoint state (`historyNonce` → settlements and denials, `agentsNonce` →
+   * the enumeration), so there is no shared value for two schedules to race
+   * over — the hazard `agent-detail`'s single owner of `fresh` exists to avoid.
+   * Folding them together would instead make a working 20s path run five times
+   * faster as a side effect of standing on a different tab.
+   *
+   * Armed only while the LIST is what is being looked at. An open overlay is
+   * full-screen on this surface, and the agent detail reads its own wallet on
+   * its own schedule, so refreshing the list behind it would be RPC nobody can
+   * see.
+   */
+  const watchingAgentList =
+    pathname === "/app/agents" && stack.length === 0 && pendingReceiptKey === null;
+  useEffect(() => {
+    if (!watchingAgentList) return;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      // See `agentsInFlight`. Ticking over an outstanding read cancels it, so on
+      // a slow backend the list could never resolve at all. This makes the real
+      // cadence `max(4s, round trip)`, which is the honest bound anyway.
+      if (agentsInFlight.current) return;
+      setAgentsNonce((n) => n + 1);
+    };
+    const timer = setInterval(tick, AGENT_LIVE_POLL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [watchingAgentList]);
 
   /* Every mutator clears the pending receipt. It is a claim about what the URL
      asked for, and the moment the payer moves anywhere themselves that claim is
@@ -1051,9 +1158,10 @@ export function PayerProvider({
   }, []);
 
   /* ── Agent wallets ──────────────────────────────────────────────────────
-     Enumerated from WalletCreated logs, so a cold call walks a block range and
-     can take seconds. Screens must render a loading state off `agents === null`
-     rather than flashing "no agents" at a payer who has three.
+     Read from the factory's `walletsOf` view, so this is current the instant a
+     wallet exists rather than lagging an index. It is still a round trip and a
+     hotspot still makes it slow, so screens must render a loading state off
+     `agents === null` rather than flashing "no agents" at a payer who has three.
 
      `unreadable` is carried, never dropped. A wallet that holds code and did not
      answer is a failed READ, and folding it into an empty `agents` tells a payer
@@ -1061,16 +1169,56 @@ export function PayerProvider({
   useEffect(() => {
     if (!address) return;
     let cancelled = false;
-    setAgentsError(null);
+    /**
+     * Was this run asked for by a PERSON, or by the live tick?
+     *
+     * The two want opposite failure handling and the effect cannot otherwise
+     * tell them apart. A mount, an account change and `refresh()` all move
+     * `address` or `nonce`; the tick moves neither, so a run where both match
+     * the previous one is the tick's.
+     */
+    const background =
+      agentsTrigger.current.address === address && agentsTrigger.current.nonce === nonce;
+    agentsTrigger.current = { address, nonce };
+    // Only a person's request may retract a standing error. Clearing it on
+    // every tick made the error card strobe: visible for one round trip, blank
+    // for the rest of the interval, which reads as a screen still loading.
+    if (!background) setAgentsError(null);
+    agentsInFlight.current = true;
     api
       .agents({ owner: address })
       .then((res) => {
         if (cancelled) return;
         setAgentsRead(res.agents);
         setAgentsUnreadable(res.unreadable ?? []);
+        // A success retires a background failure nobody was shown, so the next
+        // person-initiated read does not start life holding a stale message.
+        setAgentsError(null);
       })
       .catch((err: unknown) => {
+        // Logged BEFORE the cancelled guard. A superseded request is the one
+        // shape of failure that reaches no screen at all, and a poll makes
+        // supersession ordinary rather than exceptional.
+        console.warn("gantry: agent enumeration failed", err);
         if (cancelled) return;
+        /**
+         * A BACKGROUND failure changes nothing on screen, deliberately.
+         *
+         * The alternative is what this used to do unconditionally, and as a 4s
+         * poll it is worse than the staleness it would report: one blip
+         * replaces a working list with "We couldn't list your agents… you'll
+         * have two", the next tick puts the list back, and on a flapping
+         * hotspot that alarming card strobes until the payer learns to ignore
+         * the one warning standing in front of an irreversible duplicate
+         * wallet. It also cascades — `agentsRead === null` empties
+         * `payerFilter` and `agentWalletsKey` below, which narrows history to
+         * the human address and clears every denial row, so a failed AGENT
+         * read would silently delete the refusal record from Activity.
+         *
+         * Same trade the withdraw wait makes one file over: a figure that is a
+         * moment old beats a figure that has vanished. The next tick retries.
+         */
+        if (background) return;
         // NOT `[]`. This state means "we do not know", and `[]` means "we asked
         // and there are none" — the distinction this very field documents. It
         // leaks past the agents screen: `payerFilter` below is built from this
@@ -1082,11 +1230,17 @@ export function PayerProvider({
         // report; `agentsError` is the one that has to be on screen.
         setAgentsUnreadable([]);
         setAgentsError(messageOf(err));
+      })
+      .finally(() => {
+        agentsInFlight.current = false;
       });
     return () => {
       cancelled = true;
     };
-  }, [address, nonce]);
+    // `agentsNonce` alongside `nonce`: the live tick re-reads this and only
+    // this, so the enumeration keeps ONE owning effect rather than growing a
+    // second fetcher writing `agentsRead` on an independent schedule.
+  }, [address, nonce, agentsNonce]);
 
   /* ── History ────────────────────────────────────────────────────────────
      One request for the payer AND their agent wallets, because a PBM payment's
