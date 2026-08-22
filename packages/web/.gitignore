@@ -1,1 +1,7 @@
 .vercel
+
+# Vendored from zxing-wasm by `scripts/copy-zxing-wasm.mjs`, which `dev` and
+# `build` both run. A committed copy would be a 1MB binary that has to be
+# remembered whenever `barcode-detector` moves, and the wasm is only valid
+# against the JS glue it shipped with — so it is generated, never tracked.
+public/zxing_reader.wasm
